@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 3002,
+    allowedHosts: ["tracking.jbdspower.in"],
   },
   build: {
     outDir: "dist/spa",
