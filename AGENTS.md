@@ -68,7 +68,7 @@ className={cn(
 
 ### Express Server Integration
 
-- **Development**: Single port (8080) for both frontend/backend
+- **Development**: Single port (3002) for both frontend/backend
 - **Hot reload**: Both client and server code
 - **API endpoints**: Prefixed with `/api/`
 

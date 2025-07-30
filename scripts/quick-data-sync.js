@@ -24,7 +24,7 @@ async function quickSync() {
     console.log('✅ Connected to MongoDB');
     
     // Test API endpoints by making direct HTTP requests
-    const baseUrl = 'http://localhost:8080';
+    const baseUrl = 'http://localhost:3002';
     
     // Test data sync endpoint
     console.log('\n🔄 Running data sync...');
@@ -74,9 +74,9 @@ async function quickSync() {
     
     console.log('\n✅ Quick sync and test completed!');
     console.log('\n💡 Tips:');
-    console.log('   1. Check the dashboard at http://localhost:8080/dashboard');
+    console.log('   1. Check the dashboard at http://localhost:3002/dashboard');
     console.log('   2. Try different date filters to see if data appears');
-    console.log('   3. Check data management at http://localhost:8080/data-management');
+    console.log('   3. Check data management at http://localhost:3002/data-management');
     
   } catch (error) {
     console.error('❌ Error:', error.message);
