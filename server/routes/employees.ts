@@ -11,8 +11,8 @@ import { Employee as EmployeeModel, IEmployee, TrackingSession } from "../models
 
 // Configuration
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache added
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse";
+const GEOCACHE_TTL = 60 * 60 * 1000; // 1 hour cache TTL
 
 // Types
 interface EmployeeStatus {
@@ -108,7 +108,7 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
     // Cache the result
     geocodeCache.set(cacheKey, {
       address,
-      expires: Date.now() + CACHE_TTL
+      expires: Date.now() + GEOCACHE_TTL
     });
 
     return address;
