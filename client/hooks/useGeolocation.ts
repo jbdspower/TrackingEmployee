@@ -39,6 +39,7 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
       error: null,
       loading: false,
     });
+    return position;
   }, []);
 
   const handleError = useCallback((error: GeolocationPositionError) => {
@@ -61,24 +62,32 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
       error: errorMessage,
       loading: false,
     }));
+    return null;
   }, []);
 
   const getCurrentPosition = useCallback(() => {
-    if (!navigator.geolocation) {
-      setState((prev) => ({
-        ...prev,
-        error: "Geolocation is not supported by this browser",
-        loading: false,
-      }));
-      return;
-    }
+    return new Promise<GeolocationPosition | null>((resolve) => {
+      if (!navigator.geolocation) {
+        setState((prev) => ({
+          ...prev,
+          error: "Geolocation is not supported by this browser",
+          loading: false,
+        }));
+        resolve(null);
+        return;
+      }
 
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+      setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    navigator.geolocation.getCurrentPosition(updatePosition, handleError, {
-      enableHighAccuracy,
-      maximumAge,
-      timeout,
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(updatePosition(position)),
+        (error) => resolve(handleError(error)),
+        {
+          enableHighAccuracy,
+          maximumAge,
+          timeout,
+        }
+      );
     });
   }, [enableHighAccuracy, maximumAge, timeout, updatePosition, handleError]);
 
