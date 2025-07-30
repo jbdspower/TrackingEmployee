@@ -1,5 +1,5 @@
 import { RequestHandler } from "express";
-import axios from "axios"
+import axios from 'axios';
 import {
   Employee,
   ExternalUser,
