@@ -155,6 +155,7 @@ export default function Index() {
   const activeEmployees = employees.filter(
     (emp) => emp.status === "active" || emp.status === "meeting",
   );
+  console.log("employee list", activeEmployees)
   const totalEmployees = employees.length;
 
   return (

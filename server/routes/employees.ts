@@ -1,4 +1,5 @@
 import { RequestHandler } from "express";
+import axios from "axios"
 import {
   Employee,
   ExternalUser,
@@ -8,10 +9,12 @@ import {
 } from "@shared/api";
 import { Employee as EmployeeModel, IEmployee, TrackingSession } from "../models";
 
-// External API URL
+// Configuration
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
 
-// In-memory storage for employee statuses and locations (since external API doesn't provide these)
+// Types
 interface EmployeeStatus {
   status: "active" | "inactive" | "meeting";
   location: {
@@ -24,82 +27,186 @@ interface EmployeeStatus {
   currentTask?: string;
 }
 
-let employeeStatuses: Record<string, EmployeeStatus> = {};
-
-// Real coordinate-based address formatting (no hardcoded cities)
-function getAddressFromCoordinates(lat: number, lng: number): string {
-  // Return precise coordinates without mapping to hardcoded cities
-  return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+interface GeocodeCacheItem {
+  address: string;
+  expires: number;
 }
 
-// Removed hardcoded city mapping - now using real coordinates only
+// State
+let employeeStatuses: Record<string, EmployeeStatus> = {};
+const geocodeCache = new Map<string, { address: string; expires: number }>();
 
-// No default location - employees without tracking data will show "Location not available"
+// Utility Functions
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  if (lat === 0 && lng === 0) return "Location not available";
 
-// Function to get the latest real location for an employee
+  const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const cached = geocodeCache.get(cacheKey);
+  
+  if (cached && cached.expires > Date.now()) {
+    return cached.address;
+  }
+
+  try {
+    const response = await axios.get(NOMINATIM_URL, {
+      params: {
+        format: 'json',
+        lat,
+        lon: lng,
+        zoom: 18,
+        addressdetails: 1
+      },
+      headers: {
+        'User-Agent': 'FieldTracker/1.0 (contact@yourdomain.com)'
+      },
+      timeout: 5000
+    });
+
+    const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    
+    geocodeCache.set(cacheKey, {
+      address,
+      expires: Date.now() + GEOCACHE_TTL
+    });
+
+    return address;
+  } catch (error) {
+    console.error('Geocoding failed:', error);
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+}
+
+// Replace your getAddressFromCoordinates function with this:
+async function getAddressFromCoordinates(lat: number, lng: number): Promise<string> {
+  if (lat === 0 && lng === 0) return "Location not available";
+
+  const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const cached = geocodeCache.get(cacheKey);
+  
+  // Return cached address if available and not expired
+  if (cached && cached.expires > Date.now()) {
+    return cached.address;
+  }
+
+  try {
+    const response = await axios.get(NOMINATIM_URL, {
+      params: {
+        format: 'json',
+        lat,
+        lon: lng,
+        zoom: 18,
+        addressdetails: 1
+      },
+      headers: {
+        'User-Agent': 'YourAppName/1.0 (your@email.com)' // Required by Nominatim
+      },
+      timeout: 5000
+    });
+
+    const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    
+    // Cache the result
+    geocodeCache.set(cacheKey, {
+      address,
+      expires: Date.now() + CACHE_TTL
+    });
+
+    return address;
+  } catch (error) {
+    console.error('Reverse geocoding failed:', error);
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+}
+
 async function getEmployeeLatestLocation(employeeId: string) {
   try {
-    console.log(`Looking up real location data for employee ${employeeId}...`);
-
-    // First, try to get the latest location from the Employee model (most recent update)
+    // First try Employee model
     const employee = await EmployeeModel.findOne({ id: employeeId }).lean();
-    if (employee && employee.location && employee.location.lat && employee.location.lng &&
-        employee.location.lat !== 0 && employee.location.lng !== 0) {
-      console.log(`✓ Found stored location for employee ${employeeId}: ${employee.location.lat}, ${employee.location.lng}`);
+    if (employee?.location?.lat && employee.location.lng !== 0) {
+      const address = employee.location.address?.includes(',') 
+        ? await getAddressFromCoordinates(employee.location.lat, employee.location.lng)
+        : employee.location.address || await getAddressFromCoordinates(employee.location.lat, employee.location.lng);
+      
       return {
         lat: employee.location.lat,
         lng: employee.location.lng,
-        address: employee.location.address || `${employee.location.lat.toFixed(6)}, ${employee.location.lng.toFixed(6)}`,
+        address,
         timestamp: employee.location.timestamp,
         lastUpdate: employee.lastUpdate || "Recently updated"
       };
     }
 
-    // Fallback: Try to get the latest location from tracking sessions
+    // Fallback to tracking sessions
     const latestSession = await TrackingSession.findOne({
       employeeId,
-      $or: [
-        { status: 'active' },
-        { status: 'completed' }
-      ]
-    })
-    .sort({ startTime: -1 })
-    .lean();
+      $or: [{ status: 'active' }, { status: 'completed' }]
+    }).sort({ startTime: -1 }).lean();
 
     if (latestSession) {
-      // Use the latest route point if available, otherwise use start location
-      const latestLocation = latestSession.route && latestSession.route.length > 0
+      const latestLocation = latestSession.route?.length 
         ? latestSession.route[latestSession.route.length - 1]
         : latestSession.startLocation;
 
       if (latestLocation.lat !== 0 && latestLocation.lng !== 0) {
-        console.log(`✓ Found tracking session location for employee ${employeeId}: ${latestLocation.lat}, ${latestLocation.lng}`);
+        const address = latestLocation.address?.includes(',')
+          ? await getAddressFromCoordinates(latestLocation.lat, latestLocation.lng)
+          : latestLocation.address || await getAddressFromCoordinates(latestLocation.lat, latestLocation.lng);
+        
         return {
           lat: latestLocation.lat,
           lng: latestLocation.lng,
-          address: latestLocation.address || `${latestLocation.lat.toFixed(6)}, ${latestLocation.lng.toFixed(6)}`,
+          address,
           timestamp: latestLocation.timestamp,
-          lastUpdate: latestSession.status === 'active' ? "Currently tracking" : "From last session"
+          lastUpdate: latestSession.status === 'active' 
+            ? "Currently tracking" 
+            : "From last session"
         };
       }
     }
 
-    console.log(`✗ No real location found for employee ${employeeId} - employee will show as location unavailable`);
     return null;
   } catch (error) {
-    console.error(`Error fetching location for employee ${employeeId}:`, error);
+    console.error(`Location lookup failed for ${employeeId}:`, error);
     return null;
   }
 }
 
-// Function to map external user to internal employee structure
-async function mapExternalUserToEmployee(
-  user: ExternalUser,
-  index: number,
-): Promise<Employee> {
-  const userId = user._id;
+export const clearGeocodeCache: RequestHandler = async (req, res) => {
+  try {
+    geocodeCache.clear();
+    res.json({ success: true, message: "Geocode cache cleared" });
+  } catch (error) {
+    console.error("Error clearing cache:", error);
+    res.status(500).json({ error: "Failed to clear cache" });
+  }
+};
 
-  // Try to get real location data first
+async function fetchExternalUsers(): Promise<ExternalUser[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(EXTERNAL_API_URL, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" }
+    });
+
+    clearTimeout(timeout);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error("External API fetch failed:", error);
+    return [];
+  }
+}
+
+async function mapExternalUserToEmployee(user: ExternalUser, index: number): Promise<Employee> {
+  const userId = user._id;
   const realLocation = await getEmployeeLatestLocation(userId);
 
   // Initialize or update status
@@ -110,27 +217,19 @@ async function mapExternalUserToEmployee(
         lat: 0,
         lng: 0,
         address: "Location not available",
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       },
       lastUpdate: realLocation?.lastUpdate || "Location not tracked",
-      currentTask:
-        index === 0
-          ? "Client meeting"
-          : index === 1
-            ? "Equipment installation"
-            : undefined,
+      currentTask: index === 0 ? "Client meeting" : index === 1 ? "Equipment installation" : undefined
     };
-  } else {
-    // Update with real location if available
-    if (realLocation) {
-      employeeStatuses[userId].location = {
-        lat: realLocation.lat,
-        lng: realLocation.lng,
-        address: realLocation.address,
-        timestamp: realLocation.timestamp,
-      };
-      employeeStatuses[userId].lastUpdate = realLocation.lastUpdate;
-    }
+  } else if (realLocation) {
+    employeeStatuses[userId].location = {
+      lat: realLocation.lat,
+      lng: realLocation.lng,
+      address: realLocation.address,
+      timestamp: realLocation.timestamp
+    };
+    employeeStatuses[userId].lastUpdate = realLocation.lastUpdate;
   }
 
   const status = employeeStatuses[userId];
@@ -148,136 +247,50 @@ async function mapExternalUserToEmployee(
     designation: user.designation,
     department: user.department,
     companyName: user.companyName[0]?.companyName,
-    reportTo: user.report?.name,
+    reportTo: user.report?.name
   };
 }
 
-// Function to fetch users from external API
-async function fetchExternalUsers(): Promise<ExternalUser[]> {
-  try {
-    console.log("Fetching users from external API:", EXTERNAL_API_URL);
-
-    // Add timeout to external API call
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-    const response = await fetch(EXTERNAL_API_URL, {
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Employee-Tracker/1.0",
-      },
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP error! status: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const users = (await response.json()) as ExternalUser[];
-    console.log("External API response:", {
-      count: users.length,
-      sample: users[0],
-    });
-    return Array.isArray(users) ? users : [];
-  } catch (error) {
-    console.error("Error fetching external users:", error);
-
-    // Check if it's a timeout or abort error
-    if (error instanceof Error) {
-      if (error.name === "AbortError") {
-        console.error("External API request timed out after 30 seconds");
-      } else if (error.message.includes("fetch")) {
-        console.error("Network error connecting to external API");
-      }
-    }
-
-    // Return empty array if API fails
-    return [];
-  }
-}
-
+// API Handlers
 export const getEmployees: RequestHandler = async (req, res) => {
   try {
-    // Clear any cached hardcoded locations on each request to ensure fresh real data
-    const clearCache = req.query.clearCache === 'true';
-    if (clearCache) {
+    if (req.query.clearCache === 'true') {
       employeeStatuses = {};
-      console.log("Cache cleared - will fetch fresh real location data for all employees");
+      geocodeCache.clear();
     }
 
-    // Try to fetch from external API and sync with MongoDB
     const externalUsers = await fetchExternalUsers();
-
     if (externalUsers.length > 0) {
-      console.log(`Mapping ${externalUsers.length} employees with real location data...`);
       const employees = await Promise.all(
-        externalUsers.map((user, index) =>
-          mapExternalUserToEmployee(user, index)
-        )
+        externalUsers.map((user, index) => mapExternalUserToEmployee(user, index))
       );
 
-      // Count employees with real vs default locations
-      const realLocationCount = employees.filter(emp =>
-        emp.location.address !== "Location not available"
-      ).length;
-      console.log(`${realLocationCount}/${employees.length} employees have real location data`);
-
-      // Try to sync with MongoDB (upsert)
+      // Sync to MongoDB
       try {
-        const syncPromises = employees.map(async (employee) => {
-          await EmployeeModel.findOneAndUpdate(
+        await Promise.all(employees.map(employee => 
+          EmployeeModel.findOneAndUpdate(
             { id: employee.id },
             employee,
-            {
-              upsert: true,
-              new: true,
-              runValidators: true
-            }
-          );
-        });
-        await Promise.all(syncPromises);
-        console.log(`Synced ${employees.length} employees with real location data to MongoDB`);
+            { upsert: true, new: true }
+          )
+        ));
       } catch (dbError) {
-        console.warn("Failed to sync employees to MongoDB:", dbError);
+        console.warn("MongoDB sync failed:", dbError);
       }
 
-      const response: EmployeesResponse = {
-        employees,
-        total: employees.length,
-      };
-      res.json(response);
-      return;
+      return res.json({ employees, total: employees.length });
     }
 
-    // Fallback to MongoDB if external API fails
+    // Fallback to MongoDB
     try {
-      console.log("External API failed, falling back to MongoDB");
       const mongoEmployees = await EmployeeModel.find({}).lean();
-
-      const response: EmployeesResponse = {
-        employees: mongoEmployees,
-        total: mongoEmployees.length,
-      };
-
-      console.log(`Found ${mongoEmployees.length} employees in MongoDB`);
-      res.json(response);
-      return;
+      return res.json({ employees: mongoEmployees, total: mongoEmployees.length });
     } catch (dbError) {
       console.warn("MongoDB fallback failed:", dbError);
+      return res.json({ employees: [], total: 0 });
     }
-
-    // Final fallback - empty response
-    const response: EmployeesResponse = {
-      employees: [],
-      total: 0,
-    };
-    res.json(response);
   } catch (error) {
-    console.error("Error fetching employees:", error);
+    console.error("Employee fetch failed:", error);
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 };
@@ -285,53 +298,38 @@ export const getEmployees: RequestHandler = async (req, res) => {
 export const getEmployee: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Try external API first
     const externalUsers = await fetchExternalUsers();
+    
     if (externalUsers.length > 0) {
-      const userIndex = externalUsers.findIndex((user) => user._id === id);
-
-      if (userIndex !== -1) {
-        const employee = await mapExternalUserToEmployee(
-          externalUsers[userIndex],
-          userIndex,
-        );
-
-        // Try to sync this employee to MongoDB
+      const user = externalUsers.find(u => u._id === id);
+      if (user) {
+        const employee = await mapExternalUserToEmployee(user, externalUsers.indexOf(user));
+        
         try {
           await EmployeeModel.findOneAndUpdate(
-            { id: employee.id },
+            { id },
             employee,
-            {
-              upsert: true,
-              new: true,
-              runValidators: true
-            }
+            { upsert: true, new: true }
           );
         } catch (dbError) {
-          console.warn("Failed to sync employee to MongoDB:", dbError);
+          console.warn("MongoDB update failed:", dbError);
         }
-
-        res.json(employee);
-        return;
+        
+        return res.json(employee);
       }
     }
 
     // Fallback to MongoDB
     try {
-      const mongoEmployee = await EmployeeModel.findOne({ id }).lean();
-      if (mongoEmployee) {
-        console.log("Employee found in MongoDB:", mongoEmployee.id);
-        res.json(mongoEmployee);
-        return;
-      }
+      const employee = await EmployeeModel.findOne({ id }).lean();
+      if (employee) return res.json(employee);
     } catch (dbError) {
       console.warn("MongoDB query failed:", dbError);
     }
 
     return res.status(404).json({ error: "Employee not found" });
   } catch (error) {
-    console.error("Error fetching employee:", error);
+    console.error("Employee fetch failed:", error);
     res.status(500).json({ error: "Failed to fetch employee" });
   }
 };
@@ -339,80 +337,53 @@ export const getEmployee: RequestHandler = async (req, res) => {
 export const updateEmployeeLocation: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { lat, lng, accuracy } = req.body;
+    const { lat, lng } = req.body;
 
-    // Get formatted address from coordinates
-    const address = getAddressFromCoordinates(lat, lng);
-    console.log(`Generated address: ${address}`);
-
+    // Get human-readable address
+    const address = await getAddressFromCoordinates(lat, lng);
+    
     const locationUpdate = {
       location: {
         lat,
         lng,
-        address,
-        timestamp: new Date().toISOString(),
+        address, // Now contains human-readable address
+        timestamp: new Date().toISOString()
       },
       lastUpdate: "Just now",
-      status: "active", // Update status to active when location is updated
+      status: "active"
     };
 
-    // Try to update in MongoDB first
+    // Rest of your existing implementation...
     try {
       const updatedEmployee = await EmployeeModel.findOneAndUpdate(
         { id },
         { $set: locationUpdate },
-        { new: true, runValidators: true }
+        { new: true }
       );
 
       if (updatedEmployee) {
-        console.log("Employee location updated in MongoDB:", updatedEmployee.id);
-        const response: LocationUpdateResponse = {
-          success: true,
-          employee: updatedEmployee,
-        };
-        res.json(response);
-        return;
+        return res.json({ success: true, employee: updatedEmployee });
       }
     } catch (dbError) {
-      console.warn("MongoDB update failed, falling back to external API:", dbError);
+      console.warn("MongoDB update failed:", dbError);
     }
 
-    // Fallback to external API + in-memory
+    // Fallback to in-memory
     const externalUsers = await fetchExternalUsers();
-    const userIndex = externalUsers.findIndex((user) => user._id === id);
+    const userIndex = externalUsers.findIndex(user => user._id === id);
 
     if (userIndex === -1) {
       return res.status(404).json({ error: "Employee not found" });
     }
 
-    // Update local status
-    if (!employeeStatuses[id]) {
-      employeeStatuses[id] = {
-        status: "active",
-        location: { lat, lng, address, timestamp: new Date().toISOString() },
-        lastUpdate: "Just now",
-      };
-    } else {
-      employeeStatuses[id] = {
-        ...employeeStatuses[id],
-        ...locationUpdate,
-      };
-    }
+    employeeStatuses[id] = employeeStatuses[id] 
+      ? { ...employeeStatuses[id], ...locationUpdate }
+      : { ...locationUpdate, status: "active", currentTask: undefined };
 
-    const employee = await mapExternalUserToEmployee(
-      externalUsers[userIndex],
-      userIndex,
-    );
-
-    const response: LocationUpdateResponse = {
-      success: true,
-      employee,
-    };
-
-    console.log("Employee location updated in memory:", employee.id);
-    res.json(response);
+    const employee = await mapExternalUserToEmployee(externalUsers[userIndex], userIndex);
+    res.json({ success: true, employee });
   } catch (error) {
-    console.error("Error updating employee location:", error);
+    console.error("Error updating location:", error);
     res.status(500).json({ error: "Failed to update location" });
   }
 };
@@ -421,154 +392,97 @@ export const updateEmployeeStatus: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, currentTask } = req.body;
+    const update = { status, currentTask, lastUpdate: "Just now" };
 
-    const statusUpdate = {
-      status,
-      currentTask: currentTask || undefined,
-      lastUpdate: "Just now",
-    };
-
-    // Try to update in MongoDB first
     try {
-      const updatedEmployee = await EmployeeModel.findOneAndUpdate(
+      const employee = await EmployeeModel.findOneAndUpdate(
         { id },
-        { $set: statusUpdate },
-        { new: true, runValidators: true }
+        { $set: update },
+        { new: true }
       );
-
-      if (updatedEmployee) {
-        console.log("Employee status updated in MongoDB:", updatedEmployee.id);
-        res.json(updatedEmployee);
-        return;
-      }
+      
+      if (employee) return res.json(employee);
     } catch (dbError) {
-      console.warn("MongoDB update failed, falling back to external API:", dbError);
+      console.warn("MongoDB update failed:", dbError);
     }
 
-    // Fallback to external API + in-memory
+    // Fallback to in-memory
     const externalUsers = await fetchExternalUsers();
-    const userIndex = externalUsers.findIndex((user) => user._id === id);
+    const user = externalUsers.find(u => u._id === id);
+    
+    if (!user) return res.status(404).json({ error: "Employee not found" });
 
-    if (userIndex === -1) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
-
-    // Update local status
     if (!employeeStatuses[id]) {
-      const realLocation = await getEmployeeLatestLocation(id);
+      const location = await getEmployeeLatestLocation(id);
       employeeStatuses[id] = {
         status: "active",
-        location: realLocation || {
+        location: location || {
           lat: 0,
           lng: 0,
           address: "Location not available",
-          timestamp: new Date().toISOString(),
+          timestamp: new Date().toISOString()
         },
-        lastUpdate: realLocation?.lastUpdate || "Location not tracked",
+        lastUpdate: location?.lastUpdate || "Location not tracked"
       };
     }
 
-    employeeStatuses[id] = {
-      ...employeeStatuses[id],
-      ...statusUpdate,
-    };
-
-    const employee = await mapExternalUserToEmployee(
-      externalUsers[userIndex],
-      userIndex,
-    );
-
-    console.log("Employee status updated in memory:", employee.id);
+    employeeStatuses[id] = { ...employeeStatuses[id], ...update };
+    const employee = await mapExternalUserToEmployee(user, externalUsers.indexOf(user));
     res.json(employee);
   } catch (error) {
-    console.error("Error updating employee status:", error);
+    console.error("Status update failed:", error);
     res.status(500).json({ error: "Failed to update status" });
   }
 };
 
-export const createEmployee: RequestHandler = (req, res) => {
-  // Since we're using external API, employee creation should be handled there
-  res
-    .status(501)
-    .json({ error: "Employee creation should be handled by the external API" });
-};
-
-export const updateEmployee: RequestHandler = (req, res) => {
-  // Since we're using external API, employee updates should be handled there
-  res
-    .status(501)
-    .json({ error: "Employee updates should be handled by the external API" });
-};
-
-export const deleteEmployee: RequestHandler = (req, res) => {
-  // Since we're using external API, employee deletion should be handled there
-  res
-    .status(501)
-    .json({ error: "Employee deletion should be handled by the external API" });
-};
-
 export const clearLocationCache: RequestHandler = async (req, res) => {
   try {
-    // Clear all cached location data
     employeeStatuses = {};
-    console.log("Employee location cache cleared - next request will fetch fresh real location data");
-
-    res.json({
-      success: true,
-      message: "Location cache cleared successfully. Next employee fetch will use fresh real location data.",
-    });
+    geocodeCache.clear();
+    res.json({ success: true, message: "Cache cleared successfully" });
   } catch (error) {
-    console.error("Error clearing location cache:", error);
-    res.status(500).json({ error: "Failed to clear location cache" });
+    console.error("Cache clear failed:", error);
+    res.status(500).json({ error: "Failed to clear cache" });
   }
 };
 
 export const refreshEmployeeLocations: RequestHandler = async (req, res) => {
   try {
-    console.log("Refreshing all employee locations with real tracking data");
-
-    // Clear existing location statuses to remove any hardcoded data
     employeeStatuses = {};
-    console.log("Cleared all cached employee statuses to force real location lookup");
-
-    // Get fresh data from external API
     const externalUsers = await fetchExternalUsers();
-
-    // Re-initialize with real locations
     const employees = await Promise.all(
-      externalUsers.map((user, index) =>
-        mapExternalUserToEmployee(user, index)
-      )
+      externalUsers.map((user, index) => mapExternalUserToEmployee(user, index))
     );
 
-    // Try to sync all employees to MongoDB
     try {
-      const syncPromises = employees.map(async (employee) => {
-        await EmployeeModel.findOneAndUpdate(
+      await Promise.all(employees.map(employee =>
+        EmployeeModel.findOneAndUpdate(
           { id: employee.id },
           employee,
-          {
-            upsert: true,
-            new: true,
-            runValidators: true
-          }
-        );
-      });
-      await Promise.all(syncPromises);
-      console.log(`Synced ${employees.length} refreshed employees to MongoDB`);
+          { upsert: true, new: true }
+        )
+      ));
     } catch (dbError) {
-      console.warn("Failed to sync refreshed employees to MongoDB:", dbError);
+      console.warn("MongoDB sync failed:", dbError);
     }
-
-    console.log(`Refreshed locations for ${employees.length} employees`);
 
     res.json({
       success: true,
-      message: `Successfully refreshed locations for ${employees.length} employees with real tracking data`,
-      employees,
+      message: `Refreshed ${employees.length} employees`,
+      employees
     });
   } catch (error) {
-    console.error("Error refreshing employee locations:", error);
-    res.status(500).json({ error: "Failed to refresh employee locations" });
+    console.error("Refresh failed:", error);
+    res.status(500).json({ error: "Failed to refresh locations" });
   }
 };
+
+// Placeholder handlers
+export const createEmployee: RequestHandler = (req, res) => 
+  res.status(501).json({ error: "Use external API for creation" });
+
+export const updateEmployee: RequestHandler = (req, res) => 
+  res.status(501).json({ error: "Use external API for updates" });
+
+export const deleteEmployee: RequestHandler = (req, res) => 
+  res.status(501).json({ error: "Use external API for deletion" });
