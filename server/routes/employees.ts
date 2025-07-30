@@ -12,7 +12,7 @@ import { Employee as EmployeeModel, IEmployee, TrackingSession } from "../models
 // Configuration
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache added
 
 // Types
 interface EmployeeStatus {
