@@ -114,7 +114,7 @@ export function EmployeeMap({
 
         marker.bindPopup(`
           <div style="min-width: 200px;">
-            <h3 style="margin: 0 0 8px 0; font-weight: bold;">${employee.name}</h3>
+            <h3 style="margin: 0 0 8px 0; font-weight: bold;">${employee.name || 'Unknown Employee'}</h3>
             <p style="margin: 0 0 4px 0; color: #666;">
               <span style="
                 display: inline-block;
@@ -125,9 +125,9 @@ export function EmployeeMap({
                 color: white;
               ">${employee.status === "active" ? "On Route" : employee.status === "meeting" ? "In Meeting" : "Offline"}</span>
             </p>
-            <p style="margin: 0 0 4px 0; font-size: 14px;">${employee.location.address}</p>
+            <p style="margin: 0 0 4px 0; font-size: 14px;">${employee.location?.address || 'Location not available'}</p>
             ${employee.currentTask ? `<p style="margin: 0 0 4px 0; font-size: 12px; font-style: italic;">${employee.currentTask}</p>` : ""}
-            <p style="margin: 0; font-size: 12px; color: #888;">Updated ${employee.lastUpdate}</p>
+            <p style="margin: 0; font-size: 12px; color: #888;">Updated ${employee.lastUpdate || employee.lastSeen || 'Never'}</p>
           </div>
         `);
 
