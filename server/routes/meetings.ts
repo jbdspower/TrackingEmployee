@@ -330,6 +330,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
           trackingSessionId: meetingData.trackingSessionId,
           customers: meetingData.customers || [],
           customerName: meetingData.customerName || meetingData.clientName || "",
+          clientName: meetingData.customerName || meetingData.clientName || "",
           customerEmployeeName: meetingData.customerEmployeeName || "",
           customerEmail: meetingData.customerEmail || "",
           customerMobile: meetingData.customerMobile || "",
