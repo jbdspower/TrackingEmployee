@@ -180,6 +180,16 @@ export function LocationTracker({
               longitude,
             );
             setTotalDistance((prev) => prev + distance);
+
+            // Update tracking session route on server if we have an active session
+            if (currentSession) {
+              HttpClient.put(
+                `/api/tracking-sessions/${currentSession.id}/location`,
+                { location: newLocation }
+              ).catch(error => {
+                console.warn('Failed to update route on server:', error);
+              });
+            }
           }
 
           return newRoute;
@@ -280,30 +290,72 @@ export function LocationTracker({
     // Get initial position
     getCurrentPosition();
 
-    // Create tracking session
+    // Create tracking session on server
     if (latitude && longitude) {
-      const sessionId = `session_${employeeId}_${now.getTime()}`;
-      const session: TrackingSession = {
-        id: sessionId,
-        employeeId,
-        startTime: now.toISOString(),
-        startLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: [],
-        totalDistance: 0,
-        status: "active",
-      };
+      try {
+        const sessionData = {
+          employeeId,
+          startLocation: {
+            lat: latitude,
+            lng: longitude,
+            address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+            timestamp: now.toISOString(),
+          },
+        };
 
-      setCurrentSession(session);
-      onTrackingSessionStart?.(session);
+        const response = await HttpClient.post('/api/tracking-sessions', sessionData);
+
+        if (response.ok) {
+          const session = await response.json();
+          console.log('Tracking session created on server:', session);
+          setCurrentSession(session);
+          onTrackingSessionStart?.(session);
+        } else {
+          console.error('Failed to create tracking session on server');
+          // Create local session as fallback
+          const sessionId = `session_${employeeId}_${now.getTime()}`;
+          const fallbackSession: TrackingSession = {
+            id: sessionId,
+            employeeId,
+            startTime: now.toISOString(),
+            startLocation: {
+              lat: latitude,
+              lng: longitude,
+              address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+              timestamp: now.toISOString(),
+            },
+            route: [],
+            totalDistance: 0,
+            status: "active",
+          };
+          setCurrentSession(fallbackSession);
+          onTrackingSessionStart?.(fallbackSession);
+        }
+      } catch (error) {
+        console.error('Error creating tracking session:', error);
+        // Create local session as fallback
+        const sessionId = `session_${employeeId}_${now.getTime()}`;
+        const fallbackSession: TrackingSession = {
+          id: sessionId,
+          employeeId,
+          startTime: now.toISOString(),
+          startLocation: {
+            lat: latitude,
+            lng: longitude,
+            address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+            timestamp: now.toISOString(),
+          },
+          route: [],
+          totalDistance: 0,
+          status: "active",
+        };
+        setCurrentSession(fallbackSession);
+        onTrackingSessionStart?.(fallbackSession);
+      }
     }
   };
 
-  const handleStopTracking = () => {
+  const handleStopTracking = async () => {
     const now = new Date();
     setTrackingEndTime(now);
     setIsTracking(false);
@@ -313,7 +365,7 @@ export function LocationTracker({
       timerRef.current = null;
     }
 
-    // Update current session
+    // Update current session on server
     if (currentSession && latitude && longitude) {
       const updatedSession: TrackingSession = {
         ...currentSession,
@@ -330,8 +382,38 @@ export function LocationTracker({
         status: "completed",
       };
 
-      setCurrentSession(updatedSession);
-      onTrackingSessionEnd?.(updatedSession);
+      try {
+        const response = await HttpClient.put(
+          `/api/tracking-sessions/${currentSession.id}`,
+          {
+            status: "completed",
+            endTime: now.toISOString(),
+            endLocation: {
+              lat: latitude,
+              lng: longitude,
+              address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+              timestamp: now.toISOString(),
+            },
+            route: routeCoordinates,
+            totalDistance,
+          }
+        );
+
+        if (response.ok) {
+          const serverSession = await response.json();
+          console.log('Tracking session ended on server:', serverSession);
+          setCurrentSession(serverSession);
+          onTrackingSessionEnd?.(serverSession);
+        } else {
+          console.error('Failed to end tracking session on server');
+          setCurrentSession(updatedSession);
+          onTrackingSessionEnd?.(updatedSession);
+        }
+      } catch (error) {
+        console.error('Error ending tracking session:', error);
+        setCurrentSession(updatedSession);
+        onTrackingSessionEnd?.(updatedSession);
+      }
     }
   };
 
