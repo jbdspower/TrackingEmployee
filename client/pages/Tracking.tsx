@@ -891,7 +891,7 @@ export default function Tracking() {
 
       {/* Meeting History Modal */}
       <MeetingHistory
-        employeeId={employeeId}
+        employeeId={employeeId || ""}
         isOpen={isMeetingHistoryOpen}
         onClose={() => setIsMeetingHistoryOpen(false)}
       />
