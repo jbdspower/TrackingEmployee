@@ -26,6 +26,8 @@ import {
   Calendar,
   Plus,
   MessageSquare,
+  Camera,
+  History,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
