@@ -35,6 +35,8 @@ interface GeocodeCacheItem {
 // State
 let employeeStatuses: Record<string, EmployeeStatus> = {};
 const geocodeCache = new Map<string, { address: string; expires: number }>();
+const lastGeocodingRequest = { timestamp: 0 };
+const GEOCODING_RATE_LIMIT = 1000; // Minimum 1 second between requests
 
 // Utility Functions
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
