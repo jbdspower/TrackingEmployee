@@ -128,8 +128,11 @@ export default function Tracking() {
     try {
       console.log("Fetching meetings:", { employeeId, retryCount });
 
-      if (!employeeId) {
-        console.error("Employee ID is undefined - cannot fetch meetings data");
+      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
+        console.error("Employee ID is invalid - cannot fetch meetings data:", {
+          employeeId,
+          type: typeof employeeId
+        });
         setMeetings([]);
         return;
       }
