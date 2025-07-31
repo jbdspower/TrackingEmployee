@@ -48,6 +48,16 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
   const location = meeting.location;
   const address = await reverseGeocode(location.lat, location.lng);
 
+  // Handle end location if it exists
+  let endLocation = undefined;
+  if (meeting.endLocation) {
+    const endAddress = await reverseGeocode(meeting.endLocation.lat, meeting.endLocation.lng);
+    endLocation = {
+      ...meeting.endLocation,
+      address: endAddress
+    };
+  }
+
   return {
     id: meeting._id.toString(),
     employeeId: meeting.employeeId,
@@ -55,6 +65,7 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
       ...location,
       address // Use the geocoded address
     },
+    endLocation,
     startTime: meeting.startTime,
     endTime: meeting.endTime,
     clientName: meeting.clientName,
