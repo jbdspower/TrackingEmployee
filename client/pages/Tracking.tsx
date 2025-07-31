@@ -43,8 +43,11 @@ export default function Tracking() {
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
 
   useEffect(() => {
-    if (!employeeId) {
-      console.log("No employeeId provided, redirecting to home");
+    if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
+      console.log("Invalid or missing employeeId, redirecting to home:", {
+        employeeId,
+        type: typeof employeeId
+      });
       setLoading(false);
       navigate("/");
       return;
