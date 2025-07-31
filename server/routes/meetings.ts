@@ -249,7 +249,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
       employeeId: meetingData.employeeId,
       location: meetingData.location,
       startTime: meetingData.startTime,
-      endTime: meetingData.endTime,
+      endTime: undefined, // New meetings don't have an end time yet
       clientName: meetingData.clientName,
       notes: meetingData.notes,
       status: meetingData.status,
