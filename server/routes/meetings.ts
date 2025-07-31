@@ -117,17 +117,48 @@ export const getMeetings: RequestHandler = async (req, res) => {
       res.json(response);
       return;
     } catch (dbError) {
-      console.error("MongoDB query failed:", dbError);
-
-      // Return fallback response when database is not available
-      const fallbackResponse: MeetingLogsResponse = {
-        meetings: [],
-        total: 0,
-      };
-
-      res.json(fallbackResponse);
-      return;
+      console.error("MongoDB query failed, falling back to in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    let filteredMeetings = inMemoryMeetings;
+
+    if (employeeId) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.employeeId === employeeId,
+      );
+    }
+
+    if (status) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.status === status,
+      );
+    }
+
+    if (startDate || endDate) {
+      filteredMeetings = filteredMeetings.filter((meeting) => {
+        const meetingDate = new Date(meeting.startTime);
+        if (startDate && meetingDate < new Date(startDate as string)) return false;
+        if (endDate && meetingDate > new Date(endDate as string)) return false;
+        return true;
+      });
+    }
+
+    filteredMeetings.sort(
+      (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+    );
+
+    if (limit) {
+      filteredMeetings = filteredMeetings.slice(0, parseInt(limit as string));
+    }
+
+    const fallbackResponse: MeetingLogsResponse = {
+      meetings: filteredMeetings,
+      total: filteredMeetings.length,
+    };
+
+    console.log(`Found ${filteredMeetings.length} meetings in memory`);
+    res.json(fallbackResponse);
   } catch (error) {
     console.error("Error fetching meetings:", error);
 
