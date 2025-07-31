@@ -187,9 +187,17 @@ export const getMeeting: RequestHandler = async (req, res) => {
       res.json(meetingLog);
       return;
     } catch (dbError) {
-      console.error("MongoDB query failed:", dbError);
-      return res.status(404).json({ error: "Meeting not found" });
+      console.error("MongoDB query failed, checking in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    const meeting = inMemoryMeetings.find((m) => m.id === id);
+    if (meeting) {
+      res.json(meeting);
+      return;
+    }
+
+    return res.status(404).json({ error: "Meeting not found" });
   } catch (error) {
     console.error("Error fetching meeting:", error);
     res.status(500).json({ error: "Failed to fetch meeting" });
