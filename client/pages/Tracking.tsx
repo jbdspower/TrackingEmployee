@@ -385,7 +385,7 @@ export default function Tracking() {
     setIsStartingMeeting(true);
     try {
       const response = await HttpClient.post("/api/meetings", {
-        employeeId: employee.id,
+        employeeId: employee._id || employee.id,
         location: {
           lat: employee.location.lat,
           lng: employee.location.lng,
