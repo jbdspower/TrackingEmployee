@@ -4,32 +4,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from './config/database.js';
 
-// Import routes
-import employeesRouter from './routes/employees.js';
-import meetingsRouter from './routes/meetings.js';
-import trackingRouter from './routes/tracking.js';
+// Import route modules
+import employeesModule from './routes/employees.js';
+import meetingsModule from './routes/meetings.js';
+import trackingModule from './routes/tracking.js';
 import analyticsModule from './routes/analytics.js';
 import dataSyncModule from './routes/data-sync.js';
 import debugModule from './routes/debug.js';
 import demoModule from './routes/demo.js';
-
-// Create express routers for the modules
-const analyticsRouter = express.Router();
-analyticsRouter.get('/employee-analytics', analyticsModule.getEmployeeAnalytics);
-analyticsRouter.get('/employee-details/:employeeId', analyticsModule.getEmployeeDetails);
-analyticsRouter.get('/lead-history/:leadId', analyticsModule.getLeadHistory);
-analyticsRouter.post('/attendance', analyticsModule.saveAttendance);
-analyticsRouter.get('/meeting-trends', analyticsModule.getMeetingTrends);
-
-const dataSyncRouter = express.Router();
-dataSyncRouter.post('/data-sync', dataSyncModule.syncAllData);
-dataSyncRouter.get('/data-status', dataSyncModule.getDataStatus);
-
-const debugRouter = express.Router();
-debugRouter.get('/employee/:employeeId', debugModule.debugEmployeeData);
-
-const demoRouter = express.Router();
-demoRouter.get('/demo', demoModule.handleDemo);
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -113,6 +95,46 @@ app.get('/api/db-status', async (req, res) => {
     });
   }
 });
+
+// Create express routers for all modules
+const employeesRouter = express.Router();
+employeesRouter.get('/', employeesModule.getEmployees);
+employeesRouter.get('/:id', employeesModule.getEmployee);
+employeesRouter.put('/:id/location', employeesModule.updateEmployeeLocation);
+employeesRouter.post('/sync', employeesModule.syncEmployees);
+employeesRouter.get('/:id/location-history', employeesModule.getEmployeeLocationHistory);
+
+const meetingsRouter = express.Router();
+meetingsRouter.get('/', meetingsModule.getMeetings);
+meetingsRouter.post('/', meetingsModule.createMeeting);
+meetingsRouter.get('/:id', meetingsModule.getMeetingById);
+meetingsRouter.put('/:id', meetingsModule.updateMeeting);
+meetingsRouter.delete('/:id', meetingsModule.deleteMeeting);
+
+const trackingRouter = express.Router();
+trackingRouter.get('/tracking-sessions', trackingModule.getTrackingSessions);
+trackingRouter.post('/tracking-sessions', trackingModule.createTrackingSession);
+trackingRouter.put('/tracking-sessions/:sessionId/location', trackingModule.updateTrackingSessionLocation);
+trackingRouter.put('/tracking-sessions/:sessionId/end', trackingModule.endTrackingSession);
+trackingRouter.get('/meeting-history', trackingModule.getMeetingHistory);
+trackingRouter.post('/meeting-history', trackingModule.addMeetingHistory);
+
+const analyticsRouter = express.Router();
+analyticsRouter.get('/employee-analytics', analyticsModule.getEmployeeAnalytics);
+analyticsRouter.get('/employee-details/:employeeId', analyticsModule.getEmployeeDetails);
+analyticsRouter.get('/lead-history/:leadId', analyticsModule.getLeadHistory);
+analyticsRouter.post('/attendance', analyticsModule.saveAttendance);
+analyticsRouter.get('/meeting-trends', analyticsModule.getMeetingTrends);
+
+const dataSyncRouter = express.Router();
+dataSyncRouter.post('/data-sync', dataSyncModule.syncAllData);
+dataSyncRouter.get('/data-status', dataSyncModule.getDataStatus);
+
+const debugRouter = express.Router();
+debugRouter.get('/employee/:employeeId', debugModule.debugEmployeeData);
+
+const demoRouter = express.Router();
+demoRouter.get('/demo', demoModule.handleDemo);
 
 // API routes with database dependency checking
 app.use('/api/employees', (req, res, next) => {
@@ -208,7 +230,7 @@ async function gracefulShutdown(signal: string) {
   const db = Database.getInstance();
   
   try {
-    console.log('��� Closing database connection...');
+    console.log('📦 Closing database connection...');
     await db.disconnect();
     console.log('✅ Database disconnected successfully');
   } catch (error) {
@@ -276,15 +298,15 @@ async function startServer() {
   }
 }
 
+// Export for vite.config.ts
+export function createServer() {
+  return app;
+}
+
 // Start the server
 startServer().catch((error) => {
   console.error('❌ Startup error:', error);
   process.exit(1);
 });
-
-// Export for vite.config.ts
-export function createServer() {
-  return app;
-}
 
 export { app, AppError };
