@@ -131,7 +131,7 @@ export const CustomerEmployeeSelector = forwardRef<
 
     useEffect(() => {
       fetchCustomers();
-    }, []);
+    }, [filterByCompany]);
 
     // Debug effect for tempEmployees changes
     useEffect(() => {
