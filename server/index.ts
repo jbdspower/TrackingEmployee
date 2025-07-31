@@ -44,6 +44,14 @@ import {
 import {
   debugEmployeeData,
 } from "./routes/debug";
+import {
+  getRouteSnapshots,
+  getRouteSnapshot,
+  createRouteSnapshot,
+  updateRouteSnapshot,
+  deleteRouteSnapshot,
+  getEmployeeSnapshots,
+} from "./routes/route-snapshots";
 
 export function createServer() {
   const app = express();
