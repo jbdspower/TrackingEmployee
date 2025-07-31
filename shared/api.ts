@@ -40,12 +40,15 @@ export interface Employee {
   status: "active" | "inactive" | "meeting";
   location: LocationData;
   lastUpdate: string;
+  lastSeen?: string;
   currentTask?: string;
   deviceId?: string;
   designation?: string;
   department?: string;
   companyName?: string;
   reportTo?: string;
+  trackingSessionId?: string;
+  isActive?: boolean;
 }
 
 export interface LocationUpdate {
