@@ -100,7 +100,8 @@ class Database {
         await new Promise(resolve => setTimeout(resolve, this.retryDelay));
         return this.connect();
       } else {
-        console.error('❌ Database: Max connection attempts reached. Operating in degraded mode.');
+        console.warn('�� Database: Max connection attempts reached. Operating in degraded mode with in-memory storage.');
+        console.log('ℹ️ Database: This is expected in demo/development environments without MongoDB setup.');
         throw error;
       }
     }
