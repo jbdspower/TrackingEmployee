@@ -114,11 +114,26 @@ export const getMeetings: RequestHandler = async (req, res) => {
       return;
     } catch (dbError) {
       console.error("MongoDB query failed:", dbError);
-      throw dbError; // Fall through to error handler
+
+      // Return fallback response when database is not available
+      const fallbackResponse: MeetingLogsResponse = {
+        meetings: [],
+        total: 0,
+      };
+
+      res.json(fallbackResponse);
+      return;
     }
   } catch (error) {
     console.error("Error fetching meetings:", error);
-    res.status(500).json({ error: "Failed to fetch meetings" });
+
+    // Always return a valid response structure, even on error
+    const errorResponse: MeetingLogsResponse = {
+      meetings: [],
+      total: 0,
+    };
+
+    res.status(500).json(errorResponse);
   }
 };
 
