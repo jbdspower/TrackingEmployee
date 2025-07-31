@@ -57,7 +57,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
         addressdetails: 1
       },
       headers: {
-        'User-Agent': 'FieldTracker/1.0 (contact@yourdomain.com)'
+        'User-Agent': 'EmployeeTracker/1.0 (+https://example.com/contact)',
+        'Accept-Language': 'en-US,en;q=0.9'
       },
       timeout: 5000
     });
@@ -98,7 +99,8 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
         addressdetails: 1
       },
       headers: {
-        'User-Agent': 'YourAppName/1.0 (your@email.com)' // Required by Nominatim
+        'User-Agent': 'EmployeeTracker/1.0 (+https://example.com/contact)',
+        'Accept-Language': 'en-US,en;q=0.9'
       },
       timeout: 5000
     });
