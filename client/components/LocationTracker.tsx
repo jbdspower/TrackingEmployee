@@ -237,7 +237,7 @@ export function LocationTracker({
   ) => {
     try {
       // Validate employeeId before making API call
-      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
+      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
         console.error("LocationTracker: Cannot update location - invalid employeeId:", {
           employeeId,
           type: typeof employeeId
