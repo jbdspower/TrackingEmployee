@@ -547,7 +547,7 @@ export default function Index() {
                     .slice(0, 3)
                     .map((employee, index) => (
                       <div
-                        key={employee.id}
+                        key={`activity-${employee._id || employee.id}-${index}`}
                         className="flex items-start space-x-3"
                       >
                         <div
