@@ -106,6 +106,10 @@ export interface MeetingLog {
   notes?: string;
   status: "started" | "in-progress" | "completed";
   trackingSessionId?: string;
+  routeScreenshot?: {
+    thumbnail: string;
+    fullImage: string;
+  };
   leadId?: string; // Associated lead ID
   leadInfo?: {
     id: string;
