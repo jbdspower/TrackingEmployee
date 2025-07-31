@@ -159,9 +159,12 @@ export function EmployeeMap({
     });
     routeMarkersRef.current = [];
 
-    if (!showRoute || !trackingSession || !trackingSession.route || !trackingSession.route.length) return;
+    // Get route data with fallback to locations for backward compatibility
+    const routeData = trackingSession.route || trackingSession.locations || [];
 
-    const route = trackingSession.route || [];
+    if (!showRoute || !trackingSession || !routeData.length) return;
+
+    const route = routeData;
 
     // Create polyline for the route
     const routeCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
