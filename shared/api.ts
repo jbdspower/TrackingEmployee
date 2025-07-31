@@ -32,6 +32,7 @@ export interface ExternalUser {
 
 // Internal Employee structure (mapped from external API)
 export interface Employee {
+  _id: string;
   id: string;
   name: string;
   email: string;
