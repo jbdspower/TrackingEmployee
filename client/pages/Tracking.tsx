@@ -386,11 +386,10 @@ export default function Tracking() {
     try {
       const response = await HttpClient.post("/api/meetings", {
         employeeId: employee._id || employee.id,
-        startLocation: {
+        location: {
           lat: employee.location.lat,
           lng: employee.location.lng,
           address: employee.location.address,
-          timestamp: new Date().toISOString(),
         },
         clientName: meetingData.clientName,
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
