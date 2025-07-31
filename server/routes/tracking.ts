@@ -68,7 +68,8 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
           startTime: session.startTime,
           endTime: session.endTime,
           status: session.status,
-          locations: session.locations || [],
+          route: session.locations || [],
+          locations: session.locations || [], // Keep for backward compatibility
           totalDistance: session.totalDistance || 0,
           createdAt: session.createdAt || session.startTime,
           updatedAt: session.updatedAt || session.startTime,
