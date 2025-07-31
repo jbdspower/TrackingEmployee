@@ -161,7 +161,7 @@ export function EmployeeMap({
 
     if (!showRoute || !trackingSession || !trackingSession.route || !trackingSession.route.length) return;
 
-    const route = trackingSession.route;
+    const route = trackingSession.route || [];
 
     // Create polyline for the route
     const routeCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
