@@ -8,10 +8,10 @@ import Database from './config/database.js';
 import employeesRouter from './routes/employees.js';
 import meetingsRouter from './routes/meetings.js';
 import trackingRouter from './routes/tracking.js';
-import analyticsRouter from './routes/analytics.js';
-import dataSyncRouter from './routes/data-sync.js';
-import debugRouter from './routes/debug.js';
-import demoRouter from './routes/demo.js';
+import analyticsModule from './routes/analytics.js';
+import dataSyncModule from './routes/data-sync.js';
+import debugModule from './routes/debug.js';
+import demoModule from './routes/demo.js';
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
