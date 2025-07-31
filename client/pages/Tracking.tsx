@@ -7,6 +7,8 @@ import { EmployeeMap } from "@/components/EmployeeMap";
 import { StartMeetingModal } from "@/components/StartMeetingModal";
 import { EndMeetingModal } from "@/components/EndMeetingModal";
 import { MeetingHistory } from "@/components/MeetingHistory";
+import { RouteSnapshotCapture } from "@/components/RouteSnapshotCapture";
+import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
 import {
   Employee,
