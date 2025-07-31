@@ -1000,19 +1000,29 @@ export default function Dashboard() {
                             </div>
                           </TableCell>
                           <TableCell className="text-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleEmployeeClick(
-                                  employee.employeeId,
-                                  employee.employeeName,
-                                )
-                              }
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View Details
-                            </Button>
+                            <div className="flex items-center justify-center space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleEmployeeClick(
+                                    employee.employeeId,
+                                    employee.employeeName,
+                                  )
+                                }
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                View Details
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewRouteHistory(employee.employeeId)}
+                              >
+                                <History className="h-4 w-4 mr-1" />
+                                Route History
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
