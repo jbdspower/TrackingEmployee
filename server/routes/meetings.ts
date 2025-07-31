@@ -1,6 +1,10 @@
 import { RequestHandler } from "express";
 import axios from 'axios';
 import NodeCache from 'node-cache';
+
+// In-memory storage for fallback when database is unavailable
+let inMemoryMeetings: MeetingLog[] = [];
+let meetingIdCounter = 1;
 import {
   MeetingLog,
   MeetingLogsResponse,
