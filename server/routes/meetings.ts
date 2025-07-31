@@ -280,16 +280,30 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       );
 
       if (!updatedMeeting) {
-        return res.status(404).json({ error: "Meeting not found" });
+        return res.status(404).json({ error: "Meeting not found in database" });
       }
 
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      console.log("Meeting updated in MongoDB:", updatedMeeting._id);
       res.json(meetingLog);
       return;
     } catch (dbError) {
-      console.error("MongoDB update failed:", dbError);
-      throw dbError;
+      console.warn("MongoDB update failed, falling back to in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    const meetingIndex = inMemoryMeetings.findIndex((meeting) => meeting.id === id);
+    if (meetingIndex === -1) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    inMemoryMeetings[meetingIndex] = {
+      ...inMemoryMeetings[meetingIndex],
+      ...updates,
+    };
+
+    console.log("Meeting updated in memory:", id);
+    res.json(inMemoryMeetings[meetingIndex]);
   } catch (error) {
     console.error("Error updating meeting:", error);
     res.status(500).json({ error: "Failed to update meeting" });
