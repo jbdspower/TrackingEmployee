@@ -76,7 +76,7 @@ export function EmployeeMap({
     markersRef.current = {};
 
     // Create custom icons for different statuses
-    const createIcon = (status: Employee["status"]) => {
+    const createIcon = (status: Employee["status"], isSelected: boolean = false) => {
       const color =
         status === "active"
           ? "#22c55e"
@@ -93,7 +93,7 @@ export function EmployeeMap({
             border-radius: 50%;
             border: 3px solid white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            ${selectedEmployee && (selectedEmployee === (employees.find((emp) => emp._id === selectedEmployee || emp.id === selectedEmployee)?.(_id || emp.id)) ? "transform: scale(1.3);" : "")}
+            ${isSelected ? "transform: scale(1.3);" : ""}
           "></div>
         `,
         className: "custom-div-icon",
