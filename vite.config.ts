@@ -7,7 +7,7 @@ import { createServer } from "./server";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 3002,
+    port: 3003,
     allowedHosts: ["tracking.jbdspower.in"],
   },
   build: {
