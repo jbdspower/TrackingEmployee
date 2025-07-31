@@ -45,6 +45,8 @@ export default function Tracking() {
   const [currentTrackingSession, setCurrentTrackingSession] =
     useState<TrackingSession | null>(null);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
+  const [isSnapshotCaptureOpen, setIsSnapshotCaptureOpen] = useState(false);
+  const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (!employeeId) {
