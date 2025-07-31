@@ -752,10 +752,20 @@ export default function Tracking() {
                             )}
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground flex items-center">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          {meeting.location.address}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground flex items-center">
+                            <MapPin className="h-3 w-3 mr-1" />
+                            <span className="font-medium">Start:</span>
+                            <span className="ml-1">{meeting.location.address}</span>
+                          </p>
+                          {meeting.endLocation && (
+                            <p className="text-sm text-muted-foreground flex items-center">
+                              <MapPin className="h-3 w-3 mr-1" />
+                              <span className="font-medium">End:</span>
+                              <span className="ml-1">{meeting.endLocation.address}</span>
+                            </p>
+                          )}
+                        </div>
                         <div className="space-y-1">
                           <p className="text-sm text-muted-foreground flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
