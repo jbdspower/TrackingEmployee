@@ -211,7 +211,7 @@ export default function Index() {
               </Button>
               <Button size="sm" asChild disabled={employees.length === 0}>
                 <Link
-                  to={`/tracking/${selectedEmployee || (employees.length > 0 ? employees[0].id : "1")}`}
+                  to={`/tracking/${selectedEmployee || (employees.length > 0 ? employees[0]._id || employees[0].id : "1")}`}
                 >
                   <Navigation className="h-4 w-4 mr-2" />
                   {selectedEmployee ? "View Selected" : "Live View"}
