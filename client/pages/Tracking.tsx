@@ -433,20 +433,31 @@ export default function Tracking() {
                 </Link>
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  {employee.name}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Real-time Tracking
-                </p>
-              </div>
+              <h1 className="text-2xl font-bold text-foreground">
+                {employee.name}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Real-time Tracking
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSnapshotCaptureOpen(true)}
+              className="text-primary"
+            >
+              <Camera className="h-4 w-4 mr-1" />
+              Save Route
+            </Button>
             <Badge
               variant="secondary"
               className={`${getStatusColor(employee.status)}`}
             >
               {getStatusText(employee.status)}
             </Badge>
+          </div>
           </div>
         </div>
       </header>
