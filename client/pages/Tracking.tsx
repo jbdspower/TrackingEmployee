@@ -401,9 +401,11 @@ export default function Tracking() {
       if (response.ok) {
         fetchMeetings();
         // Update employee status to meeting
-        await HttpClient.put(`/api/employees/${employeeId}/status`, {
-          status: "meeting",
-        });
+        if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
+          await HttpClient.put(`/api/employees/${employeeId}/status`, {
+            status: "meeting",
+          });
+        }
         fetchEmployee();
         setIsStartMeetingModalOpen(false);
       }
