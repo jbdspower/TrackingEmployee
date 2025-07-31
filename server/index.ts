@@ -120,6 +120,7 @@ trackingRouter.get('/meeting-history', trackingModule.getMeetingHistory);
 trackingRouter.post('/meeting-history', trackingModule.addMeetingHistory);
 
 const analyticsRouter = express.Router();
+analyticsRouter.get('/employees', analyticsModule.getEmployeeAnalytics); // Add missing route
 analyticsRouter.get('/employee-analytics', analyticsModule.getEmployeeAnalytics);
 analyticsRouter.get('/employee-details/:employeeId', analyticsModule.getEmployeeDetails);
 analyticsRouter.get('/lead-history/:leadId', analyticsModule.getLeadHistory);
