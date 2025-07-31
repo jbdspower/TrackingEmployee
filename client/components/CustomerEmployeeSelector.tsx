@@ -40,6 +40,7 @@ export const CustomerEmployeeSelector = forwardRef<
       selectedEmployeeId,
       disabled = false,
       onAddNewEmployee,
+      filterByCompany,
     },
     ref,
   ) => {
