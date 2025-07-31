@@ -120,6 +120,12 @@ export default function Tracking() {
     try {
       console.log("Fetching meetings:", { employeeId, retryCount });
 
+      if (!employeeId) {
+        console.error("Employee ID is undefined");
+        setMeetings([]);
+        return;
+      }
+
       const response = await HttpClient.get(
         `/api/meetings?employeeId=${employeeId}&limit=5`,
       );
