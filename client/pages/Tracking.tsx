@@ -73,34 +73,30 @@ export default function Tracking() {
 
       const response = await HttpClient.get(`/api/employees/${employeeId}`);
 
+      // Read response as text first to avoid body stream consumption issues
+      let responseText: string;
+      try {
+        responseText = await response.text();
+      } catch (textError) {
+        console.error("Error reading response text:", textError);
+        setEmployee(null);
+        return;
+      }
+
       if (response.ok) {
         try {
-          const data = await response.json();
+          const data = JSON.parse(responseText);
           setEmployee(data);
           console.log("Employee data fetched successfully:", data);
         } catch (jsonError) {
           console.error("Error parsing employee JSON:", jsonError);
-          // Try to get text instead if JSON parsing fails
-          try {
-            const text = await response.text();
-            console.error("Response text:", text);
-          } catch (textError) {
-            console.error("Could not read response as text either:", textError);
-          }
+          console.error("Response text:", responseText);
           setEmployee(null);
         }
       } else {
-        try {
-          const errorText = await response.text();
-          console.error(
-            `Failed to fetch employee: ${response.status} ${response.statusText} - ${errorText}`,
-          );
-        } catch (textError) {
-          console.error(
-            `Failed to fetch employee: ${response.status} ${response.statusText} - Could not read error text:`,
-            textError,
-          );
-        }
+        console.error(
+          `Failed to fetch employee: ${response.status} ${response.statusText} - ${responseText}`,
+        );
         setEmployee(null);
       }
     } catch (error) {
