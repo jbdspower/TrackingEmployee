@@ -44,7 +44,6 @@ class Database {
       
       // Configure mongoose for better error handling
       mongoose.set('bufferCommands', false); // Disable buffering to get immediate errors
-      mongoose.set('bufferMaxEntries', 0); // Disable buffering completely
 
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
