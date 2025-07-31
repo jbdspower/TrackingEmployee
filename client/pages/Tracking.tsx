@@ -534,7 +534,7 @@ export default function Tracking() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Phone</span>
-                    <span className="font-medium">{employee.phone}</span>
+                    <span className="font-medium">{employee.phone || 'Not available'}</span>
                   </div>
                   {employee.designation && (
                     <div className="flex items-center justify-between">
