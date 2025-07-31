@@ -234,12 +234,38 @@ export const updateTrackingSessionLocation: RequestHandler = async (req, res) =>
     const locationData: LocationData = req.body;
     const db = Database.getInstance();
 
-    if (!sessionId) {
-      return res.status(400).json({ error: "Session ID is required" });
+    // Enhanced validation
+    if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+      console.error('updateTrackingSessionLocation: Invalid sessionId:', {
+        sessionId,
+        type: typeof sessionId
+      });
+      return res.status(400).json({
+        error: "Session ID is required",
+        details: "Valid session ID must be provided"
+      });
     }
 
-    if (!locationData.lat || !locationData.lng) {
-      return res.status(400).json({ error: "Location coordinates are required" });
+    if (sessionId === 'undefined' || sessionId === 'null') {
+      console.error('updateTrackingSessionLocation: sessionId is literal undefined/null string');
+      return res.status(400).json({
+        error: "Invalid Session ID",
+        details: "Session ID cannot be 'undefined' or 'null'"
+      });
+    }
+
+    if (!locationData || typeof locationData !== 'object') {
+      return res.status(400).json({
+        error: "Location data is required",
+        details: "Location data object must be provided"
+      });
+    }
+
+    if (!locationData.lat || !locationData.lng || typeof locationData.lat !== 'number' || typeof locationData.lng !== 'number') {
+      return res.status(400).json({
+        error: "Location coordinates are required",
+        details: "Valid latitude and longitude numbers must be provided"
+      });
     }
 
     // Execute with fallback pattern
