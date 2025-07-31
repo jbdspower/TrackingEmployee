@@ -66,6 +66,17 @@ export function LocationTracker({
   useEffect(() => {
     const checkActiveTrackingSession = async () => {
       try {
+        // Validate employeeId before making API call
+        if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
+          console.warn('LocationTracker: Invalid employeeId, skipping tracking session check:', {
+            employeeId,
+            type: typeof employeeId
+          });
+          setIsTracking(false);
+          setIsCheckingActiveSession(false);
+          return;
+        }
+
         const response = await HttpClient.get(
           `/api/tracking-sessions?employeeId=${employeeId}&status=active&limit=1`
         );
@@ -104,10 +115,12 @@ export function LocationTracker({
       }
     };
 
-    if (employeeId) {
+    if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
       checkActiveTrackingSession();
     } else {
+      console.warn('LocationTracker: Invalid or missing employeeId, not checking for active sessions');
       setIsCheckingActiveSession(false);
+      setIsTracking(false);
     }
   }, [employeeId]);
 
