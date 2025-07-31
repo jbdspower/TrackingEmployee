@@ -462,7 +462,7 @@ export default function Index() {
                               title="Track employee"
                             >
                               <Link
-                                to={`/tracking/${employee.id}`}
+                                to={`/tracking/${employee._id || employee.id}`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <Navigation className="h-3 w-3" />
