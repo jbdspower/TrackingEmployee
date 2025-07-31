@@ -136,8 +136,32 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
     const { employeeId, startLocation } = req.body;
     const db = Database.getInstance();
 
+    // Enhanced validation
     if (!employeeId) {
-      return res.status(400).json({ error: "Employee ID is required" });
+      console.error('createTrackingSession: Missing employeeId');
+      return res.status(400).json({
+        error: "Employee ID is required",
+        details: "No employeeId provided in request body"
+      });
+    }
+
+    if (typeof employeeId !== 'string' || employeeId.trim() === '') {
+      console.error('createTrackingSession: Invalid employeeId format:', {
+        employeeId,
+        type: typeof employeeId
+      });
+      return res.status(400).json({
+        error: "Invalid Employee ID format",
+        details: "Employee ID must be a non-empty string"
+      });
+    }
+
+    if (employeeId === 'undefined' || employeeId === 'null') {
+      console.error('createTrackingSession: employeeId is literal undefined/null string');
+      return res.status(400).json({
+        error: "Invalid Employee ID",
+        details: "Employee ID cannot be 'undefined' or 'null'"
+      });
     }
 
     const sessionId = `session_${String(sessionIdCounter++).padStart(3, '0')}`;
