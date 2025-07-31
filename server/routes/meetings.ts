@@ -224,13 +224,32 @@ export const createMeeting: RequestHandler = async (req, res) => {
       const newMeeting = new Meeting(meetingData);
       const savedMeeting = await newMeeting.save();
       const meetingLog = await convertMeetingToMeetingLog(savedMeeting);
-      
+
+      console.log("Meeting saved to MongoDB:", savedMeeting._id);
       res.status(201).json(meetingLog);
       return;
     } catch (dbError) {
-      console.error("MongoDB save failed:", dbError);
-      throw dbError;
+      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const meetingLog: MeetingLog = {
+      id: meetingId,
+      employeeId: meetingData.employeeId,
+      location: meetingData.location,
+      startTime: meetingData.startTime,
+      clientName: meetingData.clientName,
+      notes: meetingData.notes,
+      status: meetingData.status,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+    };
+
+    inMemoryMeetings.push(meetingLog);
+
+    console.log("Meeting saved to memory:", meetingId);
+    res.status(201).json(meetingLog);
   } catch (error) {
     console.error("Error creating meeting:", error);
     res.status(500).json({ error: "Failed to create meeting" });
