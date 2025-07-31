@@ -189,6 +189,23 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       updates.endTime = new Date().toISOString();
     }
 
+    // Handle end location - if provided, use it; otherwise try to get current location
+    if (updates.status === "completed" && updates.endLocation) {
+      // Geocode the end location if address is not provided
+      if (!updates.endLocation.address) {
+        try {
+          const address = await reverseGeocode(updates.endLocation.lat, updates.endLocation.lng);
+          updates.endLocation.address = address;
+        } catch (geocodeError) {
+          console.warn('Failed to geocode end location:', geocodeError);
+          updates.endLocation.address = `${updates.endLocation.lat.toFixed(6)}, ${updates.endLocation.lng.toFixed(6)}`;
+        }
+      }
+      if (!updates.endLocation.timestamp) {
+        updates.endLocation.timestamp = new Date().toISOString();
+      }
+    }
+
     // Validate meeting details
     if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
       return res.status(400).json({ error: "Discussion details are required" });
