@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { HttpClient } from "@/lib/httpClient";
 import { TrackingSession, LocationData } from "@shared/api";
+import { generateRouteScreenshot, generateThumbnail, storeRouteScreenshot } from "@/lib/routeScreenshot";
 import {
   MapPin,
   Navigation,
@@ -402,6 +403,28 @@ export function LocationTracker({
         if (response.ok) {
           const serverSession = await response.json();
           console.log('Tracking session ended on server:', serverSession);
+
+          // Generate and store route screenshot
+          if (routeCoordinates.length > 1) {
+            try {
+              console.log('Generating route screenshot...');
+              const fullImage = await generateRouteScreenshot(routeCoordinates, 800, 600);
+              const thumbnail = await generateThumbnail(fullImage, 32);
+
+              storeRouteScreenshot(
+                employeeId,
+                currentSession.id,
+                fullImage,
+                thumbnail,
+                routeCoordinates
+              );
+
+              console.log('Route screenshot generated and stored');
+            } catch (screenshotError) {
+              console.error('Failed to generate route screenshot:', screenshotError);
+            }
+          }
+
           setCurrentSession(serverSession);
           onTrackingSessionEnd?.(serverSession);
         } else {
