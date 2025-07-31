@@ -102,13 +102,23 @@ export interface MeetingDetails {
 export interface MeetingLog {
   id: string;
   employeeId: string;
-  location: LocationData;
+  location?: LocationData;
+  startLocation?: LocationData;
   endLocation?: LocationData;
   startTime: string;
   endTime?: string;
+  duration?: number;
   clientName?: string;
+  customerName?: string;
+  customerEmployeeName?: string;
+  customerEmail?: string;
+  customerMobile?: string;
+  customerDesignation?: string;
+  customerDepartment?: string;
+  customers?: any[];
   notes?: string;
-  status: "started" | "in-progress" | "completed";
+  discussion?: string;
+  status: "started" | "in-progress" | "completed" | "active";
   trackingSessionId?: string;
   routeScreenshot?: {
     thumbnail: string;
@@ -121,6 +131,8 @@ export interface MeetingLog {
     contactName: string;
   };
   meetingDetails?: MeetingDetails;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // API Response types
