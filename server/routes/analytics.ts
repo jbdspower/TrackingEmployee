@@ -456,12 +456,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
       console.log(`Employee details date range: ${start.toISOString()} to ${end.toISOString()}`);
 
-      // If no MongoDB data, fallback to in-memory
-      if (actualMeetings.length === 0) {
-        const { meetings: inMemoryMeetings } = await import("./meetings");
-        actualMeetings = inMemoryMeetings.filter(meeting => meeting.employeeId === employeeId);
-        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for employee ${employeeId}`);
-      }
+      // MongoDB is the primary data source
+      console.log(`Using ${actualMeetings.length} meetings from MongoDB for employee ${employeeId}`);
     } catch (dbError) {
       console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
       const { meetings: inMemoryMeetings } = await import("./meetings");
