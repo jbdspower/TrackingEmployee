@@ -67,24 +67,27 @@ export default function Tracking() {
 
       const response = await HttpClient.get(`/api/employees/${employeeId}`);
 
-      if (response.ok) {
-        const data = await response.json();
-        setEmployee(data);
-        console.log("Employee data fetched successfully:", data);
-      } else {
-        // For error responses, try to get error message but don't read body if already consumed
-        let errorText = `${response.status} ${response.statusText}`;
-        try {
-          // Only try to read response body for error details if it hasn't been read
-          const errorData = await response.text();
-          if (errorData) {
-            errorText += ` - ${errorData}`;
-          }
-        } catch (bodyError) {
-          // Body already read or other error, just use status text
-          console.warn("Could not read error response body:", bodyError);
-        }
+      // Read response body once and handle both success and error cases
+      let responseText: string;
+      try {
+        responseText = await response.text();
+      } catch (bodyError) {
+        console.error("Failed to read response body:", bodyError);
+        setEmployee(null);
+        return;
+      }
 
+      if (response.ok) {
+        try {
+          const data = JSON.parse(responseText);
+          setEmployee(data);
+          console.log("Employee data fetched successfully:", data);
+        } catch (parseError) {
+          console.error("Failed to parse employee response:", parseError);
+          setEmployee(null);
+        }
+      } else {
+        const errorText = `${response.status} ${response.statusText}${responseText ? ` - ${responseText}` : ''}`;
         console.error(`Failed to fetch employee: ${errorText}`);
         setEmployee(null);
       }
@@ -115,22 +118,27 @@ export default function Tracking() {
         `/api/meetings?employeeId=${employeeId}&limit=5`,
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        setMeetings(data.meetings || []);
-        console.log("Meetings data fetched successfully:", data);
-      } else {
-        // For error responses, try to get error message but don't read body if already consumed
-        let errorText = `${response.status} ${response.statusText}`;
-        try {
-          const errorData = await response.text();
-          if (errorData) {
-            errorText += ` - ${errorData}`;
-          }
-        } catch (bodyError) {
-          console.warn("Could not read error response body:", bodyError);
-        }
+      // Read response body once and handle both success and error cases
+      let responseText: string;
+      try {
+        responseText = await response.text();
+      } catch (bodyError) {
+        console.error("Failed to read response body:", bodyError);
+        setMeetings([]);
+        return;
+      }
 
+      if (response.ok) {
+        try {
+          const data = JSON.parse(responseText);
+          setMeetings(data.meetings || []);
+          console.log("Meetings data fetched successfully:", data);
+        } catch (parseError) {
+          console.error("Failed to parse meetings response:", parseError);
+          setMeetings([]);
+        }
+      } else {
+        const errorText = `${response.status} ${response.statusText}${responseText ? ` - ${responseText}` : ''}`;
         console.error(`Failed to fetch meetings: ${errorText}`);
         setMeetings([]);
       }
