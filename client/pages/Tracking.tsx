@@ -222,12 +222,24 @@ export default function Tracking() {
         meetingDetails,
       );
 
+      // Capture current location for end location
+      let endLocation = undefined;
+      if (employee?.location) {
+        endLocation = {
+          lat: employee.location.lat,
+          lng: employee.location.lng,
+          address: employee.location.address,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
       // End the meeting
       const response = await HttpClient.put(
         `/api/meetings/${activeMeetingId}`,
         {
           status: "completed",
           endTime: new Date().toISOString(),
+          endLocation,
           meetingDetails,
         },
       );
