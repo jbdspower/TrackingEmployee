@@ -39,6 +39,7 @@ export function EndMeetingModal({
   onEndMeeting,
   employeeName,
   isLoading = false,
+  currentMeeting = null,
 }: EndMeetingModalProps) {
   const [formData, setFormData] = useState<MeetingDetails>({
     customers: [],
