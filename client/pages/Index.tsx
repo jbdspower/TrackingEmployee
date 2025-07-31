@@ -326,7 +326,7 @@ export default function Index() {
                           const firstEmployee = employees[0];
                           if (firstEmployee) {
                             window.open(
-                              `/tracking/${firstEmployee.id}`,
+                              `/tracking/${firstEmployee._id || firstEmployee.id}`,
                               "_blank",
                             );
                           }
