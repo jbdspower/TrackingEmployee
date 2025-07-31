@@ -732,7 +732,7 @@ export default function Tracking() {
           <div className="space-y-6">
             {/* Location Tracker */}
             <LocationTracker
-              employeeId={employee.id}
+              employeeId={employee._id || employee.id}
               employeeName={employee.name}
               onLocationUpdate={handleLocationUpdate}
               trackingEnabled={employee.status === "active"}
