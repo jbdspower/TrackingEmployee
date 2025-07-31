@@ -811,7 +811,7 @@ export default function Tracking() {
                           <p className="text-sm text-muted-foreground flex items-center">
                             <MapPin className="h-3 w-3 mr-1" />
                             <span className="font-medium">Start:</span>
-                            <span className="ml-1">{meeting.location.address}</span>
+                            <span className="ml-1">{meeting.location?.address || meeting.startLocation?.address || "Location not available"}</span>
                           </p>
                           {meeting.endLocation && (
                             <p className="text-sm text-muted-foreground flex items-center">
