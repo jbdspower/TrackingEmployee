@@ -136,6 +136,15 @@ export default function Dashboard() {
     loading: false,
   });
 
+  // Route history modal state
+  const [routeHistoryModal, setRouteHistoryModal] = useState<{
+    isOpen: boolean;
+    employeeId: string;
+  }>({
+    isOpen: false,
+    employeeId: "",
+  });
+
   // Attendance editing state
   const [attendanceEdits, setAttendanceEdits] = useState<Record<string, {
     attendanceStatus: string;
