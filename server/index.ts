@@ -264,4 +264,9 @@ startServer().catch((error) => {
   process.exit(1);
 });
 
+// Export for vite.config.ts
+export function createServer() {
+  return app;
+}
+
 export { app, AppError };
