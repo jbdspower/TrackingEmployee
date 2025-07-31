@@ -65,6 +65,12 @@ export default function Tracking() {
     try {
       console.log("Fetching employee:", { employeeId, retryCount });
 
+      if (!employeeId) {
+        console.error("Employee ID is undefined");
+        setEmployee(null);
+        return;
+      }
+
       const response = await HttpClient.get(`/api/employees/${employeeId}`);
 
       // Read response body once and handle both success and error cases
