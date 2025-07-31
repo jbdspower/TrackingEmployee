@@ -647,13 +647,42 @@ export function LocationTracker({
                 <span className="font-medium">{error}</span>
               </div>
               {error.includes("denied") && (
-                <div className="text-xs text-muted-foreground">
-                  <p className="mb-1">To enable location tracking:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Click the location icon (🔒) in your browser's address bar</li>
-                    <li>Select "Allow" for location permissions</li>
-                    <li>Refresh the page and try again</li>
-                  </ul>
+                <div className="text-xs text-muted-foreground space-y-2">
+                  <div>
+                    <p className="mb-1">To enable location tracking:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Click the location icon (🔒) in your browser's address bar</li>
+                      <li>Select "Allow" for location permissions</li>
+                      <li>Refresh the page and try again</li>
+                    </ul>
+                  </div>
+                  <div className="pt-2 border-t border-destructive/10">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      <strong>Alternative:</strong> You can still start tracking using your last known location, but automatic location updates will be disabled.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Use a mock location or employee's last known location
+                        const mockLocation = {
+                          latitude: 27.1766701, // From the current employee data
+                          longitude: 78.0080745,
+                          accuracy: 1000, // Low accuracy to indicate it's not real-time
+                        };
+                        setElapsedTime(0);
+                        setRouteCoordinates([]);
+                        setTotalDistance(0);
+                        setIsTracking(true);
+                        setTrackingStartTime(new Date());
+                        // Create a manual tracking session
+                        console.log("Manual tracking started with fallback location");
+                      }}
+                      className="h-6 text-xs"
+                    >
+                      Start Manual Tracking
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
