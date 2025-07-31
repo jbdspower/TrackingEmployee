@@ -30,7 +30,7 @@ class Database {
 
   public async connect(): Promise<void> {
     if (this.isConnected) {
-      console.log('📦 Database: Already connected to MongoDB');
+      console.log('��� Database: Already connected to MongoDB');
       return;
     }
 
@@ -38,6 +38,9 @@ class Database {
       console.log('���� Database: Connecting to MongoDB...');
       console.log('📦 Database: URI:', dbConfig.MONGODB_URI);
       
+      // Disable mongoose buffering globally
+      mongoose.set('bufferCommands', false);
+
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
         serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
