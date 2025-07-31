@@ -14,10 +14,8 @@ export const syncAllData: RequestHandler = async (req, res) => {
     
     console.log(`Found ${mongoMeetings.length} meetings and ${mongoHistory.length} history entries in MongoDB`);
     
-    // Get in-memory data for comparison
-    const { meetings: inMemoryMeetings } = await import("./meetings");
-    
-    console.log(`Found ${inMemoryMeetings.length} meetings in memory`);
+    // MongoDB is the primary data source
+    console.log("Data sync using MongoDB only");
     
     // Synchronize missing data
     let syncedMeetings = 0;
