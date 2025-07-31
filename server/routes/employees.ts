@@ -91,6 +91,15 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
     return cached.address;
   }
 
+  // Rate limiting to prevent API abuse
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastGeocodingRequest.timestamp;
+  if (timeSinceLastRequest < GEOCODING_RATE_LIMIT) {
+    const waitTime = GEOCODING_RATE_LIMIT - timeSinceLastRequest;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  lastGeocodingRequest.timestamp = Date.now();
+
   try {
     const response = await axios.get(NOMINATIM_URL, {
       params: {
@@ -108,7 +117,7 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
     });
 
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    
+
     // Cache the result
     geocodeCache.set(cacheKey, {
       address,
