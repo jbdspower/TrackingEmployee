@@ -301,13 +301,21 @@ async function startServer() {
 
 // Export for vite.config.ts
 export function createServer() {
+  // Initialize database connection in background, but don't block
+  const db = Database.getInstance();
+  db.connect().catch((error) => {
+    console.warn('⚠️ Database connection failed, running in degraded mode:', error);
+  });
+
   return app;
 }
 
-// Start the server
-startServer().catch((error) => {
-  console.error('❌ Startup error:', error);
-  process.exit(1);
-});
+// Only start the server if this file is run directly (not imported by Vite)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startServer().catch((error) => {
+    console.error('❌ Startup error:', error);
+    process.exit(1);
+  });
+}
 
 export { app, AppError };
