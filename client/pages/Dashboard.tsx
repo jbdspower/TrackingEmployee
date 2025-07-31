@@ -495,6 +495,21 @@ export default function Dashboard() {
     });
   };
 
+  // Route history handlers
+  const handleViewRouteHistory = (employeeId: string) => {
+    setRouteHistoryModal({
+      isOpen: true,
+      employeeId,
+    });
+  };
+
+  const closeRouteHistoryModal = () => {
+    setRouteHistoryModal({
+      isOpen: false,
+      employeeId: "",
+    });
+  };
+
   // Attendance management functions
   const attendanceOptions = [
     { value: "full_day", label: "Full Day" },
