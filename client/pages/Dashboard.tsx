@@ -1485,6 +1485,13 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Route History Modal */}
+      <RouteSnapshotHistory
+        employeeId={routeHistoryModal.employeeId}
+        isOpen={routeHistoryModal.isOpen}
+        onClose={closeRouteHistoryModal}
+      />
     </div>
   );
 }
