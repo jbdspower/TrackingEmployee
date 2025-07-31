@@ -99,6 +99,7 @@ export interface MeetingLog {
   id: string;
   employeeId: string;
   location: LocationData;
+  endLocation?: LocationData;
   startTime: string;
   endTime?: string;
   clientName?: string;
