@@ -892,6 +892,7 @@ export default function Tracking() {
           onEndMeeting={handleEndMeetingWithDetails}
           employeeName={employee.name}
           isLoading={isEndingMeeting !== null}
+          currentMeeting={activeMeetingId ? meetings.find(m => m.id === activeMeetingId) : null}
         />
       )}
 
