@@ -462,14 +462,14 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // If no MongoDB data, fallback to in-memory
       if (actualMeetings.length === 0) {
-        const { meetings: inMemoryMeetings } = await import("./meetings");
-        actualMeetings = inMemoryMeetings.filter(meeting => meeting.employeeId === employeeId);
+        const { inMemoryMeetings } = await import("./meetings");
+        actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.employeeId === employeeId);
         console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for employee ${employeeId}`);
       }
     } catch (dbError) {
       console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { meetings: inMemoryMeetings } = await import("./meetings");
-      actualMeetings = inMemoryMeetings.filter(meeting => meeting.employeeId === employeeId);
+      const { inMemoryMeetings } = await import("./meetings");
+      actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.employeeId === employeeId);
     }
 
     // Filter meetings for this employee within date range
