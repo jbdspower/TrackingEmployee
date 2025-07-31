@@ -88,3 +88,7 @@ export const debugEmployeeData: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Debug failed", details: error.message });
   }
 };
+
+export default {
+  debugEmployeeData,
+};
