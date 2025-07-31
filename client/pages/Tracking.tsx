@@ -131,15 +131,33 @@ export default function Tracking() {
       );
 
       if (response.ok) {
-        const data = await response.json();
-        setMeetings(data.meetings || []);
-        console.log("Meetings data fetched successfully:", data);
+        try {
+          const data = await response.json();
+          setMeetings(data.meetings || []);
+          console.log("Meetings data fetched successfully:", data);
+        } catch (jsonError) {
+          console.error("Error parsing meetings JSON:", jsonError);
+          // Try to get text instead if JSON parsing fails
+          try {
+            const text = await response.text();
+            console.error("Response text:", text);
+          } catch (textError) {
+            console.error("Could not read response as text either:", textError);
+          }
+          setMeetings([]);
+        }
       } else {
-        const errorText = await response.text();
-        console.error(
-          `Failed to fetch meetings: ${response.status} ${response.statusText} - ${errorText}`,
-        );
-        // Set empty array to avoid crashes
+        try {
+          const errorText = await response.text();
+          console.error(
+            `Failed to fetch meetings: ${response.status} ${response.statusText} - ${errorText}`,
+          );
+        } catch (textError) {
+          console.error(
+            `Failed to fetch meetings: ${response.status} ${response.statusText} - Could not read error text:`,
+            textError,
+          );
+        }
         setMeetings([]);
       }
     } catch (error) {
@@ -149,7 +167,7 @@ export default function Tracking() {
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
-        error.message.includes("fetch")
+        (error.message.includes("fetch") || error.message.includes("body stream"))
       ) {
         console.log("Retrying meetings fetch after network error...");
         setTimeout(() => fetchMeetings(retryCount + 1), 2000);
