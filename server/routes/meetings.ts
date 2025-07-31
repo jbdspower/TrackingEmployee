@@ -314,9 +314,22 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       res.json(meetingLog);
       return;
     } catch (dbError) {
-      console.error("MongoDB update failed:", dbError);
-      return res.status(500).json({ error: "Database unavailable. Meeting could not be updated." });
+      console.error("MongoDB update failed, checking in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    const meetingIndex = inMemoryMeetings.findIndex((m) => m.id === id);
+    if (meetingIndex === -1) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    inMemoryMeetings[meetingIndex] = {
+      ...inMemoryMeetings[meetingIndex],
+      ...updates,
+    };
+
+    console.log("Meeting updated in memory:", id);
+    res.json(inMemoryMeetings[meetingIndex]);
   } catch (error) {
     console.error("Error updating meeting:", error);
     res.status(500).json({ error: "Failed to update meeting" });
