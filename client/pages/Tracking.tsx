@@ -72,11 +72,20 @@ export default function Tracking() {
         setEmployee(data);
         console.log("Employee data fetched successfully:", data);
       } else {
-        const errorText = await response.text();
-        console.error(
-          `Failed to fetch employee: ${response.status} ${response.statusText} - ${errorText}`,
-        );
-        // Set some fallback data or show error state
+        // For error responses, try to get error message but don't read body if already consumed
+        let errorText = `${response.status} ${response.statusText}`;
+        try {
+          // Only try to read response body for error details if it hasn't been read
+          const errorData = await response.text();
+          if (errorData) {
+            errorText += ` - ${errorData}`;
+          }
+        } catch (bodyError) {
+          // Body already read or other error, just use status text
+          console.warn("Could not read error response body:", bodyError);
+        }
+
+        console.error(`Failed to fetch employee: ${errorText}`);
         setEmployee(null);
       }
     } catch (error) {
