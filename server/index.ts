@@ -13,6 +13,24 @@ import dataSyncModule from './routes/data-sync.js';
 import debugModule from './routes/debug.js';
 import demoModule from './routes/demo.js';
 
+// Create express routers for the modules
+const analyticsRouter = express.Router();
+analyticsRouter.get('/employee-analytics', analyticsModule.getEmployeeAnalytics);
+analyticsRouter.get('/employee-details/:employeeId', analyticsModule.getEmployeeDetails);
+analyticsRouter.get('/lead-history/:leadId', analyticsModule.getLeadHistory);
+analyticsRouter.post('/attendance', analyticsModule.saveAttendance);
+analyticsRouter.get('/meeting-trends', analyticsModule.getMeetingTrends);
+
+const dataSyncRouter = express.Router();
+dataSyncRouter.post('/data-sync', dataSyncModule.syncAllData);
+dataSyncRouter.get('/data-status', dataSyncModule.getDataStatus);
+
+const debugRouter = express.Router();
+debugRouter.get('/employee/:employeeId', debugModule.debugEmployeeData);
+
+const demoRouter = express.Router();
+demoRouter.get('/demo', demoModule.handleDemo);
+
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -190,7 +208,7 @@ async function gracefulShutdown(signal: string) {
   const db = Database.getInstance();
   
   try {
-    console.log('📦 Closing database connection...');
+    console.log('��� Closing database connection...');
     await db.disconnect();
     console.log('✅ Database disconnected successfully');
   } catch (error) {
