@@ -16,6 +16,7 @@ interface CustomerEmployeeSelectorProps {
   selectedEmployeeId?: string;
   disabled?: boolean;
   onAddNewEmployee?: () => void;
+  filterByCompany?: string; // Filter employees by this company name
 }
 
 export interface CustomerEmployeeSelectorRef {
