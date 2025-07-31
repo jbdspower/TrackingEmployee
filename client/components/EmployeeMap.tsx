@@ -105,10 +105,11 @@ export function EmployeeMap({
     // Add markers for each employee
     const bounds = L.latLngBounds([]);
     employees.forEach((employee) => {
-      if (employee.location.lat && employee.location.lng) {
+      if (employee.location?.lat && employee.location?.lng) {
+        const isSelected = selectedEmployee === (employee._id || employee.id);
         const marker = L.marker(
           [employee.location.lat, employee.location.lng],
-          { icon: createIcon(employee.status) },
+          { icon: createIcon(employee.status, isSelected) },
         ).addTo(mapRef.current!);
 
         marker.bindPopup(`
