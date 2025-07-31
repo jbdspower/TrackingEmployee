@@ -50,6 +50,7 @@ export function LocationTracker({
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
   const [totalDistance, setTotalDistance] = useState<number>(0);
+  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
@@ -59,6 +60,55 @@ export function LocationTracker({
       timeout: 30000, // 30 seconds
       watchPosition: isTracking,
     });
+
+  // Check for active tracking sessions on component mount
+  useEffect(() => {
+    const checkActiveTrackingSession = async () => {
+      try {
+        const response = await HttpClient.get(
+          `/api/tracking-sessions?employeeId=${employeeId}&status=active&limit=1`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const activeSessions = data.sessions || [];
+
+          if (activeSessions.length > 0) {
+            const activeSession = activeSessions[0];
+            console.log('Found active tracking session:', activeSession);
+
+            // Resume tracking session
+            setCurrentSession(activeSession);
+            setTrackingStartTime(new Date(activeSession.startTime));
+            setIsTracking(true);
+            setRouteCoordinates(activeSession.route || []);
+            setTotalDistance(activeSession.totalDistance || 0);
+
+            // Calculate elapsed time
+            const startTime = new Date(activeSession.startTime).getTime();
+            const now = Date.now();
+            setElapsedTime(now - startTime);
+
+            console.log('Resumed active tracking session');
+          } else {
+            console.log('No active tracking sessions found');
+            setIsTracking(false);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check active tracking sessions:', error);
+        setIsTracking(false);
+      } finally {
+        setIsCheckingActiveSession(false);
+      }
+    };
+
+    if (employeeId) {
+      checkActiveTrackingSession();
+    } else {
+      setIsCheckingActiveSession(false);
+    }
+  }, [employeeId]);
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = useCallback(
