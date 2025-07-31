@@ -120,11 +120,18 @@ export default function Tracking() {
         setMeetings(data.meetings || []);
         console.log("Meetings data fetched successfully:", data);
       } else {
-        const errorText = await response.text();
-        console.error(
-          `Failed to fetch meetings: ${response.status} ${response.statusText} - ${errorText}`,
-        );
-        // Set empty array to avoid crashes
+        // For error responses, try to get error message but don't read body if already consumed
+        let errorText = `${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.text();
+          if (errorData) {
+            errorText += ` - ${errorData}`;
+          }
+        } catch (bodyError) {
+          console.warn("Could not read error response body:", bodyError);
+        }
+
+        console.error(`Failed to fetch meetings: ${errorText}`);
         setMeetings([]);
       }
     } catch (error) {
