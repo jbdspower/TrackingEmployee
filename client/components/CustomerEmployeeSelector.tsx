@@ -72,13 +72,22 @@ export const CustomerEmployeeSelector = forwardRef<
         setCustomers(customerArray);
 
         // Flatten all employees with customer info
-        const allEmployees = customerArray.flatMap((customer: Customer) =>
+        let allEmployees = customerArray.flatMap((customer: Customer) =>
           (customer.Employees || []).map((employee) => ({
             ...employee,
             customerName: customer.CustomerCompanyName,
             customerId: customer._id,
           })),
         );
+
+        // Filter by company if specified
+        if (filterByCompany) {
+          allEmployees = allEmployees.filter((employee) =>
+            employee.customerName.toLowerCase().trim() === filterByCompany.toLowerCase().trim()
+          );
+          console.log(`Filtered employees for company "${filterByCompany}":`, allEmployees.length);
+        }
+
         setEmployees(allEmployees);
       } catch (err) {
         console.error("Error fetching customers:", err);
