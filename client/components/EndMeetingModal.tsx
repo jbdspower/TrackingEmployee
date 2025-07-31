@@ -378,12 +378,23 @@ export function EndMeetingModal({
 
           {/* Customer Employee Selection */}
           <div className="space-y-4">
+            {currentMeeting?.clientName && (
+              <div className="bg-primary/5 p-3 rounded-md text-sm">
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium">Meeting with: {currentMeeting.clientName}</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Showing employees for this company only
+                </div>
+              </div>
+            )}
             <CustomerEmployeeSelector
               ref={customerSelectorRef}
               onEmployeeSelect={handleCustomerEmployeeSelect}
               selectedEmployeeId={currentSelectedEmployee?._id}
               disabled={isFormDisabled}
               onAddNewEmployee={() => setIsAddEmployeeOpen(true)}
+              filterByCompany={currentMeeting?.clientName}
             />
             {errors.customers && (
               <div className="flex items-center space-x-1 text-sm text-destructive">
