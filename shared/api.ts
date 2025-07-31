@@ -141,14 +141,31 @@ export interface MeetingLogsResponse {
 
 export interface CreateMeetingRequest {
   employeeId: string;
-  location: {
+  location?: {
     lat: number;
     lng: number;
     address: string;
   };
+  startLocation?: {
+    lat: number;
+    lng: number;
+    address: string;
+    timestamp?: string;
+  };
   clientName?: string;
+  customerName?: string;
   notes?: string;
   trackingSessionId?: string;
+  customers?: any[];
+  customerEmployeeName?: string;
+  customerEmail?: string;
+  customerMobile?: string;
+  customerDesignation?: string;
+  customerDepartment?: string;
+  discussion?: string;
+  startTime?: string;
+  leadId?: string;
+  leadInfo?: any;
 }
 
 // New interfaces for enhanced functionality
