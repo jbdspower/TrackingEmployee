@@ -9,7 +9,7 @@ import {
 import { MeetingHistory, IMeetingHistory, TrackingSession, ITrackingSession } from "../models";
 
 // In-memory storage for demo purposes
-let trackingSessions: TrackingSession[] = [];
+let trackingSessions: TrackingSessionType[] = [];
 let sessionIdCounter = 1;
 
 // In-memory storage for meeting history with customer details
