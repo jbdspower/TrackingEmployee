@@ -126,7 +126,7 @@ export default function Tracking() {
       console.log("Fetching meetings:", { employeeId, retryCount });
 
       if (!employeeId) {
-        console.error("Employee ID is undefined");
+        console.error("Employee ID is undefined - cannot fetch meetings data");
         setMeetings([]);
         return;
       }
