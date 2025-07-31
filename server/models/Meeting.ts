@@ -35,6 +35,7 @@ interface Location {
 export interface IMeeting extends Document {
   employeeId: string;
   location: Location;
+  endLocation?: Location;
   startTime: string;
   endTime?: string;
   clientName?: string;
@@ -92,14 +93,17 @@ const LeadInfoSchema = new Schema({
 
 // Main meeting schema
 const MeetingSchema = new Schema({
-  employeeId: { 
-    type: String, 
+  employeeId: {
+    type: String,
     required: true,
-    index: true 
+    index: true
   },
-  location: { 
-    type: LocationSchema, 
-    required: true 
+  location: {
+    type: LocationSchema,
+    required: true
+  },
+  endLocation: {
+    type: LocationSchema
   },
   startTime: { 
     type: String, 
