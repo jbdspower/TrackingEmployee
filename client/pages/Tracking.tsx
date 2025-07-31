@@ -651,6 +651,26 @@ export default function Tracking() {
                     <MapPin className="h-4 w-4 mr-2" />
                     Open in Maps App
                   </Button>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsSnapshotCaptureOpen(true)}
+                      className="text-primary"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Save Snapshot
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsSnapshotHistoryOpen(true)}
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      View History
+                    </Button>
+                  </div>
                 </div>
 
                 {showMap && employee && (
