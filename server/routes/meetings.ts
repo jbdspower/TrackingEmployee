@@ -287,7 +287,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
           _id: meetingId,
           employeeId: meetingData.employeeId,
           startTime: meetingData.startTime || new Date().toISOString(),
-          status: 'active',
+          status: 'in-progress',
           startLocation: meetingData.startLocation || meetingData.location,
           trackingSessionId: meetingData.trackingSessionId,
           customers: meetingData.customers || [],
@@ -318,7 +318,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
           id: meetingId,
           employeeId: meetingData.employeeId,
           startTime: meetingData.startTime || new Date().toISOString(),
-          status: 'active',
+          status: 'in-progress',
           location: startLoc || {
             lat: 0,
             lng: 0,
