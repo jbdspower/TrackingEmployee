@@ -38,9 +38,8 @@ class Database {
       console.log('���� Database: Connecting to MongoDB...');
       console.log('📦 Database: URI:', dbConfig.MONGODB_URI);
       
-      // Set buffering configuration for better error handling
-      mongoose.set('bufferCommands', true); // Re-enable buffering with shorter timeout
-      mongoose.set('bufferMaxEntries', 0); // But don't queue commands indefinitely
+      // Re-enable buffering to handle connection failures gracefully
+      mongoose.set('bufferCommands', true);
 
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
