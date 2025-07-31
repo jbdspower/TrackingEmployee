@@ -1,6 +1,6 @@
 import { RequestHandler } from "express";
 import {
-  TrackingSession,
+  TrackingSession as TrackingSessionType,
   TrackingSessionResponse,
   LocationData,
   MeetingDetails,
