@@ -277,23 +277,44 @@ export const getEmployee: RequestHandler = async (req, res) => {
       async () => {
         console.log('Fetching employee from MongoDB:', id);
         const dbEmployee = await EmployeeModel.findById(id).lean();
-        
+
         if (!dbEmployee) {
           throw new Error('Employee not found');
         }
-        
+
         console.log('Employee found in MongoDB');
         return dbEmployee as Employee;
       },
-      () => {
+      async () => {
         console.log('MongoDB query failed, falling back to in-memory storage');
-        const memoryEmployee = inMemoryEmployees.find(e => e._id === id);
-        
+        let memoryEmployee = inMemoryEmployees.find(e => e._id === id);
+
         if (!memoryEmployee) {
-          throw new Error('Employee not found in memory');
+          console.log('Employee not found in memory, attempting external API sync...');
+
+          try {
+            // Try to sync from external API
+            const externalEmployees = await syncExternalEmployeeData();
+
+            // Update in-memory storage
+            inMemoryEmployees = externalEmployees;
+
+            // Try to find the employee again
+            memoryEmployee = inMemoryEmployees.find(e => e._id === id);
+
+            if (!memoryEmployee) {
+              throw new Error('Employee not found after external sync');
+            }
+
+            console.log('Employee found after external sync');
+          } catch (syncError) {
+            console.error('External API sync failed:', syncError);
+            throw new Error('Employee not found and sync failed');
+          }
+        } else {
+          console.log('Employee found in memory');
         }
-        
-        console.log('Employee found in memory');
+
         return memoryEmployee;
       },
       'fetch single employee'
