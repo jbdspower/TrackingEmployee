@@ -327,6 +327,7 @@ export const getEmployee: RequestHandler = async (req, res) => {
       if (employee) return res.json(employee);
     } catch (dbError) {
       console.warn("MongoDB query failed:", dbError);
+      // Continue with external API fallback
     }
 
     return res.status(404).json({ error: "Employee not found" });
