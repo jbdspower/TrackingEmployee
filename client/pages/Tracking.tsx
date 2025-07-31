@@ -333,9 +333,11 @@ export default function Tracking() {
         }
 
         // Update employee status to active
-        await HttpClient.put(`/api/employees/${employeeId}/status`, {
-          status: "active",
-        });
+        if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
+          await HttpClient.put(`/api/employees/${employeeId}/status`, {
+            status: "active",
+          });
+        }
 
         // Refresh data
         await Promise.all([fetchMeetings(), fetchEmployee()]);
