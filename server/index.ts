@@ -137,5 +137,13 @@ export function createServer() {
   // Debug routes
   app.get("/api/debug/employee/:employeeId", debugEmployeeData);
 
+  // Route snapshot routes
+  app.get("/api/route-snapshots", getRouteSnapshots);
+  app.post("/api/route-snapshots", createRouteSnapshot);
+  app.get("/api/route-snapshots/:id", getRouteSnapshot);
+  app.put("/api/route-snapshots/:id", updateRouteSnapshot);
+  app.delete("/api/route-snapshots/:id", deleteRouteSnapshot);
+  app.get("/api/employees/:employeeId/snapshots", getEmployeeSnapshots);
+
   return app;
 }
