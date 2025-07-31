@@ -67,7 +67,7 @@ export function LocationTracker({
     const checkActiveTrackingSession = async () => {
       try {
         // Validate employeeId before making API call
-        if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
+        if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
           console.warn('LocationTracker: Invalid employeeId, skipping tracking session check:', {
             employeeId,
             type: typeof employeeId
