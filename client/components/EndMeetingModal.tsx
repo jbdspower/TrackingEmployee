@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MeetingDetails, CustomerEmployee, Customer, CustomerContact, LocationData } from "@shared/api";
-import { AlertCircle, CheckCircle, Clock, User, Building2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, User, Building2, MapPin, Loader2 } from "lucide-react";
 import {
   CustomerEmployeeSelector,
   CustomerEmployeeSelectorRef,
@@ -386,10 +386,33 @@ export function EndMeetingModal({
             <Clock className="h-5 w-5 text-destructive" />
             <span>End Meeting</span>
           </DialogTitle>
-          <DialogDescription>
-            Complete the meeting for{" "}
-            <span className="font-medium">{employeeName}</span> by providing
-            customer details and discussion summary.
+          <DialogDescription className="space-y-2">
+            <div>
+              Complete the meeting for{" "}
+              <span className="font-medium">{employeeName}</span> by providing
+              customer details and discussion summary.
+            </div>
+
+            {/* Location Status */}
+            <div className="flex items-center space-x-2 text-xs">
+              {currentLocation ? (
+                <>
+                  <CheckCircle className="h-3 w-3 text-success" />
+                  <span className="text-success">End location captured</span>
+                  <span className="text-muted-foreground">({currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)})</span>
+                </>
+              ) : locationError ? (
+                <>
+                  <AlertCircle className="h-3 w-3 text-warning" />
+                  <span className="text-warning">{locationError}</span>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Getting current location...</span>
+                </>
+              )}
+            </div>
           </DialogDescription>
         </DialogHeader>
 
