@@ -70,12 +70,23 @@ async function convertMeetingToLog(meeting: IMeeting): Promise<MeetingLog> {
       endTime: meeting.endTime,
       duration: meeting.duration,
       status: meeting.status,
-      
+
+      // Backward compatibility - include location field pointing to startLocation
+      location: meeting.startLocation ? {
+        ...meeting.startLocation,
+        address: startAddress
+      } : {
+        lat: 0,
+        lng: 0,
+        address: "Location not available",
+        timestamp: meeting.startTime
+      },
+
       startLocation: meeting.startLocation ? {
         ...meeting.startLocation,
         address: startAddress
       } : undefined,
-      
+
       endLocation: meeting.endLocation ? {
         ...meeting.endLocation,
         address: endAddress
