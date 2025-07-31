@@ -313,12 +313,19 @@ export const createMeeting: RequestHandler = async (req, res) => {
       },
       () => {
         console.log('MongoDB save failed, falling back to in-memory storage');
+        const startLoc = meetingData.startLocation || meetingData.location;
         const inMemoryMeeting: MeetingLog = {
           id: meetingId,
           employeeId: meetingData.employeeId,
           startTime: meetingData.startTime || new Date().toISOString(),
           status: 'active',
-          startLocation: meetingData.startLocation || meetingData.location,
+          location: startLoc || {
+            lat: 0,
+            lng: 0,
+            address: "Location not available",
+            timestamp: new Date().toISOString()
+          },
+          startLocation: startLoc,
           trackingSessionId: meetingData.trackingSessionId,
           customers: meetingData.customers || [],
           customerName: meetingData.customerName || "",
