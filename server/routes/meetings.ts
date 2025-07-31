@@ -94,6 +94,7 @@ async function convertMeetingToLog(meeting: IMeeting): Promise<MeetingLog> {
       
       // Customer details (legacy format for backward compatibility)
       customerName: meeting.customers?.[0]?.customerName || meeting.customerName || "",
+      clientName: meeting.customers?.[0]?.customerName || meeting.customerName || "",
       customerEmployeeName: meeting.customers?.[0]?.customerEmployeeName || meeting.customerEmployeeName || "",
       customerEmail: meeting.customers?.[0]?.customerEmail || meeting.customerEmail || "",
       customerMobile: meeting.customers?.[0]?.customerMobile || meeting.customerMobile || "",
