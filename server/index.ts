@@ -1,133 +1,267 @@
-import express from "express";
-import cors from "cors";
-import Database from "./config/database";
-import { handleDemo } from "./routes/demo";
-import {
-  getEmployees,
-  getEmployee,
-  updateEmployeeLocation,
-  updateEmployeeStatus,
-  createEmployee,
-  updateEmployee,
-  deleteEmployee,
-  refreshEmployeeLocations,
-  clearLocationCache,
-} from "./routes/employees";
-import {
-  getMeetings,
-  createMeeting,
-  updateMeeting,
-  getMeeting,
-  deleteMeeting,
-} from "./routes/meetings";
-import {
-  getTrackingSessions,
-  createTrackingSession,
-  updateTrackingSession,
-  addLocationToRoute,
-  getTrackingSession,
-  deleteTrackingSession,
-  getMeetingHistory,
-  addMeetingToHistory,
-} from "./routes/tracking";
-import {
-  getEmployeeAnalytics,
-  getEmployeeDetails,
-  getLeadHistory,
-  saveAttendance,
-  getMeetingTrends,
-} from "./routes/analytics";
-import {
-  syncAllData,
-  getDataStatus,
-} from "./routes/data-sync";
-import {
-  debugEmployeeData,
-} from "./routes/debug";
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import Database from './config/database.js';
 
-export function createServer() {
-  const app = express();
+// Import routes
+import employeesRouter from './routes/employees.js';
+import meetingsRouter from './routes/meetings.js';
+import trackingRouter from './routes/tracking.js';
+import analyticsRouter from './routes/analytics.js';
+import dataSyncRouter from './routes/data-sync.js';
+import debugRouter from './routes/debug.js';
+import demoRouter from './routes/demo.js';
 
-  // Initialize database connection
-  const initializeDatabase = async () => {
-    try {
-      const db = Database.getInstance();
-      await db.connect();
-    } catch (error) {
-      console.error('Failed to initialize database:', error);
-      // Continue without database for development
-    }
-  };
+// Get current directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  // Start database connection (non-blocking)
-  initializeDatabase();
+const app = express();
+const PORT = process.env.PORT || 3001;
 
-  // Middleware
-  app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+// Enhanced error handling middleware
+class AppError extends Error {
+  statusCode: number;
+  isOperational: boolean;
 
-  // Request logging
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
-    next();
-  });
-
-  // Example API routes
-  app.get("/api/ping", (_req, res) => {
-    console.log("Health check ping received");
-    res.json({
-      message: "Hello from Express server v2!",
-      timestamp: new Date().toISOString(),
-      status: "ok",
-    });
-  });
-
-  app.get("/api/demo", handleDemo);
-
-  // Employee routes
-  app.get("/api/employees", getEmployees);
-  app.post("/api/employees", createEmployee);
-  app.get("/api/employees/:id", getEmployee);
-  app.put("/api/employees/:id", updateEmployee);
-  app.delete("/api/employees/:id", deleteEmployee);
-  app.put("/api/employees/:id/location", updateEmployeeLocation);
-  app.put("/api/employees/:id/status", updateEmployeeStatus);
-  app.post("/api/employees/refresh-locations", refreshEmployeeLocations);
-  app.post("/api/employees/clear-cache", clearLocationCache);
-
-  // Meeting routes
-  app.get("/api/meetings", getMeetings);
-  app.post("/api/meetings", createMeeting);
-  app.get("/api/meetings/:id", getMeeting);
-  app.put("/api/meetings/:id", updateMeeting);
-  app.delete("/api/meetings/:id", deleteMeeting);
-
-  // Tracking session routes
-  app.get("/api/tracking-sessions", getTrackingSessions);
-  app.post("/api/tracking-sessions", createTrackingSession);
-  app.get("/api/tracking-sessions/:id", getTrackingSession);
-  app.put("/api/tracking-sessions/:id", updateTrackingSession);
-  app.delete("/api/tracking-sessions/:id", deleteTrackingSession);
-  app.post("/api/tracking-sessions/:id/location", addLocationToRoute);
-
-  // Meeting history routes
-  app.get("/api/meeting-history", getMeetingHistory);
-  app.post("/api/meeting-history", addMeetingToHistory);
-
-  // Analytics routes
-  app.get("/api/analytics/employees", getEmployeeAnalytics);
-  app.get("/api/analytics/employee-details/:employeeId", getEmployeeDetails);
-  app.get("/api/analytics/lead-history/:leadId", getLeadHistory);
-  app.post("/api/analytics/save-attendance", saveAttendance);
-  app.get("/api/analytics/trends", getMeetingTrends);
-
-  // Data synchronization routes
-  app.post("/api/data-sync", syncAllData);
-  app.get("/api/data-status", getDataStatus);
-
-  // Debug routes
-  app.get("/api/debug/employee/:employeeId", debugEmployeeData);
-
-  return app;
+  constructor(message: string, statusCode: number = 500) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = true;
+  }
 }
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`${req.method} ${req.path} - ${timestamp}`);
+  next();
+});
+
+// Security and parsing middleware
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Health check endpoint (before database dependency)
+app.get('/health', (req, res) => {
+  const db = Database.getInstance();
+  const dbStatus = db.isConnectionActive() ? 'connected' : 'disconnected';
+  
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: dbStatus,
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    version: process.version
+  });
+});
+
+// Database status endpoint
+app.get('/api/db-status', async (req, res) => {
+  try {
+    const db = Database.getInstance();
+    const isActive = db.isConnectionActive();
+    
+    if (isActive) {
+      // Try a simple operation to verify connectivity
+      const connection = db.getConnection();
+      await connection.db.admin().ping();
+      
+      res.json({
+        status: 'connected',
+        readyState: connection.readyState,
+        host: connection.host,
+        name: connection.name
+      });
+    } else {
+      res.status(503).json({
+        status: 'disconnected',
+        message: 'Database connection not available'
+      });
+    }
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown database error'
+    });
+  }
+});
+
+// API routes with database dependency checking
+app.use('/api/employees', (req, res, next) => {
+  const db = Database.getInstance();
+  if (!db.isConnectionActive() && req.method !== 'GET') {
+    console.warn('⚠️ Non-GET request attempted without database connection');
+  }
+  next();
+}, employeesRouter);
+
+app.use('/api/meetings', (req, res, next) => {
+  const db = Database.getInstance();
+  if (!db.isConnectionActive() && req.method !== 'GET') {
+    console.warn('⚠️ Non-GET request attempted without database connection');
+  }
+  next();
+}, meetingsRouter);
+
+app.use('/api', trackingRouter);
+app.use('/api/analytics', analyticsRouter);
+app.use('/api', dataSyncRouter);
+app.use('/api/debug', debugRouter);
+app.use('/api/demo', demoRouter);
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  const staticPath = path.join(__dirname, '../dist');
+  app.use(express.static(staticPath));
+  
+  // Serve index.html for all routes (SPA)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(staticPath, 'index.html'));
+  });
+}
+
+// Global error handler
+app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('❌ Server Error:', error);
+
+  // Handle specific error types
+  if (error instanceof AppError) {
+    return res.status(error.statusCode).json({
+      error: error.message,
+      status: 'error'
+    });
+  }
+
+  // Handle MongoDB errors
+  if (error.name === 'MongoError' || error.name === 'MongoServerError') {
+    return res.status(503).json({
+      error: 'Database service temporarily unavailable',
+      status: 'error'
+    });
+  }
+
+  // Handle validation errors
+  if (error.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Invalid request data',
+      details: error.message,
+      status: 'error'
+    });
+  }
+
+  // Handle JSON parsing errors
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({
+      error: 'Invalid JSON in request body',
+      status: 'error'
+    });
+  }
+
+  // Default error response
+  res.status(500).json({
+    error: 'Internal server error',
+    status: 'error',
+    ...(process.env.NODE_ENV === 'development' && { details: error.message })
+  });
+});
+
+// Handle 404 for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    error: `API endpoint ${req.path} not found`,
+    status: 'error'
+  });
+});
+
+// Graceful shutdown handler
+async function gracefulShutdown(signal: string) {
+  console.log(`\n🔄 Received ${signal}. Starting graceful shutdown...`);
+  
+  const db = Database.getInstance();
+  
+  try {
+    console.log('📦 Closing database connection...');
+    await db.disconnect();
+    console.log('✅ Database disconnected successfully');
+  } catch (error) {
+    console.error('❌ Error during database disconnect:', error);
+  }
+  
+  console.log('👋 Server shutdown complete');
+  process.exit(0);
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
+});
+
+// Initialize and start server
+async function startServer() {
+  try {
+    console.log('🚀 Starting Employee Tracking Server...');
+    
+    // Initialize database connection
+    const db = Database.getInstance();
+    
+    try {
+      await db.connect();
+      console.log('✅ Database connection established');
+    } catch (error) {
+      console.warn('⚠️ Database connection failed, starting in degraded mode:', error);
+      // Continue startup even if database connection fails
+    }
+    
+    // Start the server
+    const server = app.listen(PORT, () => {
+      console.log(`🌐 Server running on port ${PORT}`);
+      console.log(`📍 Health check: http://localhost:${PORT}/health`);
+      console.log(`📊 Database status: http://localhost:${PORT}/api/db-status`);
+      console.log('✅ Server startup complete');
+    });
+
+    // Handle server errors
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use`);
+        process.exit(1);
+      } else {
+        console.error('❌ Server error:', error);
+      }
+    });
+
+    return server;
+    
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer().catch((error) => {
+  console.error('❌ Startup error:', error);
+  process.exit(1);
+});
+
+export { app, AppError };
