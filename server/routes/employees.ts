@@ -120,6 +120,7 @@ async function syncExternalEmployeeData(): Promise<Employee[]> {
       },
       status: 'active',
       lastSeen: new Date().toISOString(),
+      lastUpdate: new Date().toISOString(),
       trackingSessionId: undefined,
       isActive: true,
     }));
