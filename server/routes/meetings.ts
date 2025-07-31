@@ -350,9 +350,18 @@ export const deleteMeeting: RequestHandler = async (req, res) => {
       res.status(204).send();
       return;
     } catch (dbError) {
-      console.error("MongoDB delete failed:", dbError);
-      return res.status(500).json({ error: "Database unavailable. Meeting could not be deleted." });
+      console.error("MongoDB delete failed, checking in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    const meetingIndex = inMemoryMeetings.findIndex((m) => m.id === id);
+    if (meetingIndex === -1) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    inMemoryMeetings.splice(meetingIndex, 1);
+    console.log("Meeting deleted from memory:", id);
+    res.status(204).send();
   } catch (error) {
     console.error("Error deleting meeting:", error);
     res.status(500).json({ error: "Failed to delete meeting" });
