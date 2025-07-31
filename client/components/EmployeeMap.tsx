@@ -131,10 +131,10 @@ export function EmployeeMap({
         `);
 
         if (onEmployeeClick) {
-          marker.on("click", () => onEmployeeClick(employee.id));
+          marker.on("click", () => onEmployeeClick(employee._id || employee.id));
         }
 
-        markersRef.current[employee.id] = marker;
+        markersRef.current[employee._id || employee.id] = marker;
         bounds.extend([employee.location.lat, employee.location.lng]);
       }
     });
