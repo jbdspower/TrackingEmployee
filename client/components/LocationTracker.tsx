@@ -641,9 +641,21 @@ export function LocationTracker({
           )}
 
           {error && (
-            <div className="flex items-center space-x-2 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4" />
-              <span>{error}</span>
+            <div className="border border-destructive/20 bg-destructive/5 rounded-md p-3 space-y-2">
+              <div className="flex items-center space-x-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="font-medium">{error}</span>
+              </div>
+              {error.includes("denied") && (
+                <div className="text-xs text-muted-foreground">
+                  <p className="mb-1">To enable location tracking:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Click the location icon (🔒) in your browser's address bar</li>
+                    <li>Select "Allow" for location permissions</li>
+                    <li>Refresh the page and try again</li>
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
