@@ -318,7 +318,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
           employeeId: meetingData.employeeId,
           startTime: meetingData.startTime || new Date().toISOString(),
           status: 'active',
-          startLocation: meetingData.startLocation,
+          startLocation: meetingData.startLocation || meetingData.location,
           trackingSessionId: meetingData.trackingSessionId,
           customers: meetingData.customers || [],
           customerName: meetingData.customerName || "",
