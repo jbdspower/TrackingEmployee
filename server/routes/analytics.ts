@@ -271,14 +271,14 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
 
       // If no MongoDB data, fallback to in-memory
       if (actualMeetings.length === 0) {
-        const { meetings: inMemoryMeetings } = await import("./meetings");
-        actualMeetings = inMemoryMeetings;
+        const { inMemoryMeetings } = await import("./meetings");
+        actualMeetings = inMemoryMeetings || [];
         console.log(`Fallback: Using ${actualMeetings.length} meetings from memory`);
       }
     } catch (dbError) {
       console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { meetings: inMemoryMeetings } = await import("./meetings");
-      actualMeetings = inMemoryMeetings;
+      const { inMemoryMeetings } = await import("./meetings");
+      actualMeetings = inMemoryMeetings || [];
     }
 
     console.log("Using meetings data:", actualMeetings.length, "meetings");
