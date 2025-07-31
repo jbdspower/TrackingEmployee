@@ -106,6 +106,7 @@ async function syncExternalEmployeeData(): Promise<Employee[]> {
     const externalUsers: ExternalUser[] = response.data;
     const employees: Employee[] = externalUsers.map(user => ({
       _id: user._id,
+      id: user._id, // Add id field for frontend compatibility
       name: user.name,
       email: user.email || '',
       phone: user.phone || '',
