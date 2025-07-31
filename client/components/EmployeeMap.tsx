@@ -315,7 +315,7 @@ export function EmployeeMap({
   useEffect(() => {
     if (!mapRef.current || !selectedEmployee) return;
 
-    const employee = employees.find((emp) => emp.id === selectedEmployee);
+    const employee = employees.find((emp) => (emp._id || emp.id) === selectedEmployee);
     if (employee && employee.location.lat && employee.location.lng) {
       mapRef.current.setView(
         [employee.location.lat, employee.location.lng],
