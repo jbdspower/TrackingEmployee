@@ -493,9 +493,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     );
 
     // Generate day records
-    const dayRecords = Object.entries(dateGroups).map(([date, meetings]) => {
+    const dayRecords = Object.entries(dateGroups).map(([date, meetings]: [string, any[]]) => {
       const totalMeetings = meetings.length;
-      const totalMeetingHours = meetings.reduce((total, meeting) => {
+      const totalMeetingHours = meetings.reduce((total: number, meeting: any) => {
         return (
           total + calculateMeetingDuration(meeting.startTime, meeting.endTime)
         );
