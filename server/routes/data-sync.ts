@@ -21,8 +21,8 @@ export const syncAllData: RequestHandler = async (req, res) => {
     let syncedMeetings = 0;
     let syncedHistory = 0;
     
-    // Sync in-memory meetings to MongoDB
-    for (const meeting of inMemoryMeetings) {
+    // No in-memory meetings to sync anymore
+    for (const meeting of []) {
       if (employeeId && meeting.employeeId !== employeeId) continue;
       
       const exists = await Meeting.findOne({ 
