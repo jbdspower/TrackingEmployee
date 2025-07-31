@@ -67,6 +67,9 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
   };
 }
 
+// In-memory fallback storage
+let inMemoryMeetings: MeetingLog[] = [];
+
 export const getMeetings: RequestHandler = async (req, res) => {
   try {
     const { employeeId, status, startDate, endDate, limit = 50 } = req.query;
@@ -75,12 +78,14 @@ export const getMeetings: RequestHandler = async (req, res) => {
     const query: any = {};
     if (employeeId) query.employeeId = employeeId;
     if (status) query.status = status;
-    
+
     if (startDate || endDate) {
       query.startTime = {};
       if (startDate) query.startTime.$gte = new Date(startDate as string);
       if (endDate) query.startTime.$lte = new Date(endDate as string);
     }
+
+    console.log("Fetching meetings with query:", query);
 
     // Try MongoDB first
     try {
@@ -99,12 +104,55 @@ export const getMeetings: RequestHandler = async (req, res) => {
         total: meetingLogs.length,
       };
 
+      console.log(`Found ${meetingLogs.length} meetings in MongoDB`);
       res.json(response);
       return;
     } catch (dbError) {
-      console.error("MongoDB query failed:", dbError);
-      throw dbError; // Fall through to error handler
+      console.warn("MongoDB query failed, falling back to in-memory storage:", dbError);
     }
+
+    // Fallback to in-memory storage
+    let filteredMeetings = inMemoryMeetings;
+
+    if (employeeId) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.employeeId === employeeId,
+      );
+    }
+
+    if (status) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.status === status,
+      );
+    }
+
+    if (startDate) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => new Date(meeting.startTime) >= new Date(startDate as string),
+      );
+    }
+
+    if (endDate) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => new Date(meeting.startTime) <= new Date(endDate as string),
+      );
+    }
+
+    filteredMeetings.sort(
+      (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+    );
+
+    if (limit) {
+      filteredMeetings = filteredMeetings.slice(0, parseInt(limit as string));
+    }
+
+    const response: MeetingLogsResponse = {
+      meetings: filteredMeetings,
+      total: filteredMeetings.length,
+    };
+
+    console.log(`Found ${filteredMeetings.length} meetings in memory`);
+    res.json(response);
   } catch (error) {
     console.error("Error fetching meetings:", error);
     res.status(500).json({ error: "Failed to fetch meetings" });
