@@ -563,7 +563,14 @@ export function LocationTracker({
 
         {/* Current Status */}
         <div className="space-y-2">
-          {loading && (
+          {isCheckingActiveSession && (
+            <div className="flex items-center space-x-2 text-sm text-info">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Checking for active tracking session...</span>
+            </div>
+          )}
+
+          {loading && !isCheckingActiveSession && (
             <div className="flex items-center space-x-2 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Getting location...</span>
@@ -636,21 +643,30 @@ export function LocationTracker({
         {/* Controls */}
         <div className="flex space-x-2">
           {!isTracking ? (
-            <Button onClick={handleStartTracking} className="flex-1">
+            <Button
+              onClick={handleStartTracking}
+              className="flex-1"
+              disabled={isCheckingActiveSession}
+            >
               <Navigation className="h-4 w-4 mr-2" />
-              Start Tracking
+              {isCheckingActiveSession ? 'Checking...' : 'Start Tracking'}
             </Button>
           ) : (
             <Button
               onClick={handleStopTracking}
               variant="destructive"
               className="flex-1"
+              disabled={isCheckingActiveSession}
             >
               Stop Tracking
             </Button>
           )}
 
-          <Button variant="outline" onClick={getCurrentPosition}>
+          <Button
+            variant="outline"
+            onClick={getCurrentPosition}
+            disabled={isCheckingActiveSession}
+          >
             <MapPin className="h-4 w-4 mr-2" />
             Update Now
           </Button>
