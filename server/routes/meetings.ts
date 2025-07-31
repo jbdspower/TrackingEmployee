@@ -153,7 +153,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
       return;
     } catch (dbError) {
       console.error("MongoDB query failed:", dbError);
-      throw dbError;
+      return res.status(404).json({ error: "Meeting not found" });
     }
   } catch (error) {
     console.error("Error fetching meeting:", error);
@@ -197,7 +197,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
       return;
     } catch (dbError) {
       console.error("MongoDB save failed:", dbError);
-      throw dbError;
+      return res.status(500).json({ error: "Database unavailable. Meeting could not be created." });
     }
   } catch (error) {
     console.error("Error creating meeting:", error);
@@ -254,7 +254,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       return;
     } catch (dbError) {
       console.error("MongoDB update failed:", dbError);
-      throw dbError;
+      return res.status(500).json({ error: "Database unavailable. Meeting could not be updated." });
     }
   } catch (error) {
     console.error("Error updating meeting:", error);
@@ -277,7 +277,7 @@ export const deleteMeeting: RequestHandler = async (req, res) => {
       return;
     } catch (dbError) {
       console.error("MongoDB delete failed:", dbError);
-      throw dbError;
+      return res.status(500).json({ error: "Database unavailable. Meeting could not be deleted." });
     }
   } catch (error) {
     console.error("Error deleting meeting:", error);
