@@ -158,9 +158,14 @@ export const getDataStatus: RequestHandler = async (req, res) => {
     
   } catch (error) {
     console.error("Error getting data status:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to get data status",
-      details: error.message 
+      details: error.message
     });
   }
+};
+
+export default {
+  syncAllData,
+  getDataStatus,
 };
