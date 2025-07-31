@@ -862,6 +862,28 @@ export default function Tracking() {
         isOpen={isMeetingHistoryOpen}
         onClose={() => setIsMeetingHistoryOpen(false)}
       />
+
+      {/* Route Snapshot Capture Modal */}
+      {employee && (
+        <RouteSnapshotCapture
+          employee={employee}
+          trackingSession={currentTrackingSession}
+          meetings={meetings}
+          isOpen={isSnapshotCaptureOpen}
+          onClose={() => setIsSnapshotCaptureOpen(false)}
+          onSnapshotCreated={(snapshot) => {
+            console.log("Snapshot created:", snapshot);
+            // Optionally refresh or show success message
+          }}
+        />
+      )}
+
+      {/* Route Snapshot History Modal */}
+      <RouteSnapshotHistory
+        employeeId={employeeId}
+        isOpen={isSnapshotHistoryOpen}
+        onClose={() => setIsSnapshotHistoryOpen(false)}
+      />
     </div>
   );
 }
