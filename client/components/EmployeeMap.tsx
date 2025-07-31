@@ -159,7 +159,7 @@ export function EmployeeMap({
     });
     routeMarkersRef.current = [];
 
-    if (!showRoute || !trackingSession || !trackingSession.route.length) return;
+    if (!showRoute || !trackingSession || !trackingSession.route || !trackingSession.route.length) return;
 
     const route = trackingSession.route;
 
