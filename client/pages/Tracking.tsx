@@ -126,34 +126,30 @@ export default function Tracking() {
         `/api/meetings?employeeId=${employeeId}&limit=5`,
       );
 
+      // Read response as text first to avoid body stream consumption issues
+      let responseText: string;
+      try {
+        responseText = await response.text();
+      } catch (textError) {
+        console.error("Error reading response text:", textError);
+        setMeetings([]);
+        return;
+      }
+
       if (response.ok) {
         try {
-          const data = await response.json();
+          const data = JSON.parse(responseText);
           setMeetings(data.meetings || []);
           console.log("Meetings data fetched successfully:", data);
         } catch (jsonError) {
           console.error("Error parsing meetings JSON:", jsonError);
-          // Try to get text instead if JSON parsing fails
-          try {
-            const text = await response.text();
-            console.error("Response text:", text);
-          } catch (textError) {
-            console.error("Could not read response as text either:", textError);
-          }
+          console.error("Response text:", responseText);
           setMeetings([]);
         }
       } else {
-        try {
-          const errorText = await response.text();
-          console.error(
-            `Failed to fetch meetings: ${response.status} ${response.statusText} - ${errorText}`,
-          );
-        } catch (textError) {
-          console.error(
-            `Failed to fetch meetings: ${response.status} ${response.statusText} - Could not read error text:`,
-            textError,
-          );
-        }
+        console.error(
+          `Failed to fetch meetings: ${response.status} ${response.statusText} - ${responseText}`,
+        );
         setMeetings([]);
       }
     } catch (error) {
