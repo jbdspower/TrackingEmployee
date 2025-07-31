@@ -752,3 +752,11 @@ export const getMeetingTrends: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch trends" });
   }
 };
+
+export default {
+  getEmployeeAnalytics,
+  getEmployeeDetails,
+  getLeadHistory,
+  saveAttendance,
+  getMeetingTrends,
+};
