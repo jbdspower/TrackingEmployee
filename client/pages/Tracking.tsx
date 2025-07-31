@@ -44,6 +44,8 @@ export default function Tracking() {
 
   useEffect(() => {
     if (!employeeId) {
+      console.log("No employeeId provided, redirecting to home");
+      setLoading(false);
       navigate("/");
       return;
     }
@@ -55,6 +57,8 @@ export default function Tracking() {
       } catch (error) {
         console.error("Failed to initialize tracking data:", error);
         // Continue anyway - the individual functions handle their own errors
+      } finally {
+        setLoading(false);
       }
     };
 
