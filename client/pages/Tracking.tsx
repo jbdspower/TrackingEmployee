@@ -74,15 +74,33 @@ export default function Tracking() {
       const response = await HttpClient.get(`/api/employees/${employeeId}`);
 
       if (response.ok) {
-        const data = await response.json();
-        setEmployee(data);
-        console.log("Employee data fetched successfully:", data);
+        try {
+          const data = await response.json();
+          setEmployee(data);
+          console.log("Employee data fetched successfully:", data);
+        } catch (jsonError) {
+          console.error("Error parsing employee JSON:", jsonError);
+          // Try to get text instead if JSON parsing fails
+          try {
+            const text = await response.text();
+            console.error("Response text:", text);
+          } catch (textError) {
+            console.error("Could not read response as text either:", textError);
+          }
+          setEmployee(null);
+        }
       } else {
-        const errorText = await response.text();
-        console.error(
-          `Failed to fetch employee: ${response.status} ${response.statusText} - ${errorText}`,
-        );
-        // Set some fallback data or show error state
+        try {
+          const errorText = await response.text();
+          console.error(
+            `Failed to fetch employee: ${response.status} ${response.statusText} - ${errorText}`,
+          );
+        } catch (textError) {
+          console.error(
+            `Failed to fetch employee: ${response.status} ${response.statusText} - Could not read error text:`,
+            textError,
+          );
+        }
         setEmployee(null);
       }
     } catch (error) {
@@ -92,7 +110,7 @@ export default function Tracking() {
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
-        error.message.includes("fetch")
+        (error.message.includes("fetch") || error.message.includes("body stream"))
       ) {
         console.log("Retrying employee fetch after network error...");
         setTimeout(() => fetchEmployee(retryCount + 1), 2000);
