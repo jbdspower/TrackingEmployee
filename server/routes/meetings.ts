@@ -70,6 +70,9 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
 // In-memory fallback storage
 let inMemoryMeetings: MeetingLog[] = [];
 
+// Export for analytics fallback
+export { inMemoryMeetings };
+
 export const getMeetings: RequestHandler = async (req, res) => {
   try {
     const { employeeId, status, startDate, endDate, limit = 50 } = req.query;
