@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MeetingDetails, CustomerEmployee, Customer, CustomerContact } from "@shared/api";
+import { MeetingDetails, CustomerEmployee, Customer, CustomerContact, LocationData } from "@shared/api";
 import { AlertCircle, CheckCircle, Clock, User, Building2 } from "lucide-react";
 import {
   CustomerEmployeeSelector,
@@ -50,6 +50,8 @@ export function EndMeetingModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Multiple customer selection state
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerContact[]>([]);
@@ -61,6 +63,33 @@ export function EndMeetingModal({
 
   // Ref for customer employee selector
   const customerSelectorRef = useRef<CustomerEmployeeSelectorRef>(null);
+
+  // Get current location when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation({
+            lat: latitude,
+            lng: longitude,
+            address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+            timestamp: new Date().toISOString(),
+          });
+          setLocationError(null);
+        },
+        (error) => {
+          console.warn('Failed to get current location:', error);
+          setLocationError('Unable to get current location');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
+        }
+      );
+    }
+  }, [isOpen]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -336,6 +365,8 @@ export function EndMeetingModal({
     setCurrentSelectedEmployee(null);
     setCurrentSelectedCustomer(null);
     setIsAddEmployeeOpen(false);
+    setCurrentLocation(null);
+    setLocationError(null);
 
     // Reset the customer employee selector and clear any temporary employees
     if (customerSelectorRef.current) {
