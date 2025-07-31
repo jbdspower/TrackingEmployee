@@ -376,9 +376,9 @@ export const updateEmployeeLocation: RequestHandler = async (req, res) => {
       return res.status(404).json({ error: "Employee not found" });
     }
 
-    employeeStatuses[id] = employeeStatuses[id] 
+    employeeStatuses[id] = employeeStatuses[id]
       ? { ...employeeStatuses[id], ...locationUpdate }
-      : { ...locationUpdate, status: "active", currentTask: undefined };
+      : { ...locationUpdate, status: "active" as const, currentTask: undefined };
 
     const employee = await mapExternalUserToEmployee(externalUsers[userIndex], userIndex);
     res.json({ success: true, employee });
