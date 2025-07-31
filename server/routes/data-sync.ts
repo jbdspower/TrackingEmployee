@@ -115,11 +115,8 @@ export const getDataStatus: RequestHandler = async (req, res) => {
     const mongoEmployeesCount = await Employee.countDocuments();
     const mongoTrackingCount = await TrackingSession.countDocuments(employeeId ? { employeeId } : {});
     
-    // In-memory counts
-    const { meetings: inMemoryMeetings } = await import("./meetings");
-    const filteredInMemoryMeetings = employeeId 
-      ? inMemoryMeetings.filter(m => m.employeeId === employeeId)
-      : inMemoryMeetings;
+    // Legacy in-memory counts (no longer used)
+    const filteredInMemoryMeetings: any[] = [];
     
     // Sample data for debugging
     const sampleMongoMeeting = await Meeting.findOne(employeeId ? { employeeId } : {}).lean();
