@@ -292,7 +292,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
           trackingSessionId: meetingData.trackingSessionId,
           customers: meetingData.customers || [],
           // Legacy fields for backward compatibility
-          customerName: meetingData.customerName || "",
+          customerName: meetingData.customerName || meetingData.clientName || "",
           customerEmployeeName: meetingData.customerEmployeeName || "",
           customerEmail: meetingData.customerEmail || "",
           customerMobile: meetingData.customerMobile || "",
