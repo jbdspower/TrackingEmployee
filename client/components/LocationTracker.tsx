@@ -303,6 +303,13 @@ export function LocationTracker({
   };
 
   const handleStartTracking = async () => {
+    console.log("LocationTracker: handleStartTracking called with employeeId:", {
+      employeeId,
+      type: typeof employeeId,
+      length: employeeId?.length,
+      trimmed: employeeId?.trim()
+    });
+
     // Validate employeeId before starting tracking
     if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
       console.error("LocationTracker: Cannot start tracking - invalid employeeId:", {
