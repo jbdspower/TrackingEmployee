@@ -67,12 +67,15 @@ export interface TrackingSession {
   employeeId: string;
   startTime: string;
   endTime?: string;
-  startLocation: LocationData;
+  startLocation?: LocationData;
   endLocation?: LocationData;
   route: LocationData[]; // Array of coordinates for route
+  locations?: LocationData[]; // Backward compatibility
   totalDistance: number; // in meters
   duration?: number; // in seconds
   status: "active" | "completed" | "paused";
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // Individual customer contact details
