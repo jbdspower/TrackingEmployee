@@ -272,9 +272,8 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
       // MongoDB is the primary data source
       console.log(`Using ${actualMeetings.length} meetings from MongoDB`);
     } catch (dbError) {
-      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { meetings: inMemoryMeetings } = await import("./meetings");
-      actualMeetings = inMemoryMeetings;
+      console.warn("MongoDB query failed:", dbError);
+      actualMeetings = [];
     }
 
     console.log("Using meetings data:", actualMeetings.length, "meetings");
@@ -459,9 +458,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       // MongoDB is the primary data source
       console.log(`Using ${actualMeetings.length} meetings from MongoDB for employee ${employeeId}`);
     } catch (dbError) {
-      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { meetings: inMemoryMeetings } = await import("./meetings");
-      actualMeetings = inMemoryMeetings.filter(meeting => meeting.employeeId === employeeId);
+      console.warn("MongoDB query failed:", dbError);
+      actualMeetings = [];
     }
 
     // Filter meetings for this employee within date range
@@ -592,14 +590,12 @@ export const getLeadHistory: RequestHandler = async (req, res) => {
 
       // If no MongoDB data, fallback to in-memory
       if (actualMeetings.length === 0) {
-        const { meetings: inMemoryMeetings } = await import('./meetings');
-        actualMeetings = inMemoryMeetings.filter(meeting => meeting.leadId === leadId);
+        actualMeetings = [];
         console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for lead ${leadId}`);
       }
     } catch (dbError) {
-      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { meetings: inMemoryMeetings } = await import('./meetings');
-      actualMeetings = inMemoryMeetings.filter(meeting => meeting.leadId === leadId);
+      console.warn("MongoDB query failed:", dbError);
+      actualMeetings = [];
     }
 
     // Filter meetings by lead ID
