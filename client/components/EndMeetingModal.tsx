@@ -27,6 +27,10 @@ interface EndMeetingModalProps {
   onEndMeeting: (meetingDetails: MeetingDetails) => Promise<void>;
   employeeName: string;
   isLoading?: boolean;
+  currentMeeting?: {
+    clientName?: string;
+    id: string;
+  } | null;
 }
 
 export function EndMeetingModal({
