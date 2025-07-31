@@ -68,7 +68,7 @@ export interface TrackingSession {
   route: LocationData[]; // Array of coordinates for route
   totalDistance: number; // in meters
   duration?: number; // in seconds
-  status: "active" | "completed";
+  status: "active" | "completed" | "paused";
 }
 
 // Individual customer contact details
