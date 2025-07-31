@@ -350,7 +350,7 @@ export const updateEmployeeLocation: RequestHandler = async (req, res) => {
         timestamp: new Date().toISOString()
       },
       lastUpdate: "Just now",
-      status: "active"
+      status: "active" as const
     };
 
     // Rest of your existing implementation...
