@@ -42,8 +42,11 @@ import {
   History,
   Save,
   Edit,
+  MapPin,
 } from "lucide-react";
 import { HttpClient } from "@/lib/httpClient";
+import { RouteImageViewer } from "@/components/RouteImageViewer";
+import { getRouteScreenshot } from "@/lib/routeScreenshot";
 import {
   format,
   startOfDay,
@@ -1386,6 +1389,7 @@ export default function Dashboard() {
                       <TableHead>Contact Person</TableHead>
                       <TableHead>Contact Details</TableHead>
                       <TableHead>Discussion</TableHead>
+                      <TableHead>Route</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1436,6 +1440,25 @@ export default function Dashboard() {
                             {meeting.meetingDetails?.discussion || "-"}
                           </div>
                         </TableCell>
+                        <TableCell>
+                          {(() => {
+                            // Try to get route screenshot if there's a tracking session ID
+                            if (meeting.sessionId) {
+                              const routeData = getRouteScreenshot(meeting.employeeId, meeting.sessionId);
+                              return (
+                                <RouteImageViewer
+                                  routeData={routeData}
+                                  employeeName={meetingHistoryModal.employeeName}
+                                />
+                              );
+                            }
+                            return (
+                              <div className="w-8 h-8 bg-muted rounded border flex items-center justify-center" title="No route data available">
+                                <MapPin className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                            );
+                          })()
+                        }</TableCell>
                         <TableCell>
                           <Badge variant="default" className="bg-success text-success-foreground">
                             Completed
