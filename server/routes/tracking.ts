@@ -19,6 +19,7 @@ let meetingHistory: Array<{
   employeeId: string;
   meetingDetails: MeetingDetails;
   timestamp: string;
+  leadId?: string;
 }> = [];
 let historyIdCounter = 1;
 
