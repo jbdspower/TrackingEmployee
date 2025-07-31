@@ -70,8 +70,9 @@ export default function Tracking() {
       console.log("Fetching employee:", { employeeId, retryCount });
 
       if (!employeeId) {
-        console.error("Employee ID is undefined");
+        console.error("Employee ID is undefined - cannot fetch employee data");
         setEmployee(null);
+        setLoading(false);
         return;
       }
 
