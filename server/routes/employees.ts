@@ -176,9 +176,24 @@ export const getEmployees: RequestHandler = async (req, res) => {
         console.log(`Found ${dbEmployees.length} employees in database`);
         return dbEmployees as Employee[];
       },
-      () => {
+      async () => {
         console.log('MongoDB query failed, falling back to in-memory storage');
         console.log(`Found ${inMemoryEmployees.length} employees in memory`);
+
+        // If no employees in memory, try to sync from external API
+        if (inMemoryEmployees.length === 0) {
+          try {
+            console.log('No employees in memory, attempting external sync...');
+            const syncedEmployees = await syncExternalEmployeeData();
+            inMemoryEmployees = syncedEmployees;
+            console.log(`Synced ${syncedEmployees.length} employees to memory`);
+            return syncedEmployees;
+          } catch (syncError) {
+            console.error('External sync failed in fallback:', syncError);
+            return [];
+          }
+        }
+
         return inMemoryEmployees;
       },
       'fetch employees'
