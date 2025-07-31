@@ -343,6 +343,7 @@ export default function Tracking() {
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
+        trackingSessionId: currentTrackingSession?.id, // Include current tracking session
       });
 
       if (response.ok) {
