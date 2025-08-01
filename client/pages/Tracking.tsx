@@ -591,7 +591,7 @@ export default function Tracking() {
               className="text-primary"
             >
               <Camera className="h-4 w-4 mr-1" />
-              Save Route
+              Manual Capture
             </Button>
             <Badge
               variant="secondary"
