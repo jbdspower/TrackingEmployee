@@ -264,14 +264,31 @@ export const updateRouteSnapshot: RequestHandler = async (req, res) => {
 export const deleteRouteSnapshot: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    let deleted = false;
 
-    const deletedSnapshot = await RouteSnapshot.findOneAndDelete({ id });
+    try {
+      // Try MongoDB first
+      const deletedSnapshot = await RouteSnapshot.findOneAndDelete({ id });
+      if (deletedSnapshot) {
+        console.log("Route snapshot deleted from MongoDB:", deletedSnapshot.id);
+        deleted = true;
+      }
+    } catch (mongoError) {
+      console.error("MongoDB delete failed, checking in-memory storage:", mongoError);
+    }
 
-    if (!deletedSnapshot) {
+    // Check in-memory storage
+    const memoryIndex = inMemorySnapshots.findIndex(s => s.id === id);
+    if (memoryIndex !== -1) {
+      const deletedSnapshot = inMemorySnapshots.splice(memoryIndex, 1)[0];
+      console.log("Route snapshot deleted from memory:", deletedSnapshot.id);
+      deleted = true;
+    }
+
+    if (!deleted) {
       return res.status(404).json({ error: "Route snapshot not found" });
     }
 
-    console.log("Route snapshot deleted:", deletedSnapshot.id);
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting route snapshot:", error);
