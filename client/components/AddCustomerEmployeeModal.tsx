@@ -172,6 +172,11 @@ export function AddCustomerEmployeeModal({
             <Label htmlFor="customerName" className="text-sm">
               Customer/Company Name
               <span className="text-destructive ml-1">*</span>
+              {defaultCustomerName && (
+                <span className="text-muted-foreground ml-2 text-xs">
+                  (Auto-filled from meeting)
+                </span>
+              )}
             </Label>
             <Input
               id="customerName"
@@ -188,6 +193,11 @@ export function AddCustomerEmployeeModal({
               <div className="flex items-center space-x-1 text-sm text-destructive">
                 <AlertCircle className="h-3 w-3" />
                 <span>{errors.customerName}</span>
+              </div>
+            )}
+            {defaultCustomerName && formData.customerName === defaultCustomerName && (
+              <div className="text-xs text-muted-foreground">
+                Customer name auto-filled from "{defaultCustomerName}" meeting. You can edit if needed.
               </div>
             )}
           </div>
