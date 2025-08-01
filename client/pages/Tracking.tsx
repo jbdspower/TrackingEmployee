@@ -392,9 +392,19 @@ export default function Tracking() {
     console.log("Tracking session started:", session);
   };
 
-  const handleTrackingSessionEnd = (session: TrackingSession) => {
+  const handleTrackingSessionEnd = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
     console.log("Tracking session ended:", session);
+
+    // Automatically create route snapshot when tracking stops
+    if (employee && session.status === "completed") {
+      try {
+        console.log("Auto-creating route snapshot for completed tracking session");
+        await autoCreateRouteSnapshot(session);
+      } catch (error) {
+        console.error("Error auto-creating route snapshot:", error);
+      }
+    }
   };
 
   const getStatusColor = (status: Employee["status"]) => {
