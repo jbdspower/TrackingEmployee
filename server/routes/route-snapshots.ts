@@ -201,11 +201,22 @@ export const createRouteSnapshot: RequestHandler = async (req, res) => {
       snapshotMetadata
     };
 
-    const newSnapshot = new RouteSnapshot(snapshotData);
-    const savedSnapshot = await newSnapshot.save();
+    try {
+      // Try to save to MongoDB first
+      const newSnapshot = new RouteSnapshot(snapshotData);
+      const savedSnapshot = await newSnapshot.save();
 
-    console.log("Route snapshot created:", savedSnapshot.id);
-    res.status(201).json(savedSnapshot);
+      console.log("Route snapshot created in MongoDB:", savedSnapshot.id);
+      res.status(201).json(savedSnapshot);
+    } catch (mongoError) {
+      console.error("MongoDB save failed, saving to in-memory storage:", mongoError);
+
+      // Fallback to in-memory storage
+      inMemorySnapshots.push(snapshotData);
+
+      console.log("Route snapshot created in memory:", snapshotData.id);
+      res.status(201).json(snapshotData);
+    }
   } catch (error) {
     console.error("Error creating route snapshot:", error);
     res.status(500).json({ error: "Failed to create route snapshot" });
