@@ -123,18 +123,8 @@ export default function Tracking() {
 
       if (response.ok) {
         try {
-          // Clone the response to avoid "body stream already read" errors
-          const responseClone = response.clone();
-          let data;
-
-          try {
-            data = await response.json();
-          } catch (jsonError) {
-            // If the first attempt fails, try with the cloned response
-            console.log("Retrying meetings with cloned response due to:", jsonError.message);
-            data = await responseClone.json();
-          }
-
+          // Use a single json() call - don't clone unnecessarily
+          const data = await response.json();
           setMeetings(data.meetings || []);
           console.log("Meetings data fetched successfully:", data);
         } catch (jsonError) {
