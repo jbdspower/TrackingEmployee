@@ -400,6 +400,11 @@ export default function Tracking() {
   const handleTrackingSessionEnd = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
     console.log("Tracking session ended:", session);
+    console.log("Auto-snapshot conditions:", {
+      hasEmployee: !!employee,
+      sessionStatus: session.status,
+      shouldCreateSnapshot: employee && session.status === "completed"
+    });
 
     // Automatically create route snapshot when tracking stops
     if (employee && session.status === "completed") {
@@ -409,6 +414,10 @@ export default function Tracking() {
       } catch (error) {
         console.error("Error auto-creating route snapshot:", error);
       }
+    } else {
+      console.log("Skipping auto-snapshot:", {
+        reason: !employee ? "No employee data" : session.status !== "completed" ? `Session status is ${session.status}` : "Unknown"
+      });
     }
   };
 
