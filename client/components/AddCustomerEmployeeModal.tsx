@@ -28,6 +28,7 @@ interface AddCustomerEmployeeModalProps {
     employeeData: NewCustomerEmployeeData,
   ) => Promise<{ employee: CustomerEmployee; customer: Customer } | null>;
   isLoading?: boolean;
+  defaultCustomerName?: string;
 }
 
 export function AddCustomerEmployeeModal({
