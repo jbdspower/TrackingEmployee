@@ -89,7 +89,7 @@ export default function Tracking() {
         }
       } else {
         console.error(
-          `Failed to fetch employee: ${response.status} ${response.statusText} - ${responseText}`,
+          `Failed to fetch employee: ${response.status} ${response.statusText}`,
         );
         setEmployee(null);
       }
