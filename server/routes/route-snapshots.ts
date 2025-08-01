@@ -306,23 +306,48 @@ export const getEmployeeSnapshots: RequestHandler = async (req, res) => {
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    const snapshots = await RouteSnapshot.find({ employeeId })
-      .sort({ captureTime: -1 })
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
+    try {
+      // Try MongoDB first
+      const snapshots = await RouteSnapshot.find({ employeeId })
+        .sort({ captureTime: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean();
 
-    const total = await RouteSnapshot.countDocuments({ employeeId });
+      const total = await RouteSnapshot.countDocuments({ employeeId });
 
-    const response = {
-      snapshots,
-      total,
-      page: pageNum,
-      totalPages: Math.ceil(total / limitNum),
-    };
+      const response = {
+        snapshots,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      };
 
-    console.log(`Found ${snapshots.length} snapshots for employee ${employeeId}`);
-    res.json(response);
+      console.log(`Found ${snapshots.length} snapshots for employee ${employeeId} from MongoDB`);
+      res.json(response);
+    } catch (mongoError) {
+      console.error("MongoDB query failed, falling back to in-memory storage:", mongoError);
+
+      // Fallback to in-memory storage
+      const employeeSnapshots = inMemorySnapshots.filter(s => s.employeeId === employeeId);
+
+      // Sort by capture time (newest first)
+      employeeSnapshots.sort((a, b) => new Date(b.captureTime).getTime() - new Date(a.captureTime).getTime());
+
+      // Apply pagination
+      const total = employeeSnapshots.length;
+      const paginatedSnapshots = employeeSnapshots.slice(skip, skip + limitNum);
+
+      const response = {
+        snapshots: paginatedSnapshots,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      };
+
+      console.log(`Found ${paginatedSnapshots.length} snapshots for employee ${employeeId} from memory (${total} total)`);
+      res.json(response);
+    }
   } catch (error) {
     console.error("Error fetching employee snapshots:", error);
     res.status(500).json({ error: "Failed to fetch employee snapshots" });
