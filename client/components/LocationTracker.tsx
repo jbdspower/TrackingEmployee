@@ -274,18 +274,20 @@ export function LocationTracker({
       elapsedTime
     });
 
-    // Update current session
-    if (currentSession && latitude && longitude) {
+    // Update current session - create session even if coordinates aren't perfect
+    if (currentSession) {
+      const endLocation = {
+        lat: latitude || currentSession.startLocation.lat,
+        lng: longitude || currentSession.startLocation.lng,
+        address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable",
+        timestamp: now.toISOString(),
+      };
+
       const updatedSession: TrackingSession = {
         ...currentSession,
         endTime: now.toISOString(),
-        endLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: routeCoordinates,
+        endLocation,
+        route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
         totalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
@@ -295,11 +297,7 @@ export function LocationTracker({
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
     } else {
-      console.log("Cannot end tracking session - missing data:", {
-        currentSession: !!currentSession,
-        latitude,
-        longitude
-      });
+      console.log("Cannot end tracking session - no current session");
     }
   };
 
