@@ -8,64 +8,110 @@ export { inMemorySnapshots };
 // Get route snapshots with filtering
 export const getRouteSnapshots: RequestHandler = async (req, res) => {
   try {
-    const { 
-      employeeId, 
-      trackingSessionId, 
-      status, 
-      startDate, 
-      endDate, 
-      page = 1, 
-      limit = 20 
+    const {
+      employeeId,
+      trackingSessionId,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20
     } = req.query;
 
-    // Build MongoDB query
-    const query: any = {};
-
-    if (employeeId) {
-      query.employeeId = employeeId;
-    }
-
-    if (trackingSessionId) {
-      query.trackingSessionId = trackingSessionId;
-    }
-
-    if (status) {
-      query.status = status;
-    }
-
-    if (startDate || endDate) {
-      query.captureTime = {};
-      if (startDate) {
-        query.captureTime.$gte = new Date(startDate as string).toISOString();
-      }
-      if (endDate) {
-        query.captureTime.$lte = new Date(endDate as string).toISOString();
-      }
-    }
-
-    console.log("Fetching route snapshots with query:", query);
+    console.log("Fetching route snapshots with query:", { employeeId, trackingSessionId, status, startDate, endDate });
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    const snapshots = await RouteSnapshot.find(query)
-      .sort({ captureTime: -1 })
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
+    try {
+      // Build MongoDB query
+      const query: any = {};
 
-    const total = await RouteSnapshot.countDocuments(query);
+      if (employeeId) {
+        query.employeeId = employeeId;
+      }
 
-    const response = {
-      snapshots,
-      total,
-      page: pageNum,
-      totalPages: Math.ceil(total / limitNum),
-    };
+      if (trackingSessionId) {
+        query.trackingSessionId = trackingSessionId;
+      }
 
-    console.log(`Found ${snapshots.length} route snapshots`);
-    res.json(response);
+      if (status) {
+        query.status = status;
+      }
+
+      if (startDate || endDate) {
+        query.captureTime = {};
+        if (startDate) {
+          query.captureTime.$gte = new Date(startDate as string).toISOString();
+        }
+        if (endDate) {
+          query.captureTime.$lte = new Date(endDate as string).toISOString();
+        }
+      }
+
+      const snapshots = await RouteSnapshot.find(query)
+        .sort({ captureTime: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean();
+
+      const total = await RouteSnapshot.countDocuments(query);
+
+      const response = {
+        snapshots,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      };
+
+      console.log(`Found ${snapshots.length} route snapshots from MongoDB`);
+      res.json(response);
+    } catch (mongoError) {
+      console.error("MongoDB query failed, falling back to in-memory storage:", mongoError);
+
+      // Fallback to in-memory storage
+      let filteredSnapshots = [...inMemorySnapshots];
+
+      // Apply filters
+      if (employeeId) {
+        filteredSnapshots = filteredSnapshots.filter(s => s.employeeId === employeeId);
+      }
+
+      if (trackingSessionId) {
+        filteredSnapshots = filteredSnapshots.filter(s => s.trackingSessionId === trackingSessionId);
+      }
+
+      if (status) {
+        filteredSnapshots = filteredSnapshots.filter(s => s.status === status);
+      }
+
+      if (startDate || endDate) {
+        filteredSnapshots = filteredSnapshots.filter(s => {
+          const captureTime = new Date(s.captureTime);
+          if (startDate && captureTime < new Date(startDate as string)) return false;
+          if (endDate && captureTime > new Date(endDate as string)) return false;
+          return true;
+        });
+      }
+
+      // Sort by capture time (newest first)
+      filteredSnapshots.sort((a, b) => new Date(b.captureTime).getTime() - new Date(a.captureTime).getTime());
+
+      // Apply pagination
+      const total = filteredSnapshots.length;
+      const paginatedSnapshots = filteredSnapshots.slice(skip, skip + limitNum);
+
+      const response = {
+        snapshots: paginatedSnapshots,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      };
+
+      console.log(`Found ${paginatedSnapshots.length} route snapshots from memory (${total} total)`);
+      res.json(response);
+    }
   } catch (error) {
     console.error("Error fetching route snapshots:", error);
     res.status(500).json({ error: "Failed to fetch route snapshots" });
