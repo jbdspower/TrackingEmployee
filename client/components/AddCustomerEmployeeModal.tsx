@@ -50,6 +50,16 @@ export function AddCustomerEmployeeModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Auto-fill customer name when modal opens if defaultCustomerName is provided
+  useEffect(() => {
+    if (isOpen && defaultCustomerName) {
+      setFormData(prev => ({
+        ...prev,
+        customerName: defaultCustomerName,
+      }));
+    }
+  }, [isOpen, defaultCustomerName]);
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
