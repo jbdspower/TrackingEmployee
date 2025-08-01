@@ -195,10 +195,10 @@ export function RouteSnapshotCapture({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
-            Create Route Snapshot
+            Create Manual Route Snapshot
           </DialogTitle>
           <DialogDescription>
-            Save a snapshot of {employee.name}'s current route and meeting locations for historical reference.
+            Manually capture and save {employee.name}'s current route and meeting locations for historical reference. Note: Routes are also automatically captured when tracking stops.
           </DialogDescription>
         </DialogHeader>
 
