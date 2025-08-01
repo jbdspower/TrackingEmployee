@@ -1,6 +1,10 @@
 import { RequestHandler } from "express";
 import { RouteSnapshot, IRouteSnapshot } from "../models";
 
+// In-memory fallback storage for route snapshots
+let inMemorySnapshots: any[] = [];
+export { inMemorySnapshots };
+
 // Get route snapshots with filtering
 export const getRouteSnapshots: RequestHandler = async (req, res) => {
   try {
