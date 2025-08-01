@@ -507,7 +507,12 @@ export default function Tracking() {
       }
     } catch (error) {
       console.error("Error auto-creating route snapshot:", error);
-      // Silently fail for auto-capture, user can still manually capture if needed
+      // Show error toast but don't be too intrusive
+      toast({
+        title: "Auto-capture Failed",
+        description: "Use 'Manual Capture' button to save route",
+        variant: "destructive",
+      });
     }
   };
 
