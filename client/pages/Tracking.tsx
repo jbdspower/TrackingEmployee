@@ -410,6 +410,102 @@ export default function Tracking() {
     }
   };
 
+  // Auto-create route snapshot when tracking stops
+  const autoCreateRouteSnapshot = async (session: TrackingSession) => {
+    if (!employee) return;
+
+    // Calculate map bounds from route data
+    const calculateMapBounds = (): MapBounds => {
+      const allPoints = [];
+
+      // Add tracking route points
+      if (session.route) {
+        allPoints.push(...session.route);
+      }
+
+      // Add meeting locations
+      meetings.forEach(meeting => {
+        allPoints.push(meeting.location);
+      });
+
+      // Add current employee location
+      allPoints.push(employee.location);
+
+      if (allPoints.length === 0) {
+        // Default bounds if no points
+        return {
+          north: employee.location.lat + 0.01,
+          south: employee.location.lat - 0.01,
+          east: employee.location.lng + 0.01,
+          west: employee.location.lng - 0.01,
+        };
+      }
+
+      const lats = allPoints.map(p => p.lat);
+      const lngs = allPoints.map(p => p.lng);
+
+      const margin = 0.005; // Add small margin around bounds
+
+      return {
+        north: Math.max(...lats) + margin,
+        south: Math.min(...lats) - margin,
+        east: Math.max(...lngs) + margin,
+        west: Math.min(...lngs) - margin,
+      };
+    };
+
+    // Convert meetings to snapshot format
+    const getMeetingSnapshots = (): MeetingSnapshot[] => {
+      return meetings.map(meeting => ({
+        id: meeting.id,
+        location: meeting.location,
+        clientName: meeting.clientName,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime,
+        status: meeting.status,
+      }));
+    };
+
+    // Generate auto-title
+    const now = new Date();
+    const dateStr = now.toLocaleDateString();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const autoTitle = `${employee.name} Route - ${dateStr} ${timeStr}`;
+
+    const snapshotData: CreateRouteSnapshotRequest = {
+      employeeId: employee.id,
+      employeeName: employee.name,
+      trackingSessionId: session.id,
+      title: autoTitle,
+      description: `Auto-captured route snapshot when tracking stopped. Duration: ${Math.round((session.duration || 0) / 60)} minutes.`,
+      startLocation: session.startLocation,
+      endLocation: session.endLocation,
+      route: session.route || [employee.location],
+      meetings: getMeetingSnapshots(),
+      totalDistance: session.totalDistance || 0,
+      duration: session.duration,
+      status: session.status,
+      mapBounds: calculateMapBounds(),
+    };
+
+    try {
+      const response = await HttpClient.post("/api/route-snapshots", snapshotData);
+
+      if (response.ok) {
+        const snapshot = await response.json();
+        console.log("Auto-created route snapshot:", snapshot);
+
+        // Show a toast notification (you might want to add toast hook)
+        // toast({ title: "Route Captured", description: "Route automatically saved when tracking stopped" });
+      } else {
+        throw new Error("Failed to auto-create route snapshot");
+      }
+    } catch (error) {
+      console.error("Error auto-creating route snapshot:", error);
+      // Silently fail for auto-capture, user can still manually capture if needed
+    }
+  };
+
   const getStatusColor = (status: Employee["status"]) => {
     switch (status) {
       case "active":
