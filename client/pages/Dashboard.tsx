@@ -146,12 +146,17 @@ export default function Dashboard() {
   });
 
   // Attendance editing state
-  const [attendanceEdits, setAttendanceEdits] = useState<Record<string, {
-    attendanceStatus: string;
-    attendanceReason: string;
-    isEditing: boolean;
-    isSaving: boolean;
-  }>>({});
+  const [attendanceEdits, setAttendanceEdits] = useState<
+    Record<
+      string,
+      {
+        attendanceStatus: string;
+        attendanceReason: string;
+        isEditing: boolean;
+        isSaving: boolean;
+      }
+    >
+  >({});
 
   // Summary statistics
   const [summaryStats, setSummaryStats] = useState({
@@ -168,7 +173,11 @@ export default function Dashboard() {
   // Re-fetch employee details when filters change while in detail view
   useEffect(() => {
     if (selectedEmployee) {
-      handleEmployeeClick(selectedEmployee, analytics.find(emp => emp.employeeId === selectedEmployee)?.employeeName || "Unknown");
+      handleEmployeeClick(
+        selectedEmployee,
+        analytics.find((emp) => emp.employeeId === selectedEmployee)
+          ?.employeeName || "Unknown",
+      );
     }
   }, [filters.dateRange, filters.startDate, filters.endDate]);
 
@@ -256,7 +265,11 @@ export default function Dashboard() {
         startDate = format(subDays(today, 29), "yyyy-MM-dd");
         break;
       case "lastMonth":
-        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonth = new Date(
+          today.getFullYear(),
+          today.getMonth() - 1,
+          1,
+        );
         const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
         startDate = format(lastMonth, "yyyy-MM-dd");
         endDate = format(lastMonthEnd, "yyyy-MM-dd");
@@ -394,17 +407,25 @@ export default function Dashboard() {
   };
 
   // Handle meeting history viewing
-  const handleViewMeetingHistory = async (employeeId: string, leadId?: string) => {
+  const handleViewMeetingHistory = async (
+    employeeId: string,
+    leadId?: string,
+  ) => {
     if (!employeeId) {
       console.error("No employee ID provided for meeting history");
       return;
     }
 
     // Find employee name from analytics or use the selected employee info
-    const employeeName = analytics.find(emp => emp.employeeId === employeeId)?.employeeName ||
-                        (selectedEmployee === employeeId ? "Selected Employee" : "Unknown Employee");
+    const employeeName =
+      analytics.find((emp) => emp.employeeId === employeeId)?.employeeName ||
+      (selectedEmployee === employeeId
+        ? "Selected Employee"
+        : "Unknown Employee");
 
-    const contextInfo = leadId ? `employee: ${employeeId} (${employeeName}), leadId: ${leadId}` : `employee: ${employeeId} (${employeeName})`;
+    const contextInfo = leadId
+      ? `employee: ${employeeId} (${employeeName}), leadId: ${leadId}`
+      : `employee: ${employeeId} (${employeeName})`;
     console.log(`Opening meeting history for ${contextInfo}`);
 
     // Ensure we always start with fresh data for this employee/lead combination
@@ -435,48 +456,74 @@ export default function Dashboard() {
 
       if (shouldApplyDateFilter) {
         queryParams.append("dateRange", filters.dateRange);
-        if (filters.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters.startDate)
+          queryParams.append("startDate", filters.startDate);
         if (filters.endDate) queryParams.append("endDate", filters.endDate);
-        console.log(`Applying date filter to meeting history for ${employeeName}:`, filters.dateRange);
+        console.log(
+          `Applying date filter to meeting history for ${employeeName}:`,
+          filters.dateRange,
+        );
       } else {
-        console.log(`Showing ALL meetings in history for ${employeeName} (All Time filter selected)`);
+        console.log(
+          `Showing ALL meetings in history for ${employeeName} (All Time filter selected)`,
+        );
       }
 
-      console.log(`Fetching meeting history for ${employeeName} with filters: ${queryParams.toString()}`);
+      console.log(
+        `Fetching meeting history for ${employeeName} with filters: ${queryParams.toString()}`,
+      );
 
-      const response = await HttpClient.get(`/api/meeting-history?${queryParams.toString()}`);
+      const response = await HttpClient.get(
+        `/api/meeting-history?${queryParams.toString()}`,
+      );
       if (response.ok) {
         const data = await response.json();
-        console.log(`Meeting history response for ${employeeName}: ${data.meetings?.length || 0} records`);
+        console.log(
+          `Meeting history response for ${employeeName}: ${data.meetings?.length || 0} records`,
+        );
 
         // Validate that the response is for the correct employee
         const meetings = data.meetings || [];
-        const incorrectMeetings = meetings.filter(m => m.employeeId !== employeeId);
+        const incorrectMeetings = meetings.filter(
+          (m) => m.employeeId !== employeeId,
+        );
         if (incorrectMeetings.length > 0) {
-          console.error(`WARNING: Found ${incorrectMeetings.length} meetings that don't belong to employee ${employeeId}:`,
-            incorrectMeetings.map(m => ({ meetingEmployeeId: m.employeeId, leadId: m.leadId })));
+          console.error(
+            `WARNING: Found ${incorrectMeetings.length} meetings that don't belong to employee ${employeeId}:`,
+            incorrectMeetings.map((m) => ({
+              meetingEmployeeId: m.employeeId,
+              leadId: m.leadId,
+            })),
+          );
         }
 
         // Only show meetings that actually belong to this employee
-        const filteredMeetings = meetings.filter(m => m.employeeId === employeeId);
-        console.log(`After filtering: ${filteredMeetings.length} meetings actually belong to ${employeeName}`);
+        const filteredMeetings = meetings.filter(
+          (m) => m.employeeId === employeeId,
+        );
+        console.log(
+          `After filtering: ${filteredMeetings.length} meetings actually belong to ${employeeName}`,
+        );
 
-        setMeetingHistoryModal(prev => ({
+        setMeetingHistoryModal((prev) => ({
           ...prev,
           meetingHistory: filteredMeetings,
           loading: false,
         }));
       } else {
         console.error(`Failed to fetch meeting history for ${employeeName}`);
-        setMeetingHistoryModal(prev => ({
+        setMeetingHistoryModal((prev) => ({
           ...prev,
           meetingHistory: [],
           loading: false,
         }));
       }
     } catch (error) {
-      console.error(`Error fetching meeting history for ${employeeName}:`, error);
-      setMeetingHistoryModal(prev => ({
+      console.error(
+        `Error fetching meeting history for ${employeeName}:`,
+        error,
+      );
+      setMeetingHistoryModal((prev) => ({
         ...prev,
         meetingHistory: [],
         loading: false,
@@ -519,20 +566,24 @@ export default function Dashboard() {
     { value: "ot", label: "OT" },
   ];
 
-  const handleEditAttendance = (date: string, currentStatus?: string, currentReason?: string) => {
-    setAttendanceEdits(prev => ({
+  const handleEditAttendance = (
+    date: string,
+    currentStatus?: string,
+    currentReason?: string,
+  ) => {
+    setAttendanceEdits((prev) => ({
       ...prev,
       [date]: {
         attendanceStatus: currentStatus || "full_day",
         attendanceReason: currentReason || "",
         isEditing: true,
         isSaving: false,
-      }
+      },
     }));
   };
 
   const handleCancelAttendanceEdit = (date: string) => {
-    setAttendanceEdits(prev => {
+    setAttendanceEdits((prev) => {
       const newEdits = { ...prev };
       delete newEdits[date];
       return newEdits;
@@ -540,22 +591,22 @@ export default function Dashboard() {
   };
 
   const handleAttendanceStatusChange = (date: string, status: string) => {
-    setAttendanceEdits(prev => ({
+    setAttendanceEdits((prev) => ({
       ...prev,
       [date]: {
         ...prev[date],
         attendanceStatus: status,
-      }
+      },
     }));
   };
 
   const handleAttendanceReasonChange = (date: string, reason: string) => {
-    setAttendanceEdits(prev => ({
+    setAttendanceEdits((prev) => ({
       ...prev,
       [date]: {
         ...prev[date],
         attendanceReason: reason,
-      }
+      },
     }));
   };
 
@@ -563,16 +614,16 @@ export default function Dashboard() {
     const editData = attendanceEdits[date];
     if (!editData || !selectedEmployee) return;
 
-    setAttendanceEdits(prev => ({
+    setAttendanceEdits((prev) => ({
       ...prev,
       [date]: {
         ...prev[date],
         isSaving: true,
-      }
+      },
     }));
 
     try {
-      const response = await HttpClient.post('/api/analytics/save-attendance', {
+      const response = await HttpClient.post("/api/analytics/save-attendance", {
         employeeId: selectedEmployee,
         date,
         attendanceStatus: editData.attendanceStatus,
@@ -581,15 +632,17 @@ export default function Dashboard() {
 
       if (response.ok) {
         // Update the day record
-        setEmployeeDayRecords(prev => prev.map(record =>
-          record.date === date
-            ? {
-                ...record,
-                attendanceStatus: editData.attendanceStatus,
-                attendanceReason: editData.attendanceReason,
-              }
-            : record
-        ));
+        setEmployeeDayRecords((prev) =>
+          prev.map((record) =>
+            record.date === date
+              ? {
+                  ...record,
+                  attendanceStatus: editData.attendanceStatus,
+                  attendanceReason: editData.attendanceReason,
+                }
+              : record,
+          ),
+        );
 
         // Clear the editing state
         handleCancelAttendanceEdit(date);
@@ -603,12 +656,12 @@ export default function Dashboard() {
       console.error("Error saving attendance:", error);
       alert("Error saving attendance. Please try again.");
     } finally {
-      setAttendanceEdits(prev => ({
+      setAttendanceEdits((prev) => ({
         ...prev,
         [date]: {
           ...prev[date],
           isSaving: false,
-        }
+        },
       }));
     }
   };
@@ -736,11 +789,14 @@ export default function Dashboard() {
                 <Filter className="h-4 w-4 mr-2" />
                 Filters
               </div>
-              {filters.dateRange === "custom" && filters.startDate && filters.endDate && (
-                <Badge variant="secondary" className="text-xs">
-                  Custom: {format(new Date(filters.startDate), "MMM dd")} - {format(new Date(filters.endDate), "MMM dd")}
-                </Badge>
-              )}
+              {filters.dateRange === "custom" &&
+                filters.startDate &&
+                filters.endDate && (
+                  <Badge variant="secondary" className="text-xs">
+                    Custom: {format(new Date(filters.startDate), "MMM dd")} -{" "}
+                    {format(new Date(filters.endDate), "MMM dd")}
+                  </Badge>
+                )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -835,11 +891,12 @@ export default function Dashboard() {
                       min={filters.startDate || ""}
                       max={format(new Date(), "yyyy-MM-dd")}
                     />
-                    {filters.dateRange === "custom" && (!filters.startDate || !filters.endDate) && (
-                      <p className="text-xs text-amber-600">
-                        Please select both start and end dates
-                      </p>
-                    )}
+                    {filters.dateRange === "custom" &&
+                      (!filters.startDate || !filters.endDate) && (
+                        <p className="text-xs text-amber-600">
+                          Please select both start and end dates
+                        </p>
+                      )}
                   </div>
                 </>
               )}
@@ -892,7 +949,11 @@ export default function Dashboard() {
                   <Button
                     onClick={fetchAnalytics}
                     className="flex-1"
-                    disabled={loading || (filters.dateRange === "custom" && (!filters.startDate || !filters.endDate))}
+                    disabled={
+                      loading ||
+                      (filters.dateRange === "custom" &&
+                        (!filters.startDate || !filters.endDate))
+                    }
                   >
                     <CalendarDays className="h-4 w-4 mr-2" />
                     {loading ? "Loading..." : "Apply Filter"}
@@ -1017,7 +1078,9 @@ export default function Dashboard() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleViewRouteHistory(employee.employeeId)}
+                                onClick={() =>
+                                  handleViewRouteHistory(employee.employeeId)
+                                }
                               >
                                 <History className="h-4 w-4 mr-1" />
                                 Route History
@@ -1117,6 +1180,7 @@ export default function Dashboard() {
                                       <TableHead>Attendance Status</TableHead>
                                       <TableHead>Reason</TableHead>
                                       <TableHead>Actions</TableHead>
+                                      {/* <TableHead>Route History</TableHead> */}
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -1174,25 +1238,43 @@ export default function Dashboard() {
                                       <TableCell>
                                         {attendanceEdits[date]?.isEditing ? (
                                           <Select
-                                            value={attendanceEdits[date].attendanceStatus}
-                                            onValueChange={(value) => handleAttendanceStatusChange(date, value)}
+                                            value={
+                                              attendanceEdits[date]
+                                                .attendanceStatus
+                                            }
+                                            onValueChange={(value) =>
+                                              handleAttendanceStatusChange(
+                                                date,
+                                                value,
+                                              )
+                                            }
                                           >
                                             <SelectTrigger className="w-32">
                                               <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                              {attendanceOptions.map(option => (
-                                                <SelectItem key={option.value} value={option.value}>
-                                                  {option.label}
-                                                </SelectItem>
-                                              ))}
+                                              {attendanceOptions.map(
+                                                (option) => (
+                                                  <SelectItem
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </SelectItem>
+                                                ),
+                                              )}
                                             </SelectContent>
                                           </Select>
                                         ) : (
                                           <div className="flex items-center space-x-2">
                                             <span className="text-sm">
                                               {dayRecord.attendanceStatus
-                                                ? attendanceOptions.find(opt => opt.value === dayRecord.attendanceStatus)?.label || dayRecord.attendanceStatus
+                                                ? attendanceOptions.find(
+                                                    (opt) =>
+                                                      opt.value ===
+                                                      dayRecord.attendanceStatus,
+                                                  )?.label ||
+                                                  dayRecord.attendanceStatus
                                                 : "Full Day"}
                                             </span>
                                           </div>
@@ -1203,8 +1285,16 @@ export default function Dashboard() {
                                       <TableCell>
                                         {attendanceEdits[date]?.isEditing ? (
                                           <Textarea
-                                            value={attendanceEdits[date].attendanceReason}
-                                            onChange={(e) => handleAttendanceReasonChange(date, e.target.value)}
+                                            value={
+                                              attendanceEdits[date]
+                                                .attendanceReason
+                                            }
+                                            onChange={(e) =>
+                                              handleAttendanceReasonChange(
+                                                date,
+                                                e.target.value,
+                                              )
+                                            }
                                             placeholder="Enter reason..."
                                             className="w-40 h-16 text-xs"
                                           />
@@ -1221,11 +1311,16 @@ export default function Dashboard() {
                                           <div className="flex items-center space-x-1">
                                             <Button
                                               size="sm"
-                                              onClick={() => handleSaveAttendance(date)}
-                                              disabled={attendanceEdits[date]?.isSaving}
+                                              onClick={() =>
+                                                handleSaveAttendance(date)
+                                              }
+                                              disabled={
+                                                attendanceEdits[date]?.isSaving
+                                              }
                                               className="h-7 px-2"
                                             >
-                                              {attendanceEdits[date]?.isSaving ? (
+                                              {attendanceEdits[date]
+                                                ?.isSaving ? (
                                                 <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
                                               ) : (
                                                 <Save className="h-3 w-3" />
@@ -1234,8 +1329,12 @@ export default function Dashboard() {
                                             <Button
                                               variant="outline"
                                               size="sm"
-                                              onClick={() => handleCancelAttendanceEdit(date)}
-                                              disabled={attendanceEdits[date]?.isSaving}
+                                              onClick={() =>
+                                                handleCancelAttendanceEdit(date)
+                                              }
+                                              disabled={
+                                                attendanceEdits[date]?.isSaving
+                                              }
                                               className="h-7 px-2"
                                             >
                                               ✕
@@ -1245,13 +1344,33 @@ export default function Dashboard() {
                                           <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => handleEditAttendance(date, dayRecord.attendanceStatus, dayRecord.attendanceReason)}
+                                            onClick={() =>
+                                              handleEditAttendance(
+                                                date,
+                                                dayRecord.attendanceStatus,
+                                                dayRecord.attendanceReason,
+                                              )
+                                            }
                                             className="h-7 px-2"
                                           >
                                             <Edit className="h-3 w-3" />
                                           </Button>
                                         )}
                                       </TableCell>
+                                      {/* <TableCell>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() =>
+                                            handleViewRouteHistory(
+                                              employee.employeeId,
+                                            )
+                                          }
+                                        >
+                                          <History className="h-4 w-4 mr-1" />
+                                          Route History
+                                        </Button>
+                                      </TableCell> */}
                                     </TableRow>
                                   </TableBody>
                                 </Table>
@@ -1343,9 +1462,13 @@ export default function Dashboard() {
                                               size="sm"
                                               onClick={() => {
                                                 // Show history for this specific meeting's lead/employee combination
-                                                const employeeId = selectedEmployee!;
+                                                const employeeId =
+                                                  selectedEmployee!;
                                                 const leadId = record.leadId;
-                                                handleViewMeetingHistory(employeeId, leadId);
+                                                handleViewMeetingHistory(
+                                                  employeeId,
+                                                  leadId,
+                                                );
                                               }}
                                             >
                                               <History className="h-4 w-4 mr-1" />
@@ -1386,12 +1509,18 @@ export default function Dashboard() {
       </div>
 
       {/* Meeting History Modal */}
-      <Dialog open={meetingHistoryModal.isOpen} onOpenChange={closeMeetingHistoryModal}>
+      <Dialog
+        open={meetingHistoryModal.isOpen}
+        onOpenChange={closeMeetingHistoryModal}
+      >
         <DialogContent className="sm:max-w-[1200px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
               <History className="h-5 w-5 text-primary" />
-              <span>Meeting History - {meetingHistoryModal.employeeName} (ID: {meetingHistoryModal.employeeId})</span>
+              <span>
+                Meeting History - {meetingHistoryModal.employeeName} (ID:{" "}
+                {meetingHistoryModal.employeeId})
+              </span>
             </DialogTitle>
             <DialogDescription>
               Complete meeting history and interactions for this employee
@@ -1402,11 +1531,15 @@ export default function Dashboard() {
             {meetingHistoryModal.loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p className="text-muted-foreground">Loading meeting history...</p>
+                <p className="text-muted-foreground">
+                  Loading meeting history...
+                </p>
               </div>
             ) : meetingHistoryModal.meetingHistory.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">No meeting history found for this employee</p>
+                <p className="text-muted-foreground">
+                  No meeting history found for this employee
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1425,59 +1558,100 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {meetingHistoryModal.meetingHistory.map((meeting, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          {format(new Date(meeting.timestamp), "MMM dd, yyyy HH:mm")}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {meetingHistoryModal.employeeName}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {meeting.meetingDetails?.customerName ||
-                           meeting.meetingDetails?.customers?.[0]?.customerName ||
-                           meeting.leadInfo?.companyName || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {meeting.leadId ? (
-                            <Badge variant="outline">{meeting.leadId}</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {meeting.meetingDetails?.customers?.map(customer => customer.customerName).join(", ") ||
-                           meeting.meetingDetails?.customerName || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {meeting.meetingDetails?.customers?.map(customer => customer.customerEmployeeName).join(", ") ||
-                           meeting.meetingDetails?.customerEmployeeName || "-"}
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs space-y-1">
-                            {(meeting.meetingDetails?.customers?.[0]?.customerEmail || meeting.meetingDetails?.customerEmail) && (
-                              <div>📧 {meeting.meetingDetails?.customers?.[0]?.customerEmail || meeting.meetingDetails?.customerEmail}</div>
+                    {meetingHistoryModal.meetingHistory.map(
+                      (meeting, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            {format(
+                              new Date(meeting.timestamp),
+                              "MMM dd, yyyy HH:mm",
                             )}
-                            {(meeting.meetingDetails?.customers?.[0]?.customerMobile || meeting.meetingDetails?.customerMobile) && (
-                              <div>📱 {meeting.meetingDetails?.customers?.[0]?.customerMobile || meeting.meetingDetails?.customerMobile}</div>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {meetingHistoryModal.employeeName}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {meeting.meetingDetails?.customerName ||
+                              meeting.meetingDetails?.customers?.[0]
+                                ?.customerName ||
+                              meeting.leadInfo?.companyName ||
+                              "-"}
+                          </TableCell>
+                          <TableCell>
+                            {meeting.leadId ? (
+                              <Badge variant="outline">{meeting.leadId}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
-                            {(meeting.meetingDetails?.customers?.[0]?.customerDesignation || meeting.meetingDetails?.customerDesignation) && (
-                              <div>💼 {meeting.meetingDetails?.customers?.[0]?.customerDesignation || meeting.meetingDetails?.customerDesignation}</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate" title={meeting.meetingDetails?.discussion}>
-                            {meeting.meetingDetails?.discussion || "-"}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="default" className="bg-success text-success-foreground">
-                            Completed
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell>
+                            {meeting.meetingDetails?.customers
+                              ?.map((customer) => customer.customerName)
+                              .join(", ") ||
+                              meeting.meetingDetails?.customerName ||
+                              "-"}
+                          </TableCell>
+                          <TableCell>
+                            {meeting.meetingDetails?.customers
+                              ?.map((customer) => customer.customerEmployeeName)
+                              .join(", ") ||
+                              meeting.meetingDetails?.customerEmployeeName ||
+                              "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs space-y-1">
+                              {(meeting.meetingDetails?.customers?.[0]
+                                ?.customerEmail ||
+                                meeting.meetingDetails?.customerEmail) && (
+                                <div>
+                                  📧{" "}
+                                  {meeting.meetingDetails?.customers?.[0]
+                                    ?.customerEmail ||
+                                    meeting.meetingDetails?.customerEmail}
+                                </div>
+                              )}
+                              {(meeting.meetingDetails?.customers?.[0]
+                                ?.customerMobile ||
+                                meeting.meetingDetails?.customerMobile) && (
+                                <div>
+                                  📱{" "}
+                                  {meeting.meetingDetails?.customers?.[0]
+                                    ?.customerMobile ||
+                                    meeting.meetingDetails?.customerMobile}
+                                </div>
+                              )}
+                              {(meeting.meetingDetails?.customers?.[0]
+                                ?.customerDesignation ||
+                                meeting.meetingDetails
+                                  ?.customerDesignation) && (
+                                <div>
+                                  💼{" "}
+                                  {meeting.meetingDetails?.customers?.[0]
+                                    ?.customerDesignation ||
+                                    meeting.meetingDetails?.customerDesignation}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-xs">
+                            <div
+                              className="truncate"
+                              title={meeting.meetingDetails?.discussion}
+                            >
+                              {meeting.meetingDetails?.discussion || "-"}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="default"
+                              className="bg-success text-success-foreground"
+                            >
+                              Completed
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ),
+                    )}
                   </TableBody>
                 </Table>
               </div>

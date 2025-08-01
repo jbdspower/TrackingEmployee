@@ -13,7 +13,7 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/employee-tracking';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/';
 const DB_NAME = process.env.DB_NAME || 'employee-tracking';
 
 console.log('🧪 MongoDB Setup Verification');

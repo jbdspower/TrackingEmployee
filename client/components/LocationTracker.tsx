@@ -522,7 +522,7 @@ export function LocationTracker({
           {!isTracking ? (
             <Button onClick={handleStartTracking} className="flex-1">
               <Navigation className="h-4 w-4 mr-2" />
-              Start Tracking
+              LogIn
             </Button>
           ) : (
             <Button
@@ -530,7 +530,7 @@ export function LocationTracker({
               variant="destructive"
               className="flex-1"
             >
-              Stop Tracking
+              LogOut
             </Button>
           )}
 

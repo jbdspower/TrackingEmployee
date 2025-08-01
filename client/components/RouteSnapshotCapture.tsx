@@ -206,7 +206,7 @@ export function RouteSnapshotCapture({
           {/* Snapshot Details */}
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Snapshot Title *</Label>
+              <Label htmlFor="title">Route Title *</Label>
               <Input
                 id="title"
                 value={title}
@@ -350,7 +350,7 @@ export function RouteSnapshotCapture({
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" />
-                Create Snapshot
+                Save Route
               </>
             )}
           </Button>
