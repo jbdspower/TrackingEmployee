@@ -36,6 +36,7 @@ export function AddCustomerEmployeeModal({
   onClose,
   onAddEmployee,
   isLoading = false,
+  defaultCustomerName = "",
 }: AddCustomerEmployeeModalProps) {
   const [formData, setFormData] = useState<NewCustomerEmployeeData>({
     customerName: "",
