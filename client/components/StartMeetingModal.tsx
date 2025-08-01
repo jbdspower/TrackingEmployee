@@ -170,6 +170,10 @@ export function StartMeetingModal({
     setFilteredLeads(filtered);
   };
 
+  console.log("filtered leads by compnay", filterLeadsByCompany)
+  console.log("filtered leads", filteredLeads)
+
+
   // Handle company selection change
   const handleCompanyChange = (value: string) => {
     console.log("Client selection changed:", value);
