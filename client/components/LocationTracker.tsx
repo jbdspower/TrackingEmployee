@@ -230,27 +230,28 @@ export function LocationTracker({
     // Get initial position
     getCurrentPosition();
 
-    // Create tracking session
-    if (latitude && longitude) {
-      const sessionId = `session_${employeeId}_${now.getTime()}`;
-      const session: TrackingSession = {
-        id: sessionId,
-        employeeId,
-        startTime: now.toISOString(),
-        startLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: [],
-        totalDistance: 0,
-        status: "active",
-      };
+    // Create tracking session immediately, even if coordinates aren't ready yet
+    const sessionId = `session_${employeeId}_${now.getTime()}`;
+    const startLocation = {
+      lat: latitude || 0,
+      lng: longitude || 0,
+      address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Getting location...",
+      timestamp: now.toISOString(),
+    };
 
-      setCurrentSession(session);
-      onTrackingSessionStart?.(session);
-    }
+    const session: TrackingSession = {
+      id: sessionId,
+      employeeId,
+      startTime: now.toISOString(),
+      startLocation,
+      route: [],
+      totalDistance: 0,
+      status: "active",
+    };
+
+    console.log("Starting tracking session:", session);
+    setCurrentSession(session);
+    onTrackingSessionStart?.(session);
   };
 
   const handleStopTracking = () => {
