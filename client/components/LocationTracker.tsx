@@ -230,27 +230,28 @@ export function LocationTracker({
     // Get initial position
     getCurrentPosition();
 
-    // Create tracking session
-    if (latitude && longitude) {
-      const sessionId = `session_${employeeId}_${now.getTime()}`;
-      const session: TrackingSession = {
-        id: sessionId,
-        employeeId,
-        startTime: now.toISOString(),
-        startLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: [],
-        totalDistance: 0,
-        status: "active",
-      };
+    // Create tracking session immediately, even if coordinates aren't ready yet
+    const sessionId = `session_${employeeId}_${now.getTime()}`;
+    const startLocation = {
+      lat: latitude || 0,
+      lng: longitude || 0,
+      address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Getting location...",
+      timestamp: now.toISOString(),
+    };
 
-      setCurrentSession(session);
-      onTrackingSessionStart?.(session);
-    }
+    const session: TrackingSession = {
+      id: sessionId,
+      employeeId,
+      startTime: now.toISOString(),
+      startLocation,
+      route: [],
+      totalDistance: 0,
+      status: "active",
+    };
+
+    console.log("Starting tracking session:", session);
+    setCurrentSession(session);
+    onTrackingSessionStart?.(session);
   };
 
   const handleStopTracking = () => {
@@ -263,25 +264,40 @@ export function LocationTracker({
       timerRef.current = null;
     }
 
-    // Update current session
-    if (currentSession && latitude && longitude) {
+    console.log("Stopping tracking - Debug info:", {
+      hasCurrentSession: !!currentSession,
+      hasCoordinates: !!(latitude && longitude),
+      latitude,
+      longitude,
+      routePointsCount: routeCoordinates.length,
+      totalDistance,
+      elapsedTime
+    });
+
+    // Update current session - create session even if coordinates aren't perfect
+    if (currentSession) {
+      const endLocation = {
+        lat: latitude || currentSession.startLocation.lat,
+        lng: longitude || currentSession.startLocation.lng,
+        address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable",
+        timestamp: now.toISOString(),
+      };
+
       const updatedSession: TrackingSession = {
         ...currentSession,
         endTime: now.toISOString(),
-        endLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: routeCoordinates,
+        endLocation,
+        route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
         totalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
       };
 
+      console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
+    } else {
+      console.log("Cannot end tracking session - no current session");
     }
   };
 
@@ -531,6 +547,20 @@ export function LocationTracker({
               <strong>Note:</strong> Location tracking requires permission and
               works best outdoors or near windows. High accuracy mode uses GPS
               and may drain battery faster.
+            </p>
+            <p className="mt-2">
+              <strong>Auto-capture:</strong> Route map will be automatically saved
+              when you stop tracking.
+            </p>
+          </div>
+        )}
+
+        {/* Active tracking info */}
+        {isTracking && (
+          <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md">
+            <p className="flex items-center">
+              <Route className="h-3 w-3 mr-1" />
+              <strong>Route will be auto-captured when tracking stops</strong>
             </p>
           </div>
         )}

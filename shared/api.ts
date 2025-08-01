@@ -294,3 +294,71 @@ export interface EnhancedMeetingDetails extends MeetingDetails {
   selectedCustomerEmployeeId?: string;
   selectedCustomerEmployee?: CustomerEmployee;
 }
+
+// Route snapshot interfaces
+export interface MeetingSnapshot {
+  id: string;
+  location: LocationData;
+  clientName?: string;
+  startTime: string;
+  endTime?: string;
+  status: string;
+}
+
+export interface MapBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+export interface SnapshotMetadata {
+  routeColor: string;
+  mapZoom: number;
+  routePointsCount: number;
+  meetingsCount: number;
+}
+
+export interface RouteSnapshot {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  trackingSessionId?: string;
+  captureTime: string;
+  startLocation: LocationData;
+  endLocation?: LocationData;
+  route: LocationData[];
+  meetings: MeetingSnapshot[];
+  totalDistance: number;
+  duration?: number;
+  status: 'active' | 'completed';
+  title: string;
+  description?: string;
+  mapBounds: MapBounds;
+  snapshotMetadata: SnapshotMetadata;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RouteSnapshotsResponse {
+  snapshots: RouteSnapshot[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface CreateRouteSnapshotRequest {
+  employeeId: string;
+  employeeName: string;
+  trackingSessionId?: string;
+  title: string;
+  description?: string;
+  startLocation: LocationData;
+  endLocation?: LocationData;
+  route: LocationData[];
+  meetings?: MeetingSnapshot[];
+  totalDistance?: number;
+  duration?: number;
+  status?: 'active' | 'completed';
+  mapBounds: MapBounds;
+}

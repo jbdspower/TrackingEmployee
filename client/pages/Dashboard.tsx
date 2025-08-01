@@ -43,6 +43,7 @@ import {
   Save,
   Edit,
 } from "lucide-react";
+import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
 import {
   format,
@@ -133,6 +134,15 @@ export default function Dashboard() {
     employeeName: "",
     meetingHistory: [],
     loading: false,
+  });
+
+  // Route history modal state
+  const [routeHistoryModal, setRouteHistoryModal] = useState<{
+    isOpen: boolean;
+    employeeId: string;
+  }>({
+    isOpen: false,
+    employeeId: "",
   });
 
   // Attendance editing state
@@ -482,6 +492,21 @@ export default function Dashboard() {
       employeeName: "",
       meetingHistory: [],
       loading: false,
+    });
+  };
+
+  // Route history handlers
+  const handleViewRouteHistory = (employeeId: string) => {
+    setRouteHistoryModal({
+      isOpen: true,
+      employeeId,
+    });
+  };
+
+  const closeRouteHistoryModal = () => {
+    setRouteHistoryModal({
+      isOpen: false,
+      employeeId: "",
     });
   };
 
@@ -975,19 +1000,29 @@ export default function Dashboard() {
                             </div>
                           </TableCell>
                           <TableCell className="text-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleEmployeeClick(
-                                  employee.employeeId,
-                                  employee.employeeName,
-                                )
-                              }
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View Details
-                            </Button>
+                            <div className="flex items-center justify-center space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleEmployeeClick(
+                                    employee.employeeId,
+                                    employee.employeeName,
+                                  )
+                                }
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                View Details
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewRouteHistory(employee.employeeId)}
+                              >
+                                <History className="h-4 w-4 mr-1" />
+                                Route History
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1450,6 +1485,13 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Route History Modal */}
+      <RouteSnapshotHistory
+        employeeId={routeHistoryModal.employeeId}
+        isOpen={routeHistoryModal.isOpen}
+        onClose={closeRouteHistoryModal}
+      />
     </div>
   );
 }
