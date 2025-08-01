@@ -161,8 +161,16 @@ export function AddCustomerEmployeeModal({
             <span>Add New Customer Employee</span>
           </DialogTitle>
           <DialogDescription>
-            Create a new customer employee record. All fields marked with * are
-            required.
+            {defaultCustomerName ? (
+              <>
+                Create a new employee record for <span className="font-medium">"{defaultCustomerName}"</span>.
+                The company name has been auto-filled from your current meeting.
+              </>
+            ) : (
+              <>
+                Create a new customer employee record. All fields marked with * are required.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
