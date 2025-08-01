@@ -497,8 +497,11 @@ export default function Tracking() {
         const snapshot = await response.json();
         console.log("Auto-created route snapshot:", snapshot);
 
-        // Show a toast notification (you might want to add toast hook)
-        // toast({ title: "Route Captured", description: "Route automatically saved when tracking stopped" });
+        // Show success toast notification
+        toast({
+          title: "Route Captured",
+          description: "Route automatically saved when tracking stopped"
+        });
       } else {
         throw new Error("Failed to auto-create route snapshot");
       }
