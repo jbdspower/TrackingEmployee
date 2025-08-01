@@ -38,6 +38,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 export default function Tracking() {
   const navigate = useNavigate();
   const { employeeId } = useParams<{ employeeId: string }>();
+  const { toast } = useToast();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [meetings, setMeetings] = useState<MeetingLog[]>([]);
   const [loading, setLoading] = useState(true);
