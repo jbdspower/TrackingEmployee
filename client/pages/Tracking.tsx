@@ -499,8 +499,8 @@ export default function Tracking() {
 
         // Show success toast notification
         toast({
-          title: "Route Captured",
-          description: "Route automatically saved when tracking stopped"
+          title: "Route Auto-Captured",
+          description: `${snapshot.title} saved successfully`,
         });
       } else {
         throw new Error("Failed to auto-create route snapshot");
