@@ -15,6 +15,9 @@ import {
   MeetingLog,
   MeetingDetails,
   TrackingSession,
+  CreateRouteSnapshotRequest,
+  MeetingSnapshot,
+  MapBounds,
 } from "@shared/api";
 import {
   ArrowLeft,
