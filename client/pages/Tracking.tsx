@@ -813,7 +813,7 @@ export default function Tracking() {
                       className="text-primary"
                     >
                       <Camera className="h-4 w-4 mr-2" />
-                      Save Snapshot
+                      Manual Capture
                     </Button>
                     <Button
                       variant="outline"
