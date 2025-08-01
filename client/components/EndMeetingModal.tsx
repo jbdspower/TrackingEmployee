@@ -10,7 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MeetingDetails, CustomerEmployee, Customer, CustomerContact } from "@shared/api";
+import {
+  MeetingDetails,
+  CustomerEmployee,
+  Customer,
+  CustomerContact,
+} from "@shared/api";
 import { AlertCircle, CheckCircle, Clock, User, Building2 } from "lucide-react";
 import {
   CustomerEmployeeSelector,
@@ -57,7 +62,9 @@ export function EndMeetingModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Multiple customer selection state
-  const [selectedCustomers, setSelectedCustomers] = useState<CustomerContact[]>([]);
+  const [selectedCustomers, setSelectedCustomers] = useState<CustomerContact[]>(
+    [],
+  );
   const [currentSelectedEmployee, setCurrentSelectedEmployee] =
     useState<CustomerEmployee | null>(null);
   const [currentSelectedCustomer, setCurrentSelectedCustomer] =
@@ -141,8 +148,9 @@ export function EndMeetingModal({
 
     // Check if this customer is already added
     const isAlreadyAdded = selectedCustomers.some(
-      (c) => c.customerName === customerContact.customerName &&
-             c.customerEmployeeName === customerContact.customerEmployeeName
+      (c) =>
+        c.customerName === customerContact.customerName &&
+        c.customerEmployeeName === customerContact.customerEmployeeName,
     );
 
     if (!isAlreadyAdded) {
@@ -150,12 +158,13 @@ export function EndMeetingModal({
       setSelectedCustomers(newSelectedCustomers);
 
       // Update form data with all customers
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         customers: newSelectedCustomers,
         // Keep legacy fields for the first customer for backward compatibility
         customerName: newSelectedCustomers[0]?.customerName || "",
-        customerEmployeeName: newSelectedCustomers[0]?.customerEmployeeName || "",
+        customerEmployeeName:
+          newSelectedCustomers[0]?.customerEmployeeName || "",
         customerEmail: newSelectedCustomers[0]?.customerEmail || "",
         customerMobile: newSelectedCustomers[0]?.customerMobile || "",
         customerDesignation: newSelectedCustomers[0]?.customerDesignation || "",
@@ -174,11 +183,13 @@ export function EndMeetingModal({
 
   // Remove customer from selected list
   const handleRemoveCustomer = (index: number) => {
-    const newSelectedCustomers = selectedCustomers.filter((_, i) => i !== index);
+    const newSelectedCustomers = selectedCustomers.filter(
+      (_, i) => i !== index,
+    );
     setSelectedCustomers(newSelectedCustomers);
 
     // Update form data
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       customers: newSelectedCustomers,
       // Update legacy fields for the first customer
@@ -190,7 +201,10 @@ export function EndMeetingModal({
       customerDepartment: newSelectedCustomers[0]?.customerDepartment || "",
     }));
 
-    console.log("EndMeetingModal: Removed customer from list, remaining:", newSelectedCustomers.length);
+    console.log(
+      "EndMeetingModal: Removed customer from list, remaining:",
+      newSelectedCustomers.length,
+    );
   };
 
   // Handle adding new customer employee
@@ -381,7 +395,9 @@ export function EndMeetingModal({
             {currentMeeting?.clientName && (
               <div className="bg-primary/5 p-3 rounded-md text-sm">
                 <div className="flex items-center space-x-2">
-                  <span className="font-medium">Meeting with: {currentMeeting.clientName}</span>
+                  <span className="font-medium">
+                    Meeting with: {currentMeeting.clientName}
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   Showing employees for this company only
@@ -415,7 +431,10 @@ export function EndMeetingModal({
 
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {selectedCustomers.map((customer, index) => (
-                    <div key={index} className="p-3 border rounded-lg bg-muted/20 relative">
+                    <div
+                      key={index}
+                      className="p-3 border rounded-lg bg-muted/20 relative"
+                    >
                       <Button
                         type="button"
                         variant="outline"
@@ -429,35 +448,55 @@ export function EndMeetingModal({
 
                       <div className="grid grid-cols-2 gap-2 text-sm pr-8">
                         <div>
-                          <span className="text-muted-foreground">Company:</span>
-                          <div className="font-medium">{customer.customerName}</div>
+                          <span className="text-muted-foreground">
+                            Company:
+                          </span>
+                          <div className="font-medium">
+                            {customer.customerName}
+                          </div>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Contact:</span>
-                          <div className="font-medium">{customer.customerEmployeeName}</div>
+                          <span className="text-muted-foreground">
+                            Contact:
+                          </span>
+                          <div className="font-medium">
+                            {customer.customerEmployeeName}
+                          </div>
                         </div>
                         {customer.customerDesignation && (
                           <div>
-                            <span className="text-muted-foreground">Position:</span>
+                            <span className="text-muted-foreground">
+                              Position:
+                            </span>
                             <div>{customer.customerDesignation}</div>
                           </div>
                         )}
                         {customer.customerDepartment && (
                           <div>
-                            <span className="text-muted-foreground">Department:</span>
+                            <span className="text-muted-foreground">
+                              Department:
+                            </span>
                             <div>{customer.customerDepartment}</div>
                           </div>
                         )}
                         {customer.customerEmail && (
                           <div>
-                            <span className="text-muted-foreground">Email:</span>
-                            <div className="text-xs">{customer.customerEmail}</div>
+                            <span className="text-muted-foreground">
+                              Email:
+                            </span>
+                            <div className="text-xs">
+                              {customer.customerEmail}
+                            </div>
                           </div>
                         )}
                         {customer.customerMobile && (
                           <div>
-                            <span className="text-muted-foreground">Mobile:</span>
-                            <div className="text-xs">{customer.customerMobile}</div>
+                            <span className="text-muted-foreground">
+                              Mobile:
+                            </span>
+                            <div className="text-xs">
+                              {customer.customerMobile}
+                            </div>
                           </div>
                         )}
                       </div>

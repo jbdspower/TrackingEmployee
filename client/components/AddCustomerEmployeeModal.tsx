@@ -53,7 +53,7 @@ export function AddCustomerEmployeeModal({
   // Auto-fill customer name when modal opens if defaultCustomerName is provided
   useEffect(() => {
     if (isOpen && defaultCustomerName) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         customerName: defaultCustomerName,
       }));
@@ -163,12 +163,14 @@ export function AddCustomerEmployeeModal({
           <DialogDescription>
             {defaultCustomerName ? (
               <>
-                Create a new employee record for <span className="font-medium">"{defaultCustomerName}"</span>.
+                Create a new employee record for{" "}
+                <span className="font-medium">"{defaultCustomerName}"</span>.
                 The company name has been auto-filled from your current meeting.
               </>
             ) : (
               <>
-                Create a new customer employee record. All fields marked with * are required.
+                Create a new customer employee record. All fields marked with *
+                are required.
               </>
             )}
           </DialogDescription>
@@ -203,11 +205,13 @@ export function AddCustomerEmployeeModal({
                 <span>{errors.customerName}</span>
               </div>
             )}
-            {defaultCustomerName && formData.customerName === defaultCustomerName && (
-              <div className="text-xs text-muted-foreground">
-                Customer name auto-filled from "{defaultCustomerName}" meeting. You can edit if needed.
-              </div>
-            )}
+            {defaultCustomerName &&
+              formData.customerName === defaultCustomerName && (
+                <div className="text-xs text-muted-foreground">
+                  Customer name auto-filled from "{defaultCustomerName}"
+                  meeting. You can edit if needed.
+                </div>
+              )}
           </div>
 
           {/* Customer Employee Name */}
