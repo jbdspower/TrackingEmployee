@@ -531,6 +531,7 @@ export function EndMeetingModal({
           onClose={() => setIsAddEmployeeOpen(false)}
           onAddEmployee={handleAddNewEmployee}
           isLoading={isLoading}
+          defaultCustomerName={currentMeeting?.clientName}
         />
       </DialogContent>
     </Dialog>
