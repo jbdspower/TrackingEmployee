@@ -131,12 +131,20 @@ export default function Tracking() {
 
       if (response.ok) {
         try {
-          // Use a single json() call - don't clone unnecessarily
-          const data = await response.json();
-          setMeetings(data.meetings || []);
-          console.log("Meetings data fetched successfully:", data);
+          // Check if response is actually JSON
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            setMeetings(data.meetings || []);
+            console.log("Meetings data fetched successfully:", data);
+          } else {
+            // Response is not JSON, likely an error page
+            const textData = await response.text();
+            console.error("Server returned non-JSON response for meetings:", textData.substring(0, 200));
+            setMeetings([]);
+          }
         } catch (jsonError) {
-          console.error("Error parsing meetings JSON:", jsonError);
+          console.error("Error parsing meetings response:", jsonError);
           setMeetings([]);
         }
       } else {
