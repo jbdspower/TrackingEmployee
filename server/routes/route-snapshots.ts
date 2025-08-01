@@ -123,14 +123,27 @@ export const getRouteSnapshot: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const snapshot = await RouteSnapshot.findOne({ id });
+    try {
+      // Try MongoDB first
+      const snapshot = await RouteSnapshot.findOne({ id });
 
-    if (!snapshot) {
-      return res.status(404).json({ error: "Route snapshot not found" });
+      if (snapshot) {
+        console.log("Route snapshot found in MongoDB:", snapshot.id);
+        return res.json(snapshot);
+      }
+    } catch (mongoError) {
+      console.error("MongoDB query failed, checking in-memory storage:", mongoError);
     }
 
-    console.log("Route snapshot found:", snapshot.id);
-    res.json(snapshot);
+    // Check in-memory storage
+    const memorySnapshot = inMemorySnapshots.find(s => s.id === id);
+
+    if (memorySnapshot) {
+      console.log("Route snapshot found in memory:", memorySnapshot.id);
+      return res.json(memorySnapshot);
+    }
+
+    return res.status(404).json({ error: "Route snapshot not found" });
   } catch (error) {
     console.error("Error fetching route snapshot:", error);
     res.status(500).json({ error: "Failed to fetch route snapshot" });
