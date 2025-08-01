@@ -532,6 +532,20 @@ export function LocationTracker({
               works best outdoors or near windows. High accuracy mode uses GPS
               and may drain battery faster.
             </p>
+            <p className="mt-2">
+              <strong>Auto-capture:</strong> Route map will be automatically saved
+              when you stop tracking.
+            </p>
+          </div>
+        )}
+
+        {/* Active tracking info */}
+        {isTracking && (
+          <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md">
+            <p className="flex items-center">
+              <Route className="h-3 w-3 mr-1" />
+              <strong>Route will be auto-captured when tracking stops</strong>
+            </p>
           </div>
         )}
       </CardContent>
