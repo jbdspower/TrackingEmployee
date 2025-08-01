@@ -263,6 +263,16 @@ export function LocationTracker({
       timerRef.current = null;
     }
 
+    console.log("Stopping tracking - Debug info:", {
+      hasCurrentSession: !!currentSession,
+      hasCoordinates: !!(latitude && longitude),
+      latitude,
+      longitude,
+      routePointsCount: routeCoordinates.length,
+      totalDistance,
+      elapsedTime
+    });
+
     // Update current session
     if (currentSession && latitude && longitude) {
       const updatedSession: TrackingSession = {
@@ -280,8 +290,15 @@ export function LocationTracker({
         status: "completed",
       };
 
+      console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
+    } else {
+      console.log("Cannot end tracking session - missing data:", {
+        currentSession: !!currentSession,
+        latitude,
+        longitude
+      });
     }
   };
 
