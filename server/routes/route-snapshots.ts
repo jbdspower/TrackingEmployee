@@ -241,19 +241,33 @@ export const updateRouteSnapshot: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    let updated = false;
 
-    const updatedSnapshot = await RouteSnapshot.findOneAndUpdate(
-      { id },
-      { $set: updates },
-      { new: true, runValidators: true }
-    );
+    try {
+      // Try MongoDB first
+      const updatedSnapshot = await RouteSnapshot.findOneAndUpdate(
+        { id },
+        { $set: updates },
+        { new: true, runValidators: true }
+      );
 
-    if (!updatedSnapshot) {
-      return res.status(404).json({ error: "Route snapshot not found" });
+      if (updatedSnapshot) {
+        console.log("Route snapshot updated in MongoDB:", updatedSnapshot.id);
+        return res.json(updatedSnapshot);
+      }
+    } catch (mongoError) {
+      console.error("MongoDB update failed, checking in-memory storage:", mongoError);
     }
 
-    console.log("Route snapshot updated:", updatedSnapshot.id);
-    res.json(updatedSnapshot);
+    // Check in-memory storage
+    const memoryIndex = inMemorySnapshots.findIndex(s => s.id === id);
+    if (memoryIndex !== -1) {
+      inMemorySnapshots[memoryIndex] = { ...inMemorySnapshots[memoryIndex], ...updates };
+      console.log("Route snapshot updated in memory:", inMemorySnapshots[memoryIndex].id);
+      return res.json(inMemorySnapshots[memoryIndex]);
+    }
+
+    return res.status(404).json({ error: "Route snapshot not found" });
   } catch (error) {
     console.error("Error updating route snapshot:", error);
     res.status(500).json({ error: "Failed to update route snapshot" });
