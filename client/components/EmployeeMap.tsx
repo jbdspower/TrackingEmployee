@@ -148,7 +148,7 @@ export function EmployeeMap({
     }
   }, [employees, selectedEmployee, onEmployeeClick]);
 
-  // Handle route visualization
+  // Handle route visualization with road-based routing
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -162,19 +162,75 @@ export function EmployeeMap({
     });
     routeMarkersRef.current = [];
 
-    if (!showRoute || !trackingSession || !trackingSession.route.length) return;
+    if (!showRoute || !trackingSession || !trackingSession.route.length) {
+      setRouteError(null);
+      return;
+    }
 
     const route = trackingSession.route;
 
-    // Create polyline for the route
-    const routeCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+    // Use road-based routing for better route visualization
+    const generateRoadRoute = async () => {
+      if (route.length < 2) {
+        setRouteError("Not enough points for route generation");
+        return;
+      }
 
-    routeLayerRef.current = L.polyline(routeCoords, {
-      color: '#3b82f6',
-      weight: 4,
-      opacity: 0.8,
-      dashArray: '5, 10'
-    }).addTo(mapRef.current);
+      setIsLoadingRoute(true);
+      setRouteError(null);
+
+      try {
+        // Get road-based route between all points
+        const routeData = await routingService.getRouteForPoints(route);
+
+        if (!mapRef.current) return;
+
+        // Create polyline with road-based coordinates
+        const routeCoords: L.LatLngExpression[] = routeData.coordinates;
+
+        if (routeCoords.length > 0) {
+          routeLayerRef.current = L.polyline(routeCoords, {
+            color: '#3b82f6',
+            weight: 4,
+            opacity: 0.8,
+            smoothFactor: 1.0
+          }).addTo(mapRef.current);
+
+          // Update tracking session with accurate distance
+          if (trackingSession && routeData.totalDistance > 0) {
+            console.log(`Route updated: ${(routeData.totalDistance / 1000).toFixed(2)} km (was ${((trackingSession.totalDistance || 0) / 1000).toFixed(2)} km)`);
+          }
+        } else {
+          // Fallback to straight line if no road route available
+          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+          routeLayerRef.current = L.polyline(fallbackCoords, {
+            color: '#f59e0b',
+            weight: 3,
+            opacity: 0.6,
+            dashArray: '10, 5'
+          }).addTo(mapRef.current);
+          setRouteError("Using direct path - road routing unavailable");
+        }
+      } catch (error) {
+        console.error('Error generating road route:', error);
+        setRouteError('Failed to generate road route');
+
+        // Fallback to straight line on error
+        if (mapRef.current) {
+          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+          routeLayerRef.current = L.polyline(fallbackCoords, {
+            color: '#f59e0b',
+            weight: 3,
+            opacity: 0.6,
+            dashArray: '10, 5'
+          }).addTo(mapRef.current);
+        }
+      } finally {
+        setIsLoadingRoute(false);
+      }
+    };
+
+    generateRoadRoute();
 
     // Add start marker
     if (trackingSession.startLocation) {
