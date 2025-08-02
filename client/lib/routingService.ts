@@ -29,15 +29,17 @@ class RoutingService {
 
   private async getRouteFromORS(start: LocationData, end: LocationData): Promise<RouteResponse | null> {
     try {
-      // Using OpenRouteService's public API (has rate limits but works for development)
+      // Get API key from environment or use public demo key
+      const apiKey = import.meta.env.VITE_OPENROUTESERVICE_API_KEY || '5b3ce3597851110001cf6248832b9ed5a5b1493aa5424ef5b14ebefb';
+
       const url = `https://api.openrouteservice.org/v2/directions/driving-car`;
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
           'Content-Type': 'application/json',
-          'Authorization': '5b3ce3597851110001cf6248832b9ed5a5b1493aa5424ef5b14ebefb', // Public demo key
+          'Authorization': apiKey,
         },
         body: JSON.stringify({
           coordinates: [[start.lng, start.lat], [end.lng, end.lat]],
