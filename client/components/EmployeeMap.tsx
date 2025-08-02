@@ -381,10 +381,27 @@ export function EmployeeMap({
   }, [selectedEmployee, employees]);
 
   return (
-    <div
-      ref={mapContainerRef}
-      style={{ height, width: "100%", borderRadius: "8px" }}
-      className="relative z-0"
-    />
+    <div className="relative">
+      <div
+        ref={mapContainerRef}
+        style={{ height, width: "100%", borderRadius: "8px" }}
+        className="relative z-0"
+      />
+
+      {/* Loading indicator */}
+      {isLoadingRoute && (
+        <div className="absolute top-2 right-2 bg-background/90 backdrop-blur-sm border border-border rounded-md px-3 py-2 text-sm flex items-center space-x-2 z-10">
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <span>Generating route...</span>
+        </div>
+      )}
+
+      {/* Route error indicator */}
+      {routeError && (
+        <div className="absolute top-2 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
+          <span>{routeError}</span>
+        </div>
+      )}
+    </div>
   );
 }
