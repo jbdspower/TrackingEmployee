@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { HttpClient } from "@/lib/httpClient";
 import { TrackingSession, LocationData } from "@shared/api";
+import { routingService } from "@/lib/routingService";
 import {
   MapPin,
   Navigation,
