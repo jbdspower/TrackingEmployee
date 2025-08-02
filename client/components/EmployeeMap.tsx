@@ -36,6 +36,8 @@ export function EmployeeMap({
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const routeLayerRef = useRef<L.Polyline | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
