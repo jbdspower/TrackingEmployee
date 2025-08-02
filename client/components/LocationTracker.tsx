@@ -124,6 +124,9 @@ export function LocationTracker({
           // Calculate distance if we have a previous point
           if (prevRoute.length > 0) {
             const lastPoint = prevRoute[prevRoute.length - 1];
+
+            // Use straight-line distance for real-time tracking (faster)
+            // Road-based distance will be calculated when route is finalized
             const distance = calculateDistance(
               lastPoint.lat,
               lastPoint.lng,
