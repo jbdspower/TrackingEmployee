@@ -200,6 +200,10 @@ export function EmployeeMap({
           if (trackingSession && routeData.totalDistance > 0) {
             console.log(`Route updated: ${(routeData.totalDistance / 1000).toFixed(2)} km (was ${((trackingSession.totalDistance || 0) / 1000).toFixed(2)} km)`);
           }
+
+          // Fit map to show the route
+          const routeBounds = L.latLngBounds(routeCoords);
+          mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
         } else {
           // Fallback to straight line if no road route available
           const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
@@ -210,6 +214,10 @@ export function EmployeeMap({
             dashArray: '10, 5'
           }).addTo(mapRef.current);
           setRouteError("Using direct path - road routing unavailable");
+
+          // Fit map to show the fallback route
+          const fallbackBounds = L.latLngBounds(fallbackCoords);
+          mapRef.current.fitBounds(fallbackBounds, { padding: [30, 30] });
         }
       } catch (error) {
         console.error('Error generating road route:', error);
