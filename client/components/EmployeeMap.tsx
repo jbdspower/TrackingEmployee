@@ -367,12 +367,6 @@ export function EmployeeMap({
         routeMarkersRef.current.push(waypointMarker);
       }
     });
-
-    // Fit map to show the route
-    if (routeCoords.length > 0) {
-      const routeBounds = L.latLngBounds(routeCoords);
-      mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
-    }
   }, [showRoute, trackingSession]);
 
   // Center map on selected employee
