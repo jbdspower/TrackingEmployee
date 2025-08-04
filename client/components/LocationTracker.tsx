@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { HttpClient } from "@/lib/httpClient";
 import { TrackingSession, LocationData } from "@shared/api";
+import { routingService } from "@/lib/routingService";
 import {
   MapPin,
   Navigation,
@@ -123,6 +124,9 @@ export function LocationTracker({
           // Calculate distance if we have a previous point
           if (prevRoute.length > 0) {
             const lastPoint = prevRoute[prevRoute.length - 1];
+
+            // Use straight-line distance for real-time tracking (faster)
+            // Road-based distance will be calculated when route is finalized
             const distance = calculateDistance(
               lastPoint.lat,
               lastPoint.lng,
@@ -254,7 +258,7 @@ export function LocationTracker({
     onTrackingSessionStart?.(session);
   };
 
-  const handleStopTracking = () => {
+  const handleStopTracking = async () => {
     const now = new Date();
     setTrackingEndTime(now);
     setIsTracking(false);
@@ -283,12 +287,28 @@ export function LocationTracker({
         timestamp: now.toISOString(),
       };
 
+      let finalDistance = totalDistance;
+
+      // Try to get more accurate road-based distance calculation
+      if (routeCoordinates.length >= 2) {
+        try {
+          console.log("Calculating accurate road-based distance...");
+          const routeData = await routingService.getRouteForPoints(routeCoordinates);
+          if (routeData.totalDistance > 0) {
+            finalDistance = routeData.totalDistance;
+            console.log(`Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`);
+          }
+        } catch (error) {
+          console.warn("Failed to calculate road-based distance, using GPS distance:", error);
+        }
+      }
+
       const updatedSession: TrackingSession = {
         ...currentSession,
         endTime: now.toISOString(),
         endLocation,
         route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
-        totalDistance,
+        totalDistance: finalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
       };

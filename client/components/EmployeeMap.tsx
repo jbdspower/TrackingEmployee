@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { Employee, LocationData, TrackingSession } from "@shared/api";
+import { routingService } from "@/lib/routingService";
 
 // Fix for default markers in Leaflet with bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -35,6 +36,8 @@ export function EmployeeMap({
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const routeLayerRef = useRef<L.Polyline | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -145,7 +148,7 @@ export function EmployeeMap({
     }
   }, [employees, selectedEmployee, onEmployeeClick]);
 
-  // Handle route visualization
+  // Handle route visualization with road-based routing
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -159,19 +162,83 @@ export function EmployeeMap({
     });
     routeMarkersRef.current = [];
 
-    if (!showRoute || !trackingSession || !trackingSession.route.length) return;
+    if (!showRoute || !trackingSession || !trackingSession.route.length) {
+      setRouteError(null);
+      return;
+    }
 
     const route = trackingSession.route;
 
-    // Create polyline for the route
-    const routeCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+    // Use road-based routing for better route visualization
+    const generateRoadRoute = async () => {
+      if (route.length < 2) {
+        setRouteError("Not enough points for route generation");
+        return;
+      }
 
-    routeLayerRef.current = L.polyline(routeCoords, {
-      color: '#3b82f6',
-      weight: 4,
-      opacity: 0.8,
-      dashArray: '5, 10'
-    }).addTo(mapRef.current);
+      setIsLoadingRoute(true);
+      setRouteError(null);
+
+      try {
+        // Get road-based route between all points
+        const routeData = await routingService.getRouteForPoints(route);
+
+        if (!mapRef.current) return;
+
+        // Create polyline with road-based coordinates
+        const routeCoords: L.LatLngExpression[] = routeData.coordinates;
+
+        if (routeCoords.length > 0) {
+          routeLayerRef.current = L.polyline(routeCoords, {
+            color: '#3b82f6',
+            weight: 4,
+            opacity: 0.8,
+            smoothFactor: 1.0
+          }).addTo(mapRef.current);
+
+          // Update tracking session with accurate distance
+          if (trackingSession && routeData.totalDistance > 0) {
+            console.log(`Route updated: ${(routeData.totalDistance / 1000).toFixed(2)} km (was ${((trackingSession.totalDistance || 0) / 1000).toFixed(2)} km)`);
+          }
+
+          // Fit map to show the route
+          const routeBounds = L.latLngBounds(routeCoords);
+          mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
+        } else {
+          // Fallback to straight line if no road route available
+          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+          routeLayerRef.current = L.polyline(fallbackCoords, {
+            color: '#f59e0b',
+            weight: 3,
+            opacity: 0.6,
+            dashArray: '10, 5'
+          }).addTo(mapRef.current);
+          setRouteError("Using direct path - road routing unavailable");
+
+          // Fit map to show the fallback route
+          const fallbackBounds = L.latLngBounds(fallbackCoords);
+          mapRef.current.fitBounds(fallbackBounds, { padding: [30, 30] });
+        }
+      } catch (error) {
+        console.error('Error generating road route:', error);
+        setRouteError('Failed to generate road route');
+
+        // Fallback to straight line on error
+        if (mapRef.current) {
+          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+          routeLayerRef.current = L.polyline(fallbackCoords, {
+            color: '#f59e0b',
+            weight: 3,
+            opacity: 0.6,
+            dashArray: '10, 5'
+          }).addTo(mapRef.current);
+        }
+      } finally {
+        setIsLoadingRoute(false);
+      }
+    };
+
+    generateRoadRoute();
 
     // Add start marker
     if (trackingSession.startLocation) {
@@ -300,12 +367,6 @@ export function EmployeeMap({
         routeMarkersRef.current.push(waypointMarker);
       }
     });
-
-    // Fit map to show the route
-    if (routeCoords.length > 0) {
-      const routeBounds = L.latLngBounds(routeCoords);
-      mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
-    }
   }, [showRoute, trackingSession]);
 
   // Center map on selected employee
@@ -322,10 +383,27 @@ export function EmployeeMap({
   }, [selectedEmployee, employees]);
 
   return (
-    <div
-      ref={mapContainerRef}
-      style={{ height, width: "100%", borderRadius: "8px" }}
-      className="relative z-0"
-    />
+    <div className="relative">
+      <div
+        ref={mapContainerRef}
+        style={{ height, width: "100%", borderRadius: "8px" }}
+        className="relative z-0"
+      />
+
+      {/* Loading indicator */}
+      {isLoadingRoute && (
+        <div className="absolute top-2 right-2 bg-background/90 backdrop-blur-sm border border-border rounded-md px-3 py-2 text-sm flex items-center space-x-2 z-10">
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <span>Generating route...</span>
+        </div>
+      )}
+
+      {/* Route error indicator */}
+      {routeError && (
+        <div className="absolute top-2 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
+          <span>{routeError}</span>
+        </div>
+      )}
+    </div>
   );
 }
