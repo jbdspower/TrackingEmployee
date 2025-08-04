@@ -38,30 +38,67 @@ export default function Index() {
     return () => clearInterval(interval);
   }, []);
 
+  // const fetchEmployees = async () => {
+  //   try {
+  //     console.log("Fetching employees");
+
+  //     const response = await HttpClient.get("/api/employees");
+
+  //     if (response.ok) {
+  //       const data: EmployeesResponse = await response.json();
+  //       setEmployees(data.employees);
+  //       setLastRefresh(new Date());
+  //       console.log("Employees data fetched successfully:", data);
+  //     } else {
+  //       // Don't try to read response body on error as it might cause "body stream already read" error
+  //       console.error(
+  //         `Failed to fetch employees: ${response.status} ${response.statusText}`,
+  //       );
+  //       setEmployees([]);
+  //     }
+  //   } catch (error) {
+  //     console.error("Error fetching employees:", error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const fetchEmployees = async () => {
-    try {
-      console.log("Fetching employees");
+  try {
+    console.log("Fetching employees");
 
-      const response = await HttpClient.get("/api/employees");
+    const response = await HttpClient.get("/api/employees");
 
-      if (response.ok) {
-        const data: EmployeesResponse = await response.json();
-        setEmployees(data.employees);
-        setLastRefresh(new Date());
-        console.log("Employees data fetched successfully:", data);
-      } else {
-        // Don't try to read response body on error as it might cause "body stream already read" error
-        console.error(
-          `Failed to fetch employees: ${response.status} ${response.statusText}`,
-        );
-        setEmployees([]);
-      }
-    } catch (error) {
-      console.error("Error fetching employees:", error);
-    } finally {
-      setLoading(false);
+    if (response.ok) {
+      const data: EmployeesResponse = await response.json();
+
+      // Step 1: Get user from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const isSuperAdmin = user?.role === "super_admin";
+      const userId = user?._id;
+
+      // Step 2: Filter employees based on role
+      const filteredEmployees = isSuperAdmin
+        ? data.employees
+        : data.employees.filter(emp => emp?.id === userId);
+
+      // Step 3: Update state
+      setEmployees(filteredEmployees);
+      setLastRefresh(new Date());
+
+      console.log("Employees data fetched and filtered:", filteredEmployees);
+    } else {
+      console.error(
+        `Failed to fetch employees: ${response.status} ${response.statusText}`,
+      );
+      setEmployees([]);
     }
-  };
+  } catch (error) {
+    console.error("Error fetching employees:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleRefresh = () => {
     setLoading(true);
