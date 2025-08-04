@@ -225,7 +225,7 @@ export default function Dashboard() {
       setAnalytics([]);
     }
   } catch (error) {
-    console.error("Error fetching analytics:", error);
+    console.error("Error fetching analytics", error);
     setAnalytics([]);
   } finally {
     setLoading(false);
