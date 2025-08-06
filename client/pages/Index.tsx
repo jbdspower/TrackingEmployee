@@ -25,7 +25,7 @@ import { HttpClient } from "@/lib/httpClient";
 
 export default function Index() {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showLocationPrompt, setShowLocationPrompt] = useState(true);
