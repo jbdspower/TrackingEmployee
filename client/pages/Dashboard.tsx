@@ -193,13 +193,14 @@ export default function Dashboard() {
     const queryParams = new URLSearchParams();
 
     if (isSuperAdmin) {
-      if (filters.employeeId !== "all") {
+      if (filters.employeeId && filters.employeeId !== "all") {
         queryParams.append("employeeId", filters.employeeId);
       }
-    } else {
-      // If not super admin, force filter by logged-in user's ID
+    } else if (user?._id) {
+      // If not super admin and user has valid ID, filter by logged-in user's ID
       queryParams.append("employeeId", user._id);
     }
+    // If no valid user ID, fetch all analytics (super admin view)
 
     queryParams.append("dateRange", filters.dateRange);
     if (filters.startDate) queryParams.append("startDate", filters.startDate);
