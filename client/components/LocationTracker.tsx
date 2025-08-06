@@ -35,29 +35,85 @@ export function LocationTracker({
   onTrackingSessionStart,
   onTrackingSessionEnd,
 }: LocationTrackerProps) {
-  const [isTracking, setIsTracking] = useState(trackingEnabled);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [updateCount, setUpdateCount] = useState(0);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [failureCount, setFailureCount] = useState(0);
-  const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
+  // Helper functions for localStorage persistence
+  const getStorageKey = (key: string) => `tracking_${employeeId}_${key}`;
 
-  // Enhanced tracking state
-  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
-    null,
+  const loadFromStorage = (key: string, defaultValue: any) => {
+    try {
+      const stored = localStorage.getItem(getStorageKey(key));
+      return stored ? JSON.parse(stored) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  };
+
+  const saveToStorage = (key: string, value: any) => {
+    try {
+      localStorage.setItem(getStorageKey(key), JSON.stringify(value));
+    } catch (error) {
+      console.warn("Failed to save to localStorage:", error);
+    }
+  };
+
+  const clearFromStorage = (key: string) => {
+    try {
+      localStorage.removeItem(getStorageKey(key));
+    } catch (error) {
+      console.warn("Failed to clear from localStorage:", error);
+    }
+  };
+
+  // Initialize state from localStorage or defaults
+  const [isTracking, setIsTracking] = useState(() =>
+    loadFromStorage("isTracking", trackingEnabled),
   );
-  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(null);
-  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
-  const [totalDistance, setTotalDistance] = useState<number>(0);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(() => {
+    const stored = loadFromStorage("lastUpdate", null);
+    return stored ? new Date(stored) : null;
+  });
+  const [updateCount, setUpdateCount] = useState(() =>
+    loadFromStorage("updateCount", 0),
+  );
+  const [updateError, setUpdateError] = useState<string | null>(() =>
+    loadFromStorage("updateError", null),
+  );
+  const [failureCount, setFailureCount] = useState(() =>
+    loadFromStorage("failureCount", 0),
+  );
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(() =>
+    loadFromStorage("lastUpdateTime", 0),
+  );
+
+  // Enhanced tracking state with persistence
+  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
+    () => loadFromStorage("currentSession", null),
+  );
+  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(
+    () => {
+      const stored = loadFromStorage("trackingStartTime", null);
+      return stored ? new Date(stored) : null;
+    },
+  );
+  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(() => {
+    const stored = loadFromStorage("trackingEndTime", null);
+    return stored ? new Date(stored) : null;
+  });
+  const [elapsedTime, setElapsedTime] = useState<number>(() =>
+    loadFromStorage("elapsedTime", 0),
+  );
+  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>(() =>
+    loadFromStorage("routeCoordinates", []),
+  );
+  const [totalDistance, setTotalDistance] = useState<number>(() =>
+    loadFromStorage("totalDistance", 0),
+  );
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
     useGeolocation({
       enableHighAccuracy: true,
-      maximumAge: 60000, // 1 minute
-      timeout: 30000, // 30 seconds
+      maximumAge: 5000, // 5 seconds for fresher data
+      timeout: 15000, // 15 seconds timeout
       watchPosition: isTracking,
     });
 
@@ -79,6 +135,51 @@ export function LocationTracker({
     },
     [],
   );
+
+  // Persist state changes to localStorage
+  useEffect(() => {
+    saveToStorage("isTracking", isTracking);
+  }, [isTracking]);
+
+  useEffect(() => {
+    saveToStorage("currentSession", currentSession);
+  }, [currentSession]);
+
+  useEffect(() => {
+    saveToStorage("trackingStartTime", trackingStartTime);
+  }, [trackingStartTime]);
+
+  useEffect(() => {
+    saveToStorage("trackingEndTime", trackingEndTime);
+  }, [trackingEndTime]);
+
+  useEffect(() => {
+    saveToStorage("routeCoordinates", routeCoordinates);
+  }, [routeCoordinates]);
+
+  useEffect(() => {
+    saveToStorage("totalDistance", totalDistance);
+  }, [totalDistance]);
+
+  useEffect(() => {
+    saveToStorage("elapsedTime", elapsedTime);
+  }, [elapsedTime]);
+
+  // Restore tracking session on component load
+  useEffect(() => {
+    if (
+      isTracking &&
+      currentSession &&
+      trackingStartTime &&
+      onTrackingSessionStart
+    ) {
+      console.log(
+        "Restoring tracking session from localStorage:",
+        currentSession,
+      );
+      onTrackingSessionStart(currentSession);
+    }
+  }, []); // Run only once on mount
 
   // Timer effect
   useEffect(() => {
@@ -106,8 +207,8 @@ export function LocationTracker({
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
 
-      // Rate limit: only update every 10 seconds minimum
-      if (timeSinceLastUpdate >= 10000 || lastUpdateTime === 0) {
+      // Rate limit: update every 5 seconds for more detailed tracking
+      if (timeSinceLastUpdate >= 5000 || lastUpdateTime === 0) {
         updateLocationOnServer(latitude, longitude, accuracy);
 
         // Add to route if tracking is active
@@ -145,7 +246,7 @@ export function LocationTracker({
         onLocationUpdate?.(latitude, longitude, accuracy);
       } else {
         console.log(
-          `Rate limited: ${Math.ceil((10000 - timeSinceLastUpdate) / 1000)}s remaining`,
+          `Rate limited: ${Math.ceil((5000 - timeSinceLastUpdate) / 1000)}s remaining`,
         );
       }
     }
@@ -239,7 +340,10 @@ export function LocationTracker({
     const startLocation = {
       lat: latitude || 0,
       lng: longitude || 0,
-      address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Getting location...",
+      address:
+        latitude && longitude
+          ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+          : "Getting location...",
       timestamp: now.toISOString(),
     };
 
@@ -275,7 +379,7 @@ export function LocationTracker({
       longitude,
       routePointsCount: routeCoordinates.length,
       totalDistance,
-      elapsedTime
+      elapsedTime,
     });
 
     // Update current session - create session even if coordinates aren't perfect
@@ -283,31 +387,34 @@ export function LocationTracker({
       const endLocation = {
         lat: latitude || currentSession.startLocation.lat,
         lng: longitude || currentSession.startLocation.lng,
-        address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable",
+        address:
+          latitude && longitude
+            ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+            : "Location unavailable",
         timestamp: now.toISOString(),
       };
 
       let finalDistance = totalDistance;
 
-      // Try to get more accurate road-based distance calculation
+      // Use GPS-based distance calculation (actual path taken)
       if (routeCoordinates.length >= 2) {
-        try {
-          console.log("Calculating accurate road-based distance...");
-          const routeData = await routingService.getRouteForPoints(routeCoordinates);
-          if (routeData.totalDistance > 0) {
-            finalDistance = routeData.totalDistance;
-            console.log(`Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`);
-          }
-        } catch (error) {
-          console.warn("Failed to calculate road-based distance, using GPS distance:", error);
-        }
+        console.log(
+          "Using GPS-based distance calculation for actual path taken",
+        );
+        finalDistance = totalDistance; // Keep the GPS-calculated distance
+        console.log(
+          `Final distance: ${(finalDistance / 1000).toFixed(2)} km (GPS-based actual path)`,
+        );
       }
 
       const updatedSession: TrackingSession = {
         ...currentSession,
         endTime: now.toISOString(),
         endLocation,
-        route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
+        route:
+          routeCoordinates.length > 0
+            ? routeCoordinates
+            : [currentSession.startLocation],
         totalDistance: finalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
@@ -316,6 +423,17 @@ export function LocationTracker({
       console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
+
+      // Clear all tracking data from localStorage when session ends
+      clearFromStorage("isTracking");
+      clearFromStorage("currentSession");
+      clearFromStorage("trackingStartTime");
+      clearFromStorage("trackingEndTime");
+      clearFromStorage("routeCoordinates");
+      clearFromStorage("totalDistance");
+      clearFromStorage("elapsedTime");
+
+      console.log("Cleared tracking data from localStorage");
     } else {
       console.log("Cannot end tracking session - no current session");
     }
@@ -542,7 +660,7 @@ export function LocationTracker({
           {!isTracking ? (
             <Button onClick={handleStartTracking} className="flex-1">
               <Navigation className="h-4 w-4 mr-2" />
-              LogIn
+              Start Tracking
             </Button>
           ) : (
             <Button
@@ -550,7 +668,7 @@ export function LocationTracker({
               variant="destructive"
               className="flex-1"
             >
-              LogOut
+              Stop Tracking
             </Button>
           )}
 
@@ -569,8 +687,8 @@ export function LocationTracker({
               and may drain battery faster.
             </p>
             <p className="mt-2">
-              <strong>Auto-capture:</strong> Route map will be automatically saved
-              when you stop tracking.
+              <strong>Auto-capture:</strong> Route map will be automatically
+              saved when you stop tracking.
             </p>
           </div>
         )}
