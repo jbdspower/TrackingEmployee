@@ -78,9 +78,14 @@ export default function Index() {
       const userId = user?._id;
 
       // Step 2: Filter employees based on role
-      const filteredEmployees = isSuperAdmin
-        ? data.employees
-        : data.employees.filter(emp => emp?.id === userId);
+      let filteredEmployees;
+      if (isSuperAdmin || !userId) {
+        // Super admin or no user authentication - show all employees
+        filteredEmployees = data.employees;
+      } else {
+        // Regular user - filter by their ID
+        filteredEmployees = data.employees.filter(emp => emp?.id === userId);
+      }
 
       // Step 3: Update state
       setEmployees(filteredEmployees);
