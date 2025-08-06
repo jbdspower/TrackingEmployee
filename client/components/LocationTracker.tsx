@@ -378,6 +378,17 @@ export function LocationTracker({
       console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
+
+      // Clear all tracking data from localStorage when session ends
+      clearFromStorage('isTracking');
+      clearFromStorage('currentSession');
+      clearFromStorage('trackingStartTime');
+      clearFromStorage('trackingEndTime');
+      clearFromStorage('routeCoordinates');
+      clearFromStorage('totalDistance');
+      clearFromStorage('elapsedTime');
+
+      console.log("Cleared tracking data from localStorage");
     } else {
       console.log("Cannot end tracking session - no current session");
     }
