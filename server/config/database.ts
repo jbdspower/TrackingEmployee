@@ -11,7 +11,7 @@ interface DatabaseConfig {
 
 // Default configuration - replace these with your local MongoDB URLs
 export const dbConfig: DatabaseConfig = {
-  MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/employee-tracking',
+  MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/',
   DB_NAME: process.env.DB_NAME || 'employee-tracking'
 };
 

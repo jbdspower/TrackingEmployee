@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { HttpClient } from "@/lib/httpClient";
 import { TrackingSession, LocationData } from "@shared/api";
-import { generateRouteScreenshot, generateThumbnail, storeRouteScreenshot } from "@/lib/routeScreenshot";
+import { routingService } from "@/lib/routingService";
 import {
   MapPin,
   Navigation,
@@ -35,23 +35,67 @@ export function LocationTracker({
   onTrackingSessionStart,
   onTrackingSessionEnd,
 }: LocationTrackerProps) {
-  const [isTracking, setIsTracking] = useState(trackingEnabled);
+  // Initialize tracking state from localStorage to persist across refreshes
+  const [isTracking, setIsTracking] = useState(() => {
+    try {
+      const storedState = localStorage.getItem(`tracking_${employeeId}`);
+      if (storedState !== null) {
+        // If there's a stored state, use it
+        return JSON.parse(storedState);
+      }
+      // If no stored state and trackingEnabled prop is provided, use that
+      // Otherwise default to false
+      return trackingEnabled || false;
+    } catch (error) {
+      console.warn('Failed to read tracking state from localStorage:', error);
+      return trackingEnabled || false;
+    }
+  });
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [updateCount, setUpdateCount] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [failureCount, setFailureCount] = useState(0);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
 
-  // Enhanced tracking state
-  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
-    null,
-  );
-  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(null);
+  // Enhanced tracking state with localStorage persistence
+  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(() => {
+    try {
+      const storedSession = localStorage.getItem(`tracking_session_${employeeId}`);
+      return storedSession ? JSON.parse(storedSession) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(() => {
+    try {
+      const storedStartTime = localStorage.getItem(`tracking_start_time_${employeeId}`);
+      return storedStartTime ? new Date(storedStartTime) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
-  const [totalDistance, setTotalDistance] = useState<number>(0);
-  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(true);
+
+  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>(() => {
+    try {
+      const storedRoute = localStorage.getItem(`tracking_route_${employeeId}`);
+      return storedRoute ? JSON.parse(storedRoute) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [totalDistance, setTotalDistance] = useState<number>(() => {
+    try {
+      const storedDistance = localStorage.getItem(`tracking_distance_${employeeId}`);
+      return storedDistance ? parseFloat(storedDistance) : 0;
+    } catch {
+      return 0;
+    }
+  });
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
@@ -61,68 +105,6 @@ export function LocationTracker({
       timeout: 30000, // 30 seconds
       watchPosition: isTracking,
     });
-
-  // Check for active tracking sessions on component mount
-  useEffect(() => {
-    const checkActiveTrackingSession = async () => {
-      try {
-        // Validate employeeId before making API call
-        if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
-          console.warn('LocationTracker: Invalid employeeId, skipping tracking session check:', {
-            employeeId,
-            type: typeof employeeId
-          });
-          setIsTracking(false);
-          setIsCheckingActiveSession(false);
-          return;
-        }
-
-        const response = await HttpClient.get(
-          `/api/tracking-sessions?employeeId=${employeeId}&status=active&limit=1`
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const activeSessions = data.sessions || [];
-
-          if (activeSessions.length > 0) {
-            const activeSession = activeSessions[0];
-            console.log('Found active tracking session:', activeSession);
-
-            // Resume tracking session
-            setCurrentSession(activeSession);
-            setTrackingStartTime(new Date(activeSession.startTime));
-            setIsTracking(true);
-            setRouteCoordinates(activeSession.route || []);
-            setTotalDistance(activeSession.totalDistance || 0);
-
-            // Calculate elapsed time
-            const startTime = new Date(activeSession.startTime).getTime();
-            const now = Date.now();
-            setElapsedTime(now - startTime);
-
-            console.log('Resumed active tracking session');
-          } else {
-            console.log('No active tracking sessions found');
-            setIsTracking(false);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check active tracking sessions:', error);
-        setIsTracking(false);
-      } finally {
-        setIsCheckingActiveSession(false);
-      }
-    };
-
-    if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
-      checkActiveTrackingSession();
-    } else {
-      console.warn('LocationTracker: Invalid or missing employeeId, not checking for active sessions');
-      setIsCheckingActiveSession(false);
-      setIsTracking(false);
-    }
-  }, [employeeId]);
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = useCallback(
@@ -142,6 +124,15 @@ export function LocationTracker({
     },
     [],
   );
+
+  // Initialize elapsed time from persistent start time
+  useEffect(() => {
+    if (isTracking && trackingStartTime) {
+      // Calculate elapsed time from stored start time
+      const currentElapsed = Date.now() - trackingStartTime.getTime();
+      setElapsedTime(currentElapsed);
+    }
+  }, [isTracking, trackingStartTime]);
 
   // Timer effect
   useEffect(() => {
@@ -187,23 +178,32 @@ export function LocationTracker({
           // Calculate distance if we have a previous point
           if (prevRoute.length > 0) {
             const lastPoint = prevRoute[prevRoute.length - 1];
+
+            // Use straight-line distance for real-time tracking (faster)
+            // Road-based distance will be calculated when route is finalized
             const distance = calculateDistance(
               lastPoint.lat,
               lastPoint.lng,
               latitude,
               longitude,
             );
-            setTotalDistance((prev) => prev + distance);
+            setTotalDistance((prev) => {
+              const newDistance = prev + distance;
+              // Persist updated distance
+              try {
+                localStorage.setItem(`tracking_distance_${employeeId}`, newDistance.toString());
+              } catch (error) {
+                console.warn('Failed to persist distance:', error);
+              }
+              return newDistance;
+            });
+          }
 
-            // Update tracking session route on server if we have an active session
-            if (currentSession) {
-              HttpClient.put(
-                `/api/tracking-sessions/${currentSession.id}/location`,
-                { location: newLocation }
-              ).catch(error => {
-                console.warn('Failed to update route on server:', error);
-              });
-            }
+          // Persist updated route
+          try {
+            localStorage.setItem(`tracking_route_${employeeId}`, JSON.stringify(newRoute));
+          } catch (error) {
+            console.warn('Failed to persist route:', error);
           }
 
           return newRoute;
@@ -236,16 +236,6 @@ export function LocationTracker({
     retryCount: number = 0,
   ) => {
     try {
-      // Validate employeeId before making API call
-      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
-        console.error("LocationTracker: Cannot update location - invalid employeeId:", {
-          employeeId,
-          type: typeof employeeId
-        });
-        setUpdateError("Invalid employee ID - cannot update location");
-        return;
-      }
-
       console.log("Attempting to update location:", {
         employeeId,
         lat,
@@ -303,23 +293,6 @@ export function LocationTracker({
   };
 
   const handleStartTracking = async () => {
-    console.log("LocationTracker: handleStartTracking called with employeeId:", {
-      employeeId,
-      type: typeof employeeId,
-      length: employeeId?.length,
-      trimmed: employeeId?.trim()
-    });
-
-    // Validate employeeId before starting tracking
-    if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string' || employeeId.trim() === '') {
-      console.error("LocationTracker: Cannot start tracking - invalid employeeId:", {
-        employeeId,
-        type: typeof employeeId
-      });
-      setUpdateError("Invalid employee ID - cannot start tracking session");
-      return;
-    }
-
     const now = new Date();
     setTrackingStartTime(now);
     setTrackingEndTime(null);
@@ -328,72 +301,49 @@ export function LocationTracker({
     setTotalDistance(0);
     setIsTracking(true);
 
+    // Persist tracking state and session data to localStorage
+    try {
+      localStorage.setItem(`tracking_${employeeId}`, JSON.stringify(true));
+      localStorage.setItem(`tracking_start_time_${employeeId}`, now.toISOString());
+      localStorage.setItem(`tracking_route_${employeeId}`, JSON.stringify([]));
+      localStorage.setItem(`tracking_distance_${employeeId}`, '0');
+    } catch (error) {
+      console.warn('Failed to persist tracking session data:', error);
+    }
+
     // Get initial position
     getCurrentPosition();
 
-    // Create tracking session on server
-    if (latitude && longitude) {
-      try {
-        const sessionData = {
-          employeeId,
-          startLocation: {
-            lat: latitude,
-            lng: longitude,
-            address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-            timestamp: now.toISOString(),
-          },
-        };
+    // Create tracking session immediately, even if coordinates aren't ready yet
+    const sessionId = `session_${employeeId}_${now.getTime()}`;
+    const startLocation = {
+      lat: latitude || 0,
+      lng: longitude || 0,
+      address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Getting location...",
+      timestamp: now.toISOString(),
+    };
 
-        const response = await HttpClient.post('/api/tracking-sessions', sessionData);
+    const session: TrackingSession = {
+      id: sessionId,
+      employeeId,
+      startTime: now.toISOString(),
+      startLocation,
+      route: [],
+      totalDistance: 0,
+      status: "active",
+    };
 
-        if (response.ok) {
-          const session = await response.json();
-          console.log('Tracking session created on server:', session);
-          setCurrentSession(session);
-          onTrackingSessionStart?.(session);
-        } else {
-          console.error('Failed to create tracking session on server');
-          // Create local session as fallback
-          const sessionId = `session_${employeeId}_${now.getTime()}`;
-          const fallbackSession: TrackingSession = {
-            id: sessionId,
-            employeeId,
-            startTime: now.toISOString(),
-            startLocation: {
-              lat: latitude,
-              lng: longitude,
-              address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-              timestamp: now.toISOString(),
-            },
-            route: [],
-            totalDistance: 0,
-            status: "active",
-          };
-          setCurrentSession(fallbackSession);
-          onTrackingSessionStart?.(fallbackSession);
-        }
-      } catch (error) {
-        console.error('Error creating tracking session:', error);
-        // Create local session as fallback
-        const sessionId = `session_${employeeId}_${now.getTime()}`;
-        const fallbackSession: TrackingSession = {
-          id: sessionId,
-          employeeId,
-          startTime: now.toISOString(),
-          startLocation: {
-            lat: latitude,
-            lng: longitude,
-            address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-            timestamp: now.toISOString(),
-          },
-          route: [],
-          totalDistance: 0,
-          status: "active",
-        };
-        setCurrentSession(fallbackSession);
-        onTrackingSessionStart?.(fallbackSession);
-      }
+    console.log("Starting tracking session:", session);
+    setCurrentSession(session);
+
+    // Persist session to localStorage
+    try {
+      localStorage.setItem(`tracking_session_${employeeId}`, JSON.stringify(session));
+    } catch (error) {
+      console.warn('Failed to persist session:', error);
     }
+
+    onTrackingSessionStart?.(session);
   };
 
   const handleStopTracking = async () => {
@@ -401,82 +351,66 @@ export function LocationTracker({
     setTrackingEndTime(now);
     setIsTracking(false);
 
+    // Persist tracking state and clear session data from localStorage
+    try {
+      localStorage.setItem(`tracking_${employeeId}`, JSON.stringify(false));
+      // Clear session data when tracking stops
+      localStorage.removeItem(`tracking_start_time_${employeeId}`);
+      localStorage.removeItem(`tracking_route_${employeeId}`);
+      localStorage.removeItem(`tracking_distance_${employeeId}`);
+      localStorage.removeItem(`tracking_session_${employeeId}`);
+    } catch (error) {
+      console.warn('Failed to clear tracking session data:', error);
+    }
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Update current session on server
-    if (currentSession && latitude && longitude) {
+    console.log("Stopping tracking - Debug info:", {
+      hasCurrentSession: !!currentSession,
+      hasCoordinates: !!(latitude && longitude),
+      latitude,
+      longitude,
+      routePointsCount: routeCoordinates.length,
+      totalDistance,
+      elapsedTime
+    });
+
+    // Update current session - create session even if coordinates aren't perfect
+    if (currentSession) {
+      const endLocation = {
+        lat: latitude || currentSession.startLocation.lat,
+        lng: longitude || currentSession.startLocation.lng,
+        address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable",
+        timestamp: now.toISOString(),
+      };
+
+      let finalDistance = totalDistance;
+
+      // Use actual GPS tracking distance instead of calculated shortest path
+      // This preserves the exact path traveled by the user
+      if (routeCoordinates.length >= 2) {
+        console.log(`Using actual GPS path distance: ${(finalDistance / 1000).toFixed(2)} km with ${routeCoordinates.length} GPS points`);
+        console.log("GPS path preserves exact route traveled by user (not shortest path)");
+      }
+
       const updatedSession: TrackingSession = {
         ...currentSession,
         endTime: now.toISOString(),
-        endLocation: {
-          lat: latitude,
-          lng: longitude,
-          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          timestamp: now.toISOString(),
-        },
-        route: routeCoordinates,
-        totalDistance,
+        endLocation,
+        route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
+        totalDistance: finalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
       };
 
-      try {
-        const response = await HttpClient.put(
-          `/api/tracking-sessions/${currentSession.id}`,
-          {
-            status: "completed",
-            endTime: now.toISOString(),
-            endLocation: {
-              lat: latitude,
-              lng: longitude,
-              address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-              timestamp: now.toISOString(),
-            },
-            route: routeCoordinates,
-            totalDistance,
-          }
-        );
-
-        if (response.ok) {
-          const serverSession = await response.json();
-          console.log('Tracking session ended on server:', serverSession);
-
-          // Generate and store route screenshot
-          if (routeCoordinates.length > 1) {
-            try {
-              console.log('Generating route screenshot...');
-              const fullImage = await generateRouteScreenshot(routeCoordinates, 800, 600);
-              const thumbnail = await generateThumbnail(fullImage, 32);
-
-              storeRouteScreenshot(
-                employeeId,
-                currentSession.id,
-                fullImage,
-                thumbnail,
-                routeCoordinates
-              );
-
-              console.log('Route screenshot generated and stored');
-            } catch (screenshotError) {
-              console.error('Failed to generate route screenshot:', screenshotError);
-            }
-          }
-
-          setCurrentSession(serverSession);
-          onTrackingSessionEnd?.(serverSession);
-        } else {
-          console.error('Failed to end tracking session on server');
-          setCurrentSession(updatedSession);
-          onTrackingSessionEnd?.(updatedSession);
-        }
-      } catch (error) {
-        console.error('Error ending tracking session:', error);
-        setCurrentSession(updatedSession);
-        onTrackingSessionEnd?.(updatedSession);
-      }
+      console.log("Calling onTrackingSessionEnd with session:", updatedSession);
+      setCurrentSession(updatedSession);
+      onTrackingSessionEnd?.(updatedSession);
+    } else {
+      console.log("Cannot end tracking session - no current session");
     }
   };
 
@@ -626,14 +560,7 @@ export function LocationTracker({
 
         {/* Current Status */}
         <div className="space-y-2">
-          {isCheckingActiveSession && (
-            <div className="flex items-center space-x-2 text-sm text-info">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Checking for active tracking session...</span>
-            </div>
-          )}
-
-          {loading && !isCheckingActiveSession && (
+          {loading && (
             <div className="flex items-center space-x-2 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Getting location...</span>
@@ -641,50 +568,9 @@ export function LocationTracker({
           )}
 
           {error && (
-            <div className="border border-destructive/20 bg-destructive/5 rounded-md p-3 space-y-2">
-              <div className="flex items-center space-x-2 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                <span className="font-medium">{error}</span>
-              </div>
-              {error.includes("denied") && (
-                <div className="text-xs text-muted-foreground space-y-2">
-                  <div>
-                    <p className="mb-1">To enable location tracking:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Click the location icon (🔒) in your browser's address bar</li>
-                      <li>Select "Allow" for location permissions</li>
-                      <li>Refresh the page and try again</li>
-                    </ul>
-                  </div>
-                  <div className="pt-2 border-t border-destructive/10">
-                    <p className="text-xs text-muted-foreground mb-2">
-                      <strong>Alternative:</strong> You can still start tracking using your last known location, but automatic location updates will be disabled.
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        // Use a mock location or employee's last known location
-                        const mockLocation = {
-                          latitude: 27.1766701, // From the current employee data
-                          longitude: 78.0080745,
-                          accuracy: 1000, // Low accuracy to indicate it's not real-time
-                        };
-                        setElapsedTime(0);
-                        setRouteCoordinates([]);
-                        setTotalDistance(0);
-                        setIsTracking(true);
-                        setTrackingStartTime(new Date());
-                        // Create a manual tracking session
-                        console.log("Manual tracking started with fallback location");
-                      }}
-                      className="h-6 text-xs"
-                    >
-                      Start Manual Tracking
-                    </Button>
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center space-x-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -747,30 +633,21 @@ export function LocationTracker({
         {/* Controls */}
         <div className="flex space-x-2">
           {!isTracking ? (
-            <Button
-              onClick={handleStartTracking}
-              className="flex-1"
-              disabled={isCheckingActiveSession}
-            >
+            <Button onClick={handleStartTracking} className="flex-1">
               <Navigation className="h-4 w-4 mr-2" />
-              {isCheckingActiveSession ? 'Checking...' : 'Start Tracking'}
+              LogIn
             </Button>
           ) : (
             <Button
               onClick={handleStopTracking}
               variant="destructive"
               className="flex-1"
-              disabled={isCheckingActiveSession}
             >
-              Stop Tracking
+              LogOut
             </Button>
           )}
 
-          <Button
-            variant="outline"
-            onClick={getCurrentPosition}
-            disabled={isCheckingActiveSession}
-          >
+          <Button variant="outline" onClick={getCurrentPosition}>
             <MapPin className="h-4 w-4 mr-2" />
             Update Now
           </Button>
@@ -783,6 +660,20 @@ export function LocationTracker({
               <strong>Note:</strong> Location tracking requires permission and
               works best outdoors or near windows. High accuracy mode uses GPS
               and may drain battery faster.
+            </p>
+            <p className="mt-2">
+              <strong>Auto-capture:</strong> Route map will be automatically saved
+              when you stop tracking.
+            </p>
+          </div>
+        )}
+
+        {/* Active tracking info */}
+        {isTracking && (
+          <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md">
+            <p className="flex items-center">
+              <Route className="h-3 w-3 mr-1" />
+              <strong>Route will be auto-captured when tracking stops</strong>
             </p>
           </div>
         )}

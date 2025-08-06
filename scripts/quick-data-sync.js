@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/employee-tracking';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/';
 
 console.log('🔄 Quick Data Sync and Test');
 console.log('===========================');

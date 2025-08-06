@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ interface AddCustomerEmployeeModalProps {
     employeeData: NewCustomerEmployeeData,
   ) => Promise<{ employee: CustomerEmployee; customer: Customer } | null>;
   isLoading?: boolean;
+  defaultCustomerName?: string;
 }
 
 export function AddCustomerEmployeeModal({
@@ -35,6 +36,7 @@ export function AddCustomerEmployeeModal({
   onClose,
   onAddEmployee,
   isLoading = false,
+  defaultCustomerName = "",
 }: AddCustomerEmployeeModalProps) {
   const [formData, setFormData] = useState<NewCustomerEmployeeData>({
     customerName: "",
@@ -47,6 +49,16 @@ export function AddCustomerEmployeeModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auto-fill customer name when modal opens if defaultCustomerName is provided
+  useEffect(() => {
+    if (isOpen && defaultCustomerName) {
+      setFormData((prev) => ({
+        ...prev,
+        customerName: defaultCustomerName,
+      }));
+    }
+  }, [isOpen, defaultCustomerName]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -149,8 +161,18 @@ export function AddCustomerEmployeeModal({
             <span>Add New Customer Employee</span>
           </DialogTitle>
           <DialogDescription>
-            Create a new customer employee record. All fields marked with * are
-            required.
+            {defaultCustomerName ? (
+              <>
+                Create a new employee record for{" "}
+                <span className="font-medium">"{defaultCustomerName}"</span>.
+                The company name has been auto-filled from your current meeting.
+              </>
+            ) : (
+              <>
+                Create a new customer employee record. All fields marked with *
+                are required.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -160,6 +182,11 @@ export function AddCustomerEmployeeModal({
             <Label htmlFor="customerName" className="text-sm">
               Customer/Company Name
               <span className="text-destructive ml-1">*</span>
+              {defaultCustomerName && (
+                <span className="text-muted-foreground ml-2 text-xs">
+                  (Auto-filled from meeting)
+                </span>
+              )}
             </Label>
             <Input
               id="customerName"
@@ -178,6 +205,13 @@ export function AddCustomerEmployeeModal({
                 <span>{errors.customerName}</span>
               </div>
             )}
+            {defaultCustomerName &&
+              formData.customerName === defaultCustomerName && (
+                <div className="text-xs text-muted-foreground">
+                  Customer name auto-filled from "{defaultCustomerName}"
+                  meeting. You can edit if needed.
+                </div>
+              )}
           </div>
 
           {/* Customer Employee Name */}

@@ -13,6 +13,8 @@ import Tracking from "./pages/Tracking";
 import TeamManagement from "./pages/TeamManagement";
 import DataManagement from "./pages/DataManagement";
 import NotFound from "./pages/NotFound";
+import {jwtDecode} from "jwt-decode";
+import { useEffect } from "react";
 
 // Initialize HttpClient
 HttpClient.init();
@@ -64,7 +66,28 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
+const App = () => {
+  // ✅ Handle token on first load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    if (token) {
+      try {
+        const decoded: any = jwtDecode(token);
+        localStorage.setItem("idToken", token);
+        localStorage.setItem("user", JSON.stringify(decoded));
+        console.log("Authenticated user:", decoded);
+
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (err) {
+        console.error("Invalid token:", err);
+      }
+    }
+  }, []);
+
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -83,5 +106,6 @@ const App = () => (
     </TooltipProvider>
   </QueryClientProvider>
 );
+};
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -1,11 +1,6 @@
 import { RequestHandler } from "express";
 import axios from 'axios';
 import NodeCache from 'node-cache';
-import Database from '../config/database.js';
-
-// In-memory storage for fallback when database is unavailable
-let inMemoryMeetings: MeetingLog[] = [];
-let meetingIdCounter = 1;
 import {
   MeetingLog,
   MeetingLogsResponse,
@@ -16,7 +11,7 @@ import { Meeting, IMeeting } from "../models";
 // Initialize cache with 1 hour TTL
 const geocodeCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
-// Helper function for reverse geocoding with improved error handling
+// Helper function for reverse geocoding
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
   
@@ -25,8 +20,6 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (cachedAddress) return cachedAddress;
 
   try {
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limiting
-    
     const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
       params: {
         format: 'json',
@@ -36,9 +29,9 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
         addressdetails: 1
       },
       headers: {
-        'User-Agent': 'EmployeeTracker/2.0 (support@company.com)'
+        'User-Agent': 'FieldTracker/1.0 (contact@yourdomain.com)'
       },
-      timeout: 8000 // Increased timeout
+      timeout: 5000
     });
 
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -46,509 +39,310 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
     return address;
   } catch (error) {
     console.error('Reverse geocoding failed:', error);
-    const fallbackAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    geocodeCache.set(cacheKey, fallbackAddress, 300); // Cache for 5 minutes
-    return fallbackAddress;
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   }
 }
 
-// Enhanced meeting conversion with better error handling
-async function convertMeetingToLog(meeting: IMeeting): Promise<MeetingLog> {
-  try {
-    const startAddress = meeting.startLocation?.lat && meeting.startLocation?.lng
-      ? await reverseGeocode(meeting.startLocation.lat, meeting.startLocation.lng)
-      : "Location not available";
+// Enhanced meeting conversion with address handling
+async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog> {
+  const location = meeting.location;
+  const address = await reverseGeocode(location.lat, location.lng);
 
-    const endAddress = meeting.endLocation?.lat && meeting.endLocation?.lng
-      ? await reverseGeocode(meeting.endLocation.lat, meeting.endLocation.lng)
-      : meeting.status === 'completed' ? "Location not available" : undefined;
-
-    return {
-      id: meeting._id.toString(),
-      employeeId: meeting.employeeId,
-      startTime: meeting.startTime,
-      endTime: meeting.endTime,
-      duration: meeting.duration,
-      status: meeting.status,
-
-      // Backward compatibility - include location field pointing to startLocation
-      location: meeting.startLocation ? {
-        ...meeting.startLocation,
-        address: startAddress
-      } : {
-        lat: 0,
-        lng: 0,
-        address: "Location not available",
-        timestamp: meeting.startTime
-      },
-
-      startLocation: meeting.startLocation ? {
-        ...meeting.startLocation,
-        address: startAddress
-      } : undefined,
-
-      endLocation: meeting.endLocation ? {
-        ...meeting.endLocation,
-        address: endAddress
-      } : undefined,
-      
-      // Customer details (legacy format for backward compatibility)
-      customerName: meeting.customers?.[0]?.customerName || meeting.customerName || "",
-      clientName: meeting.customers?.[0]?.customerName || meeting.customerName || "",
-      customerEmployeeName: meeting.customers?.[0]?.customerEmployeeName || meeting.customerEmployeeName || "",
-      customerEmail: meeting.customers?.[0]?.customerEmail || meeting.customerEmail || "",
-      customerMobile: meeting.customers?.[0]?.customerMobile || meeting.customerMobile || "",
-      customerDesignation: meeting.customers?.[0]?.customerDesignation || meeting.customerDesignation || "",
-      customerDepartment: meeting.customers?.[0]?.customerDepartment || meeting.customerDepartment || "",
-      
-      // New multi-customer support
-      customers: meeting.customers || [],
-      
-      discussion: meeting.discussion || "",
-      notes: meeting.notes || "",
-      trackingSessionId: meeting.trackingSessionId,
-      
-      // Route screenshot information
-      routeScreenshot: meeting.routeScreenshot,
-      
-      createdAt: meeting.createdAt || meeting.startTime,
-      updatedAt: meeting.updatedAt || meeting.startTime,
-    };
-  } catch (error) {
-    console.error('Error converting meeting to log:', error);
-    // Return a basic conversion without geocoding if there's an error
-    return {
-      id: meeting._id.toString(),
-      employeeId: meeting.employeeId,
-      startTime: meeting.startTime,
-      endTime: meeting.endTime,
-      duration: meeting.duration,
-      status: meeting.status,
-      
-      startLocation: meeting.startLocation ? {
-        ...meeting.startLocation,
-        address: `${meeting.startLocation.lat.toFixed(6)}, ${meeting.startLocation.lng.toFixed(6)}`
-      } : undefined,
-      
-      endLocation: meeting.endLocation ? {
-        ...meeting.endLocation,
-        address: `${meeting.endLocation.lat.toFixed(6)}, ${meeting.endLocation.lng.toFixed(6)}`
-      } : undefined,
-      
-      customerName: meeting.customers?.[0]?.customerName || meeting.customerName || "",
-      customerEmployeeName: meeting.customers?.[0]?.customerEmployeeName || meeting.customerEmployeeName || "",
-      customerEmail: meeting.customers?.[0]?.customerEmail || meeting.customerEmail || "",
-      customerMobile: meeting.customers?.[0]?.customerMobile || meeting.customerMobile || "",
-      customerDesignation: meeting.customers?.[0]?.customerDesignation || meeting.customerDesignation || "",
-      customerDepartment: meeting.customers?.[0]?.customerDepartment || meeting.customerDepartment || "",
-      
-      customers: meeting.customers || [],
-      discussion: meeting.discussion || "",
-      notes: meeting.notes || "",
-      trackingSessionId: meeting.trackingSessionId,
-      routeScreenshot: meeting.routeScreenshot,
-      
-      createdAt: meeting.createdAt || meeting.startTime,
-      updatedAt: meeting.updatedAt || meeting.startTime,
-    };
-  }
+  return {
+    id: meeting._id.toString(),
+    employeeId: meeting.employeeId,
+    location: {
+      ...location,
+      address // Use the geocoded address
+    },
+    startTime: meeting.startTime,
+    endTime: meeting.endTime,
+    clientName: meeting.clientName,
+    notes: meeting.notes,
+    status: meeting.status as "started" | "in-progress" | "completed",
+    trackingSessionId: meeting.trackingSessionId,
+    leadId: meeting.leadId,
+    leadInfo: meeting.leadInfo,
+    meetingDetails: meeting.meetingDetails,
+  };
 }
 
-// Get meetings with improved error handling
+// In-memory fallback storage
+let inMemoryMeetings: MeetingLog[] = [];
+
+// Export for analytics fallback
+export { inMemoryMeetings };
+
 export const getMeetings: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, limit = 50, offset = 0, status } = req.query;
-    const db = Database.getInstance();
+    const { employeeId, status, startDate, endDate, limit = 50 } = req.query;
 
     // Build query
     const query: any = {};
-    if (employeeId) {
-      query.employeeId = employeeId;
-    }
-    if (status) {
-      query.status = status;
+    if (employeeId) query.employeeId = employeeId;
+    if (status) query.status = status;
+
+    if (startDate || endDate) {
+      query.startTime = {};
+      if (startDate) query.startTime.$gte = new Date(startDate as string);
+      if (endDate) query.startTime.$lte = new Date(endDate as string);
     }
 
-    // Execute with fallback pattern
-    const meetings = await db.executeWithFallback(
-      async () => {
-        console.log('Fetching meetings from MongoDB...');
-        const dbMeetings = await Meeting.find(query)
-          .sort({ startTime: -1 })
-          .limit(parseInt(limit as string))
-          .skip(parseInt(offset as string));
-        
-        console.log(`Found ${dbMeetings.length} meetings in database`);
-        return dbMeetings;
-      },
-      () => {
-        console.log('MongoDB query failed, falling back to in-memory storage');
-        let filteredMeetings = inMemoryMeetings;
-        
-        if (employeeId) {
-          filteredMeetings = filteredMeetings.filter(m => m.employeeId === employeeId);
-        }
-        if (status) {
-          filteredMeetings = filteredMeetings.filter(m => m.status === status);
-        }
-        
-        const startIndex = parseInt(offset as string);
-        const endIndex = startIndex + parseInt(limit as string);
-        const result = filteredMeetings.slice(startIndex, endIndex);
-        
-        console.log(`Found ${result.length} meetings in memory`);
-        return result.map(meeting => ({
-          ...meeting,
-          _id: meeting.id,
-          toObject: () => meeting
-        })) as any[];
-      },
-      'fetch meetings'
+    console.log("Fetching meetings with query:", query);
+
+    // Try MongoDB first
+    try {
+      const mongoMeetings = await Meeting.find(query)
+        .sort({ startTime: -1 })
+        .limit(parseInt(limit as string))
+        .lean();
+
+      // Convert all meetings with proper addresses
+      const meetingLogs = await Promise.all(
+        mongoMeetings.map(meeting => convertMeetingToMeetingLog(meeting))
+      );
+
+      const response: MeetingLogsResponse = {
+        meetings: meetingLogs,
+        total: meetingLogs.length,
+      };
+
+      console.log(`Found ${meetingLogs.length} meetings in MongoDB`);
+      res.json(response);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB query failed, falling back to in-memory storage:", dbError);
+    }
+
+    // Fallback to in-memory storage
+    let filteredMeetings = inMemoryMeetings;
+
+    if (employeeId) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.employeeId === employeeId,
+      );
+    }
+
+    if (status) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => meeting.status === status,
+      );
+    }
+
+    if (startDate) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => new Date(meeting.startTime) >= new Date(startDate as string),
+      );
+    }
+
+    if (endDate) {
+      filteredMeetings = filteredMeetings.filter(
+        (meeting) => new Date(meeting.startTime) <= new Date(endDate as string),
+      );
+    }
+
+    filteredMeetings.sort(
+      (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
     );
 
-    // Convert to logs
-    const logs: MeetingLog[] = [];
-    for (const meeting of meetings) {
-      try {
-        if ('toObject' in meeting) {
-          logs.push(await convertMeetingToLog(meeting as IMeeting));
-        } else {
-          logs.push(meeting as MeetingLog);
-        }
-      } catch (error) {
-        console.error('Error processing meeting:', error);
-        // Skip problematic meetings rather than failing the entire request
-      }
+    if (limit) {
+      filteredMeetings = filteredMeetings.slice(0, parseInt(limit as string));
     }
 
     const response: MeetingLogsResponse = {
-      meetings: logs,
-      total: logs.length,
-      offset: parseInt(offset as string),
-      limit: parseInt(limit as string),
+      meetings: filteredMeetings,
+      total: filteredMeetings.length,
     };
 
+    console.log(`Found ${filteredMeetings.length} meetings in memory`);
     res.json(response);
   } catch (error) {
-    console.error("Error in getMeetings:", error);
-    
-    // Fallback to in-memory data
-    try {
-      const { employeeId, limit = 50, offset = 0, status } = req.query;
-      let filteredMeetings = inMemoryMeetings;
-      
-      if (employeeId) {
-        filteredMeetings = filteredMeetings.filter(m => m.employeeId === employeeId);
-      }
-      if (status) {
-        filteredMeetings = filteredMeetings.filter(m => m.status === status);
-      }
-      
-      const startIndex = parseInt(offset as string);
-      const endIndex = startIndex + parseInt(limit as string);
-      const result = filteredMeetings.slice(startIndex, endIndex);
-      
-      const response: MeetingLogsResponse = {
-        meetings: result,
-        total: result.length,
-        offset: startIndex,
-        limit: parseInt(limit as string),
-      };
-
-      console.log('Serving from in-memory fallback');
-      res.json(response);
-    } catch (fallbackError) {
-      console.error("Fallback also failed:", fallbackError);
-      res.status(500).json({ 
-        error: "Failed to fetch meetings",
-        details: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
+    console.error("Error fetching meetings:", error);
+    res.status(500).json({ error: "Failed to fetch meetings" });
   }
 };
 
-// Create meeting with improved error handling
+export const getMeeting: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Try MongoDB first
+    try {
+      const meeting = await Meeting.findById(id).lean();
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found in database" });
+      }
+
+      const meetingLog = await convertMeetingToMeetingLog(meeting);
+      console.log("Meeting found in MongoDB:", meeting._id);
+      res.json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB query failed, falling back to in-memory storage:", dbError);
+    }
+
+    // Fallback to in-memory storage
+    const meeting = inMemoryMeetings.find((meeting) => meeting.id === id);
+
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    console.log("Meeting found in memory:", meeting.id);
+    res.json(meeting);
+  } catch (error) {
+    console.error("Error fetching meeting:", error);
+    res.status(500).json({ error: "Failed to fetch meeting" });
+  }
+};
+
 export const createMeeting: RequestHandler = async (req, res) => {
   try {
-    const meetingData: CreateMeetingRequest = req.body;
-    
-    // Validate required fields
-    if (!meetingData.employeeId) {
-      return res.status(400).json({ error: "Employee ID is required" });
+    const { employeeId, location, clientName, notes, leadId, leadInfo } = req.body;
+
+    if (!employeeId || !location) {
+      return res.status(400).json({ error: "Employee ID and location are required" });
     }
 
-    const db = Database.getInstance();
+    // Get human-readable address
+    const address = await reverseGeocode(location.lat, location.lng);
+
+    const meetingData = {
+      employeeId,
+      location: {
+        ...location,
+        address,
+        timestamp: new Date().toISOString()
+      },
+      startTime: new Date().toISOString(),
+      clientName,
+      notes,
+      status: "in-progress" as const,
+      leadId: leadId || undefined,
+      leadInfo: leadInfo || undefined,
+    };
+
+    // Try MongoDB first
+    try {
+      const newMeeting = new Meeting(meetingData);
+      const savedMeeting = await newMeeting.save();
+      const meetingLog = await convertMeetingToMeetingLog(savedMeeting);
+
+      console.log("Meeting saved to MongoDB:", savedMeeting._id);
+      res.status(201).json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
+    }
+
+    // Fallback to in-memory storage
     const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const meetingLog: MeetingLog = {
+      id: meetingId,
+      employeeId: meetingData.employeeId,
+      location: meetingData.location,
+      startTime: meetingData.startTime,
+      clientName: meetingData.clientName,
+      notes: meetingData.notes,
+      status: meetingData.status,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+    };
 
-    // Execute with fallback pattern
-    const meeting = await db.executeWithFallback(
-      async () => {
-        console.log('Creating meeting in MongoDB...');
-        const newMeeting = new Meeting({
-          _id: meetingId,
-          employeeId: meetingData.employeeId,
-          startTime: meetingData.startTime || new Date().toISOString(),
-          status: 'in-progress',
-          startLocation: meetingData.startLocation || meetingData.location,
-          trackingSessionId: meetingData.trackingSessionId,
-          customers: meetingData.customers || [],
-          // Legacy fields for backward compatibility
-          customerName: meetingData.customerName || meetingData.clientName || "",
-          customerEmployeeName: meetingData.customerEmployeeName || "",
-          customerEmail: meetingData.customerEmail || "",
-          customerMobile: meetingData.customerMobile || "",
-          customerDesignation: meetingData.customerDesignation || "",
-          customerDepartment: meetingData.customerDepartment || "",
-          discussion: meetingData.discussion || "",
-          notes: meetingData.notes || "",
-          endTime: undefined, // Will be set when meeting is ended
-          duration: undefined,
-          endLocation: undefined,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
+    inMemoryMeetings.push(meetingLog);
 
-        const savedMeeting = await newMeeting.save();
-        console.log('Meeting saved to MongoDB:', savedMeeting._id);
-        return savedMeeting;
-      },
-      () => {
-        console.log('MongoDB save failed, falling back to in-memory storage');
-        const startLoc = meetingData.startLocation || meetingData.location;
-        const inMemoryMeeting: MeetingLog = {
-          id: meetingId,
-          employeeId: meetingData.employeeId,
-          startTime: meetingData.startTime || new Date().toISOString(),
-          status: 'in-progress',
-          location: startLoc || {
-            lat: 0,
-            lng: 0,
-            address: "Location not available",
-            timestamp: new Date().toISOString()
-          },
-          startLocation: startLoc,
-          trackingSessionId: meetingData.trackingSessionId,
-          customers: meetingData.customers || [],
-          customerName: meetingData.customerName || meetingData.clientName || "",
-          clientName: meetingData.customerName || meetingData.clientName || "",
-          customerEmployeeName: meetingData.customerEmployeeName || "",
-          customerEmail: meetingData.customerEmail || "",
-          customerMobile: meetingData.customerMobile || "",
-          customerDesignation: meetingData.customerDesignation || "",
-          customerDepartment: meetingData.customerDepartment || "",
-          discussion: meetingData.discussion || "",
-          notes: meetingData.notes || "",
-          endTime: undefined,
-          duration: undefined,
-          endLocation: undefined,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        inMemoryMeetings.push(inMemoryMeeting);
-        console.log('Meeting saved to memory:', meetingId);
-        return inMemoryMeeting;
-      },
-      'create meeting'
-    );
-
-    // Convert response
-    let response: MeetingLog;
-    if ('toObject' in meeting) {
-      response = await convertMeetingToLog(meeting as IMeeting);
-    } else {
-      response = meeting as MeetingLog;
-    }
-
-    res.status(201).json(response);
+    console.log("Meeting saved to memory:", meetingId);
+    res.status(201).json(meetingLog);
   } catch (error) {
     console.error("Error creating meeting:", error);
-    res.status(500).json({ 
-      error: "Failed to create meeting",
-      details: error instanceof Error ? error.message : "Unknown error"
-    });
+    res.status(500).json({ error: "Failed to create meeting" });
   }
 };
 
-// Update meeting with improved error handling
 export const updateMeeting: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
-    const db = Database.getInstance();
+    const updates = req.body;
 
-    // Execute with fallback pattern
-    const meeting = await db.executeWithFallback(
-      async () => {
-        console.log('Updating meeting in MongoDB:', id);
-        const updatedMeeting = await Meeting.findByIdAndUpdate(
-          id,
-          { 
-            ...updateData,
-            updatedAt: new Date().toISOString()
-          },
-          { new: true }
-        );
-
-        if (!updatedMeeting) {
-          throw new Error('Meeting not found');
-        }
-
-        console.log('Meeting updated in MongoDB');
-        return updatedMeeting;
-      },
-      () => {
-        console.log('MongoDB update failed, falling back to in-memory storage');
-        const meetingIndex = inMemoryMeetings.findIndex(m => m.id === id);
-        
-        if (meetingIndex === -1) {
-          throw new Error('Meeting not found in memory');
-        }
-
-        inMemoryMeetings[meetingIndex] = {
-          ...inMemoryMeetings[meetingIndex],
-          ...updateData,
-          updatedAt: new Date().toISOString()
-        };
-
-        console.log('Meeting updated in memory');
-        return inMemoryMeetings[meetingIndex];
-      },
-      'update meeting'
-    );
-
-    // Convert response
-    let response: MeetingLog;
-    if ('toObject' in meeting) {
-      response = await convertMeetingToLog(meeting as IMeeting);
-    } else {
-      response = meeting as MeetingLog;
+    // Handle meeting completion
+    if (updates.status === "completed" && !updates.endTime) {
+      updates.endTime = new Date().toISOString();
     }
 
-    res.json(response);
+    // Validate meeting details
+    if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
+      return res.status(400).json({ error: "Discussion details are required" });
+    }
+
+    // Try MongoDB first
+    try {
+      const updatedMeeting = await Meeting.findByIdAndUpdate(
+        id,
+        { $set: updates },
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedMeeting) {
+        return res.status(404).json({ error: "Meeting not found in database" });
+      }
+
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      console.log("Meeting updated in MongoDB:", updatedMeeting._id);
+      res.json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB update failed, falling back to in-memory storage:", dbError);
+    }
+
+    // Fallback to in-memory storage
+    const meetingIndex = inMemoryMeetings.findIndex((meeting) => meeting.id === id);
+    if (meetingIndex === -1) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    inMemoryMeetings[meetingIndex] = {
+      ...inMemoryMeetings[meetingIndex],
+      ...updates,
+    };
+
+    console.log("Meeting updated in memory:", id);
+    res.json(inMemoryMeetings[meetingIndex]);
   } catch (error) {
     console.error("Error updating meeting:", error);
-    
-    if (error instanceof Error && error.message === 'Meeting not found') {
-      res.status(404).json({ error: "Meeting not found" });
-    } else {
-      res.status(500).json({ 
-        error: "Failed to update meeting",
-        details: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
+    res.status(500).json({ error: "Failed to update meeting" });
   }
 };
 
-// Delete meeting with improved error handling
 export const deleteMeeting: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const db = Database.getInstance();
 
-    // Execute with fallback pattern
-    await db.executeWithFallback(
-      async () => {
-        console.log('Deleting meeting from MongoDB:', id);
-        const deletedMeeting = await Meeting.findByIdAndDelete(id);
-        
-        if (!deletedMeeting) {
-          throw new Error('Meeting not found');
-        }
+    // Try MongoDB first
+    try {
+      const deletedMeeting = await Meeting.findByIdAndDelete(id);
+      if (!deletedMeeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
 
-        console.log('Meeting deleted from MongoDB');
-        return deletedMeeting;
-      },
-      () => {
-        console.log('MongoDB delete failed, falling back to in-memory storage');
-        const meetingIndex = inMemoryMeetings.findIndex(m => m.id === id);
-        
-        if (meetingIndex === -1) {
-          throw new Error('Meeting not found in memory');
-        }
-
-        inMemoryMeetings.splice(meetingIndex, 1);
-        console.log('Meeting deleted from memory');
-        return true;
-      },
-      'delete meeting'
-    );
-
-    res.status(204).send();
+      res.status(204).send();
+      return;
+    } catch (dbError) {
+      console.error("MongoDB delete failed:", dbError);
+      throw dbError;
+    }
   } catch (error) {
     console.error("Error deleting meeting:", error);
-    
-    if (error instanceof Error && error.message === 'Meeting not found') {
-      res.status(404).json({ error: "Meeting not found" });
-    } else {
-      res.status(500).json({ 
-        error: "Failed to delete meeting",
-        details: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
+    res.status(500).json({ error: "Failed to delete meeting" });
   }
 };
 
-// Get meeting by ID with improved error handling
-export const getMeetingById: RequestHandler = async (req, res) => {
+// Add this endpoint to clear geocoding cache
+export const clearGeocodeCache: RequestHandler = async (req, res) => {
   try {
-    const { id } = req.params;
-    const db = Database.getInstance();
-
-    // Execute with fallback pattern
-    const meeting = await db.executeWithFallback(
-      async () => {
-        console.log('Fetching meeting from MongoDB:', id);
-        const dbMeeting = await Meeting.findById(id);
-        
-        if (!dbMeeting) {
-          throw new Error('Meeting not found');
-        }
-
-        console.log('Meeting found in MongoDB');
-        return dbMeeting;
-      },
-      () => {
-        console.log('MongoDB query failed, falling back to in-memory storage');
-        const memoryMeeting = inMemoryMeetings.find(m => m.id === id);
-        
-        if (!memoryMeeting) {
-          throw new Error('Meeting not found in memory');
-        }
-
-        console.log('Meeting found in memory');
-        return memoryMeeting;
-      },
-      'fetch meeting by ID'
-    );
-
-    // Convert response
-    let response: MeetingLog;
-    if ('toObject' in meeting) {
-      response = await convertMeetingToLog(meeting as IMeeting);
-    } else {
-      response = meeting as MeetingLog;
-    }
-
-    res.json(response);
+    geocodeCache.flushAll();
+    res.json({ success: true, message: "Geocode cache cleared" });
   } catch (error) {
-    console.error("Error fetching meeting:", error);
-    
-    if (error instanceof Error && error.message.includes('not found')) {
-      res.status(404).json({ error: "Meeting not found" });
-    } else {
-      res.status(500).json({ 
-        error: "Failed to fetch meeting",
-        details: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
+    console.error("Error clearing cache:", error);
+    res.status(500).json({ error: "Failed to clear cache" });
   }
-};
-
-export default {
-  getMeetings,
-  createMeeting,
-  updateMeeting,
-  deleteMeeting,
-  getMeetingById,
 };

@@ -16,6 +16,7 @@ interface CustomerEmployeeSelectorProps {
   selectedEmployeeId?: string;
   disabled?: boolean;
   onAddNewEmployee?: () => void;
+  filterByCompany?: string; // Filter employees by this company name
 }
 
 export interface CustomerEmployeeSelectorRef {
@@ -39,6 +40,7 @@ export const CustomerEmployeeSelector = forwardRef<
       selectedEmployeeId,
       disabled = false,
       onAddNewEmployee,
+      filterByCompany,
     },
     ref,
   ) => {
@@ -70,13 +72,22 @@ export const CustomerEmployeeSelector = forwardRef<
         setCustomers(customerArray);
 
         // Flatten all employees with customer info
-        const allEmployees = customerArray.flatMap((customer: Customer) =>
+        let allEmployees = customerArray.flatMap((customer: Customer) =>
           (customer.Employees || []).map((employee) => ({
             ...employee,
             customerName: customer.CustomerCompanyName,
             customerId: customer._id,
           })),
         );
+
+        // Filter by company if specified
+        if (filterByCompany) {
+          allEmployees = allEmployees.filter((employee) =>
+            employee.customerName.toLowerCase().trim() === filterByCompany.toLowerCase().trim()
+          );
+          console.log(`Filtered employees for company "${filterByCompany}":`, allEmployees.length);
+        }
+
         setEmployees(allEmployees);
       } catch (err) {
         console.error("Error fetching customers:", err);
@@ -120,7 +131,7 @@ export const CustomerEmployeeSelector = forwardRef<
 
     useEffect(() => {
       fetchCustomers();
-    }, []);
+    }, [filterByCompany]);
 
     // Debug effect for tempEmployees changes
     useEffect(() => {
@@ -294,6 +305,11 @@ export const CustomerEmployeeSelector = forwardRef<
           <Label htmlFor="customerEmployee" className="text-sm">
             Select Customer Employee
             <span className="text-destructive ml-1">*</span>
+            {filterByCompany && (
+              <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                {filterByCompany} only
+              </span>
+            )}
             {tempEmployees.length > 0 && (
               <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                 +{tempEmployees.length} new

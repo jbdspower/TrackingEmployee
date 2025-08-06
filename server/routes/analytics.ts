@@ -269,11 +269,16 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB`);
       console.log(`Date range filter: ${start.toISOString()} to ${end.toISOString()}`);
 
-      // MongoDB is the primary data source
-      console.log(`Using ${actualMeetings.length} meetings from MongoDB`);
+      // If no MongoDB data, fallback to in-memory
+      if (actualMeetings.length === 0) {
+        const { inMemoryMeetings } = await import("./meetings");
+        actualMeetings = inMemoryMeetings || [];
+        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory`);
+      }
     } catch (dbError) {
-      console.warn("MongoDB query failed:", dbError);
-      actualMeetings = [];
+      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
+      const { inMemoryMeetings } = await import("./meetings");
+      actualMeetings = inMemoryMeetings || [];
     }
 
     console.log("Using meetings data:", actualMeetings.length, "meetings");
@@ -455,11 +460,16 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
       console.log(`Employee details date range: ${start.toISOString()} to ${end.toISOString()}`);
 
-      // MongoDB is the primary data source
-      console.log(`Using ${actualMeetings.length} meetings from MongoDB for employee ${employeeId}`);
+      // If no MongoDB data, fallback to in-memory
+      if (actualMeetings.length === 0) {
+        const { inMemoryMeetings } = await import("./meetings");
+        actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.employeeId === employeeId);
+        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for employee ${employeeId}`);
+      }
     } catch (dbError) {
-      console.warn("MongoDB query failed:", dbError);
-      actualMeetings = [];
+      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
+      const { inMemoryMeetings } = await import("./meetings");
+      actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.employeeId === employeeId);
     }
 
     // Filter meetings for this employee within date range
@@ -493,9 +503,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     );
 
     // Generate day records
-    const dayRecords = Object.entries(dateGroups).map(([date, meetings]: [string, any[]]) => {
+    const dayRecords = Object.entries(dateGroups).map(([date, meetings]) => {
       const totalMeetings = meetings.length;
-      const totalMeetingHours = meetings.reduce((total: number, meeting: any) => {
+      const totalMeetingHours = meetings.reduce((total, meeting) => {
         return (
           total + calculateMeetingDuration(meeting.startTime, meeting.endTime)
         );
@@ -590,12 +600,14 @@ export const getLeadHistory: RequestHandler = async (req, res) => {
 
       // If no MongoDB data, fallback to in-memory
       if (actualMeetings.length === 0) {
-        actualMeetings = [];
+        const { inMemoryMeetings } = await import('./meetings');
+        actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.leadId === leadId);
         console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for lead ${leadId}`);
       }
     } catch (dbError) {
-      console.warn("MongoDB query failed:", dbError);
-      actualMeetings = [];
+      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
+      const { inMemoryMeetings } = await import('./meetings');
+      actualMeetings = (inMemoryMeetings || []).filter(meeting => meeting.leadId === leadId);
     }
 
     // Filter meetings by lead ID
@@ -751,12 +763,4 @@ export const getMeetingTrends: RequestHandler = async (req, res) => {
     console.error("Error fetching meeting trends:", error);
     res.status(500).json({ error: "Failed to fetch trends" });
   }
-};
-
-export default {
-  getEmployeeAnalytics,
-  getEmployeeDetails,
-  getLeadHistory,
-  saveAttendance,
-  getMeetingTrends,
 };

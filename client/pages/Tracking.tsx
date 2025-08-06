@@ -7,12 +7,18 @@ import { EmployeeMap } from "@/components/EmployeeMap";
 import { StartMeetingModal } from "@/components/StartMeetingModal";
 import { EndMeetingModal } from "@/components/EndMeetingModal";
 import { MeetingHistory } from "@/components/MeetingHistory";
+import { RouteSnapshotCapture } from "@/components/RouteSnapshotCapture";
+import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Employee,
   MeetingLog,
   MeetingDetails,
   TrackingSession,
+  CreateRouteSnapshotRequest,
+  MeetingSnapshot,
+  MapBounds,
 } from "@shared/api";
 import {
   ArrowLeft,
@@ -24,12 +30,15 @@ import {
   Calendar,
   Plus,
   MessageSquare,
+  Camera,
+  History,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 export default function Tracking() {
   const navigate = useNavigate();
   const { employeeId } = useParams<{ employeeId: string }>();
+  const { toast } = useToast();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [meetings, setMeetings] = useState<MeetingLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,14 +50,11 @@ export default function Tracking() {
   const [currentTrackingSession, setCurrentTrackingSession] =
     useState<TrackingSession | null>(null);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
+  const [isSnapshotCaptureOpen, setIsSnapshotCaptureOpen] = useState(false);
+  const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
 
   useEffect(() => {
-    if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
-      console.log("Invalid or missing employeeId, redirecting to home:", {
-        employeeId,
-        type: typeof employeeId
-      });
-      setLoading(false);
+    if (!employeeId) {
       navigate("/");
       return;
     }
@@ -60,8 +66,6 @@ export default function Tracking() {
       } catch (error) {
         console.error("Failed to initialize tracking data:", error);
         // Continue anyway - the individual functions handle their own errors
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -72,40 +76,30 @@ export default function Tracking() {
     try {
       console.log("Fetching employee:", { employeeId, retryCount });
 
-      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
-        console.error("Employee ID is invalid - cannot fetch employee data:", {
-          employeeId,
-          type: typeof employeeId
-        });
-        setEmployee(null);
-        setLoading(false);
-        return;
-      }
-
       const response = await HttpClient.get(`/api/employees/${employeeId}`);
-
-      // Read response body once and handle both success and error cases
-      let responseText: string;
-      try {
-        responseText = await response.text();
-      } catch (bodyError) {
-        console.error("Failed to read response body:", bodyError);
-        setEmployee(null);
-        return;
-      }
 
       if (response.ok) {
         try {
-          const data = JSON.parse(responseText);
-          setEmployee(data);
-          console.log("Employee data fetched successfully:", data);
-        } catch (parseError) {
-          console.error("Failed to parse employee response:", parseError);
+          // Check if response is actually JSON
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            setEmployee(data);
+            console.log("Employee data fetched successfully:", data);
+          } else {
+            // Response is not JSON, likely an error page
+            const textData = await response.text();
+            console.error("Server returned non-JSON response:", textData.substring(0, 200));
+            setEmployee(null);
+          }
+        } catch (jsonError) {
+          console.error("Error parsing employee response:", jsonError);
           setEmployee(null);
         }
       } else {
-        const errorText = `${response.status} ${response.statusText}${responseText ? ` - ${responseText}` : ''}`;
-        console.error(`Failed to fetch employee: ${errorText}`);
+        console.error(
+          `Failed to fetch employee: ${response.status} ${response.statusText}`,
+        );
         setEmployee(null);
       }
     } catch (error) {
@@ -115,7 +109,7 @@ export default function Tracking() {
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
-        error.message.includes("fetch")
+        (error.message.includes("fetch") || error.message.includes("body stream"))
       ) {
         console.log("Retrying employee fetch after network error...");
         setTimeout(() => fetchEmployee(retryCount + 1), 2000);
@@ -131,41 +125,32 @@ export default function Tracking() {
     try {
       console.log("Fetching meetings:", { employeeId, retryCount });
 
-      if (!employeeId || employeeId === 'undefined' || typeof employeeId !== 'string') {
-        console.error("Employee ID is invalid - cannot fetch meetings data:", {
-          employeeId,
-          type: typeof employeeId
-        });
-        setMeetings([]);
-        return;
-      }
-
       const response = await HttpClient.get(
         `/api/meetings?employeeId=${employeeId}&limit=5`,
       );
 
-      // Read response body once and handle both success and error cases
-      let responseText: string;
-      try {
-        responseText = await response.text();
-      } catch (bodyError) {
-        console.error("Failed to read response body:", bodyError);
-        setMeetings([]);
-        return;
-      }
-
       if (response.ok) {
         try {
-          const data = JSON.parse(responseText);
-          setMeetings(data.meetings || []);
-          console.log("Meetings data fetched successfully:", data);
-        } catch (parseError) {
-          console.error("Failed to parse meetings response:", parseError);
+          // Check if response is actually JSON
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            setMeetings(data.meetings || []);
+            console.log("Meetings data fetched successfully:", data);
+          } else {
+            // Response is not JSON, likely an error page
+            const textData = await response.text();
+            console.error("Server returned non-JSON response for meetings:", textData.substring(0, 200));
+            setMeetings([]);
+          }
+        } catch (jsonError) {
+          console.error("Error parsing meetings response:", jsonError);
           setMeetings([]);
         }
       } else {
-        const errorText = `${response.status} ${response.statusText}${responseText ? ` - ${responseText}` : ''}`;
-        console.error(`Failed to fetch meetings: ${errorText}`);
+        console.error(
+          `Failed to fetch meetings: ${response.status} ${response.statusText}`,
+        );
         setMeetings([]);
       }
     } catch (error) {
@@ -175,7 +160,7 @@ export default function Tracking() {
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
-        error.message.includes("fetch")
+        (error.message.includes("fetch") || error.message.includes("body stream"))
       ) {
         console.log("Retrying meetings fetch after network error...");
         setTimeout(() => fetchMeetings(retryCount + 1), 2000);
@@ -272,24 +257,12 @@ export default function Tracking() {
         meetingDetails,
       );
 
-      // Capture current location for end location
-      let endLocation = undefined;
-      if (employee?.location) {
-        endLocation = {
-          lat: employee.location.lat,
-          lng: employee.location.lng,
-          address: employee.location.address,
-          timestamp: new Date().toISOString(),
-        };
-      }
-
       // End the meeting
       const response = await HttpClient.put(
         `/api/meetings/${activeMeetingId}`,
         {
           status: "completed",
           endTime: new Date().toISOString(),
-          endLocation,
           meetingDetails,
         },
       );
@@ -333,11 +306,9 @@ export default function Tracking() {
         }
 
         // Update employee status to active
-        if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
-          await HttpClient.put(`/api/employees/${employeeId}/status`, {
-            status: "active",
-          });
-        }
+        await HttpClient.put(`/api/employees/${employeeId}/status`, {
+          status: "active",
+        });
 
         // Refresh data
         await Promise.all([fetchMeetings(), fetchEmployee()]);
@@ -385,7 +356,7 @@ export default function Tracking() {
     setIsStartingMeeting(true);
     try {
       const response = await HttpClient.post("/api/meetings", {
-        employeeId: employee._id || employee.id,
+        employeeId: employee.id,
         location: {
           lat: employee.location.lat,
           lng: employee.location.lng,
@@ -395,17 +366,14 @@ export default function Tracking() {
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
-        trackingSessionId: currentTrackingSession?.id, // Include current tracking session
       });
 
       if (response.ok) {
         fetchMeetings();
         // Update employee status to meeting
-        if (employeeId && employeeId !== 'undefined' && typeof employeeId === 'string') {
-          await HttpClient.put(`/api/employees/${employeeId}/status`, {
-            status: "meeting",
-          });
-        }
+        await HttpClient.put(`/api/employees/${employeeId}/status`, {
+          status: "meeting",
+        });
         fetchEmployee();
         setIsStartMeetingModalOpen(false);
       }
@@ -425,9 +393,132 @@ export default function Tracking() {
     console.log("Tracking session started:", session);
   };
 
-  const handleTrackingSessionEnd = (session: TrackingSession) => {
+  const handleTrackingSessionEnd = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
     console.log("Tracking session ended:", session);
+    console.log("Auto-snapshot conditions:", {
+      hasEmployee: !!employee,
+      sessionStatus: session.status,
+      shouldCreateSnapshot: employee && session.status === "completed"
+    });
+
+    // Automatically create route snapshot when tracking stops
+    if (employee && session.status === "completed") {
+      try {
+        console.log("Auto-creating route snapshot for completed tracking session");
+        await autoCreateRouteSnapshot(session);
+      } catch (error) {
+        console.error("Error auto-creating route snapshot:", error);
+      }
+    } else {
+      console.log("Skipping auto-snapshot:", {
+        reason: !employee ? "No employee data" : session.status !== "completed" ? `Session status is ${session.status}` : "Unknown"
+      });
+    }
+  };
+
+  // Auto-create route snapshot when tracking stops
+  const autoCreateRouteSnapshot = async (session: TrackingSession) => {
+    if (!employee) return;
+
+    // Calculate map bounds from route data
+    const calculateMapBounds = (): MapBounds => {
+      const allPoints = [];
+
+      // Add tracking route points
+      if (session.route) {
+        allPoints.push(...session.route);
+      }
+
+      // Add meeting locations
+      meetings.forEach(meeting => {
+        allPoints.push(meeting.location);
+      });
+
+      // Add current employee location
+      allPoints.push(employee.location);
+
+      if (allPoints.length === 0) {
+        // Default bounds if no points
+        return {
+          north: employee.location.lat + 0.01,
+          south: employee.location.lat - 0.01,
+          east: employee.location.lng + 0.01,
+          west: employee.location.lng - 0.01,
+        };
+      }
+
+      const lats = allPoints.map(p => p.lat);
+      const lngs = allPoints.map(p => p.lng);
+
+      const margin = 0.005; // Add small margin around bounds
+
+      return {
+        north: Math.max(...lats) + margin,
+        south: Math.min(...lats) - margin,
+        east: Math.max(...lngs) + margin,
+        west: Math.min(...lngs) - margin,
+      };
+    };
+
+    // Convert meetings to snapshot format
+    const getMeetingSnapshots = (): MeetingSnapshot[] => {
+      return meetings.map(meeting => ({
+        id: meeting.id,
+        location: meeting.location,
+        clientName: meeting.clientName,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime,
+        status: meeting.status,
+      }));
+    };
+
+    // Generate auto-title
+    const now = new Date();
+    const dateStr = now.toLocaleDateString();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const autoTitle = `${employee.name} Route - ${dateStr} ${timeStr}`;
+
+    const snapshotData: CreateRouteSnapshotRequest = {
+      employeeId: employee.id,
+      employeeName: employee.name,
+      trackingSessionId: session.id,
+      title: autoTitle,
+      description: `Auto-captured route snapshot when tracking stopped. Duration: ${Math.round((session.duration || 0) / 60)} minutes.`,
+      startLocation: session.startLocation,
+      endLocation: session.endLocation,
+      route: session.route || [employee.location],
+      meetings: getMeetingSnapshots(),
+      totalDistance: session.totalDistance || 0,
+      duration: session.duration,
+      status: session.status,
+      mapBounds: calculateMapBounds(),
+    };
+
+    try {
+      const response = await HttpClient.post("/api/route-snapshots", snapshotData);
+
+      if (response.ok) {
+        const snapshot = await response.json();
+        console.log("Auto-created route snapshot:", snapshot);
+
+        // Show success toast notification
+        toast({
+          title: "Route Auto-Captured",
+          description: `${snapshot.title} saved successfully`,
+        });
+      } else {
+        throw new Error("Failed to auto-create route snapshot");
+      }
+    } catch (error) {
+      console.error("Error auto-creating route snapshot:", error);
+      // Show error toast but don't be too intrusive
+      toast({
+        title: "Auto-capture Failed",
+        description: "Use 'Manual Capture' button to save route",
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusColor = (status: Employee["status"]) => {
@@ -494,20 +585,31 @@ export default function Tracking() {
                 </Link>
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  {employee.name}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Real-time Tracking
-                </p>
-              </div>
+              <h1 className="text-2xl font-bold text-foreground">
+                {employee.name}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Real-time Tracking
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSnapshotCaptureOpen(true)}
+              className="text-primary"
+            >
+              <Camera className="h-4 w-4 mr-1" />
+              Manual Capture
+            </Button>
             <Badge
               variant="secondary"
               className={`${getStatusColor(employee.status)}`}
             >
               {getStatusText(employee.status)}
             </Badge>
+          </div>
           </div>
         </div>
       </header>
@@ -534,7 +636,7 @@ export default function Tracking() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Phone</span>
-                    <span className="font-medium">{employee.phone || 'Not available'}</span>
+                    <span className="font-medium">{employee.phone}</span>
                   </div>
                   {employee.designation && (
                     <div className="flex items-center justify-between">
@@ -712,6 +814,26 @@ export default function Tracking() {
                     <MapPin className="h-4 w-4 mr-2" />
                     Open in Maps App
                   </Button>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsSnapshotCaptureOpen(true)}
+                      className="text-primary"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Manual Capture
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsSnapshotHistoryOpen(true)}
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      View History
+                    </Button>
+                  </div>
                 </div>
 
                 {showMap && employee && (
@@ -732,10 +854,9 @@ export default function Tracking() {
           <div className="space-y-6">
             {/* Location Tracker */}
             <LocationTracker
-              employeeId={employee._id || employee.id}
+              employeeId={employee.id}
               employeeName={employee.name}
               onLocationUpdate={handleLocationUpdate}
-              trackingEnabled={employee.status === "active"}
               onTrackingSessionStart={handleTrackingSessionStart}
               onTrackingSessionEnd={handleTrackingSessionEnd}
             />
@@ -807,20 +928,10 @@ export default function Tracking() {
                             )}
                           </div>
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground flex items-center">
-                            <MapPin className="h-3 w-3 mr-1" />
-                            <span className="font-medium">Start:</span>
-                            <span className="ml-1">{meeting.location?.address || meeting.startLocation?.address || "Location not available"}</span>
-                          </p>
-                          {meeting.endLocation && (
-                            <p className="text-sm text-muted-foreground flex items-center">
-                              <MapPin className="h-3 w-3 mr-1" />
-                              <span className="font-medium">End:</span>
-                              <span className="ml-1">{meeting.endLocation?.address || "Location not available"}</span>
-                            </p>
-                          )}
-                        </div>
+                        <p className="text-sm text-muted-foreground flex items-center">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          {meeting.location.address}
+                        </p>
                         <div className="space-y-1">
                           <p className="text-sm text-muted-foreground flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
@@ -904,14 +1015,37 @@ export default function Tracking() {
           onEndMeeting={handleEndMeetingWithDetails}
           employeeName={employee.name}
           isLoading={isEndingMeeting !== null}
+          currentMeeting={activeMeetingId ? meetings.find(m => m.id === activeMeetingId) : null}
         />
       )}
 
       {/* Meeting History Modal */}
       <MeetingHistory
-        employeeId={employeeId || ""}
+        employeeId={employeeId}
         isOpen={isMeetingHistoryOpen}
         onClose={() => setIsMeetingHistoryOpen(false)}
+      />
+
+      {/* Route Snapshot Capture Modal */}
+      {employee && (
+        <RouteSnapshotCapture
+          employee={employee}
+          trackingSession={currentTrackingSession}
+          meetings={meetings}
+          isOpen={isSnapshotCaptureOpen}
+          onClose={() => setIsSnapshotCaptureOpen(false)}
+          onSnapshotCreated={(snapshot) => {
+            console.log("Snapshot created:", snapshot);
+            // Optionally refresh or show success message
+          }}
+        />
+      )}
+
+      {/* Route Snapshot History Modal */}
+      <RouteSnapshotHistory
+        employeeId={employeeId}
+        isOpen={isSnapshotHistoryOpen}
+        onClose={() => setIsSnapshotHistoryOpen(false)}
       />
     </div>
   );
