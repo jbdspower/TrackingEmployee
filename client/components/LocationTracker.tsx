@@ -56,8 +56,8 @@ export function LocationTracker({
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
     useGeolocation({
       enableHighAccuracy: true,
-      maximumAge: 60000, // 1 minute
-      timeout: 30000, // 30 seconds
+      maximumAge: 5000, // 5 seconds for fresher data
+      timeout: 15000, // 15 seconds timeout
       watchPosition: isTracking,
     });
 
