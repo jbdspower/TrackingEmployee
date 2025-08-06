@@ -372,9 +372,16 @@ export function EmployeeMap({
         </div>
       )}
 
+      {/* GPS route indicator */}
+      {showRoute && trackingSession && trackingSession.route.length > 0 && (
+        <div className="absolute top-2 right-2 bg-success/90 backdrop-blur-sm border border-success rounded-md px-3 py-2 text-sm text-success-foreground z-10">
+          <span>📍 Showing actual GPS path ({trackingSession.route.length} points)</span>
+        </div>
+      )}
+
       {/* Route error indicator */}
       {routeError && (
-        <div className="absolute top-2 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
+        <div className="absolute top-12 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
           <span>{routeError}</span>
         </div>
       )}
