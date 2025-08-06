@@ -213,7 +213,11 @@ export default function Dashboard() {
     if (filters.endDate) queryParams.append("endDate", filters.endDate);
     if (filters.searchTerm) queryParams.append("search", filters.searchTerm);
 
-    const response = await HttpClient.get(`/api/analytics/employees?${queryParams}`);
+    const queryString = queryParams.toString();
+    const endpoint = `/api/analytics/employees?${queryString}`;
+
+    console.log("Dashboard: Fetching analytics with endpoint:", endpoint);
+    const response = await HttpClient.get(endpoint);
 
     if (response.ok) {
       const data = await response.json();
