@@ -37,23 +37,31 @@ function MapController({
   const map = useMap();
 
   useEffect(() => {
-    if (selectedEmployee?.location?.lat && selectedEmployee?.location?.lng) {
-      map.setView(
-        [selectedEmployee.location.lat, selectedEmployee.location.lng],
-        15,
-      );
-    } else if (center) {
-      map.setView(center, 10);
-    } else if (employees.length > 0) {
-      // Center on all employees
-      const bounds = L.latLngBounds(
-        employees
-          .filter((emp) => emp.location?.lat && emp.location?.lng)
-          .map((emp) => [emp.location!.lat, emp.location!.lng]),
-      );
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [20, 20] });
+    if (!map) return;
+
+    try {
+      if (selectedEmployee?.location?.lat && selectedEmployee?.location?.lng) {
+        map.setView(
+          [selectedEmployee.location.lat, selectedEmployee.location.lng],
+          15,
+        );
+      } else if (center) {
+        map.setView(center, 10);
+      } else if (Array.isArray(employees) && employees.length > 0) {
+        // Center on all employees
+        const validLocations = employees
+          .filter((emp) => emp?.location?.lat && emp?.location?.lng)
+          .map((emp) => [emp.location!.lat, emp.location!.lng]);
+
+        if (validLocations.length > 0) {
+          const bounds = L.latLngBounds(validLocations);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }
+        }
       }
+    } catch (error) {
+      console.error("Error updating map view:", error);
     }
   }, [map, selectedEmployee, employees, center]);
 
