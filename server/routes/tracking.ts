@@ -697,6 +697,13 @@ function toRadians(degrees: number): number {
   return degrees * (Math.PI / 180);
 }
 
+// Export aliases for backward compatibility
+export const updateTrackingSession = updateTrackingSessionLocation;
+export const addLocationToRoute = updateTrackingSessionLocation;
+export const getTrackingSession = getTrackingSessions;
+export const deleteTrackingSession = endTrackingSession;
+export const addMeetingToHistory = addMeetingHistory;
+
 export default {
   getTrackingSessions,
   createTrackingSession,
