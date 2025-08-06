@@ -600,7 +600,10 @@ export function MeetingHistory({
             <div className="flex justify-end">
               <Button
                 variant="outline"
-                onClick={() => setShowDetailModal(false)}
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setSelectedMeeting(null);
+                }}
               >
                 Close
               </Button>
