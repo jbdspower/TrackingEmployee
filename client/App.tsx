@@ -86,6 +86,11 @@ const App = () => {
         console.error("Invalid token:", err);
       }
     }
+
+    // Test GPS routing functionality on app startup
+    console.log("🚀 Initializing GPS routing system...");
+    testGPSRouting();
+    logRoutingComparison();
   }, []);
 
   return (
