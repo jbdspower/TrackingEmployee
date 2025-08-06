@@ -35,22 +35,62 @@ export function LocationTracker({
   onTrackingSessionStart,
   onTrackingSessionEnd,
 }: LocationTrackerProps) {
-  const [isTracking, setIsTracking] = useState(trackingEnabled);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [updateCount, setUpdateCount] = useState(0);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [failureCount, setFailureCount] = useState(0);
-  const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
+  // Helper functions for localStorage persistence
+  const getStorageKey = (key: string) => `tracking_${employeeId}_${key}`;
 
-  // Enhanced tracking state
-  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
-    null,
+  const loadFromStorage = (key: string, defaultValue: any) => {
+    try {
+      const stored = localStorage.getItem(getStorageKey(key));
+      return stored ? JSON.parse(stored) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  };
+
+  const saveToStorage = (key: string, value: any) => {
+    try {
+      localStorage.setItem(getStorageKey(key), JSON.stringify(value));
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+    }
+  };
+
+  const clearFromStorage = (key: string) => {
+    try {
+      localStorage.removeItem(getStorageKey(key));
+    } catch (error) {
+      console.warn('Failed to clear from localStorage:', error);
+    }
+  };
+
+  // Initialize state from localStorage or defaults
+  const [isTracking, setIsTracking] = useState(() => loadFromStorage('isTracking', trackingEnabled));
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(() => {
+    const stored = loadFromStorage('lastUpdate', null);
+    return stored ? new Date(stored) : null;
+  });
+  const [updateCount, setUpdateCount] = useState(() => loadFromStorage('updateCount', 0));
+  const [updateError, setUpdateError] = useState<string | null>(() => loadFromStorage('updateError', null));
+  const [failureCount, setFailureCount] = useState(() => loadFromStorage('failureCount', 0));
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(() => loadFromStorage('lastUpdateTime', 0));
+
+  // Enhanced tracking state with persistence
+  const [currentSession, setCurrentSession] = useState<TrackingSession | null>(() =>
+    loadFromStorage('currentSession', null)
   );
-  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(null);
-  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
-  const [totalDistance, setTotalDistance] = useState<number>(0);
+  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(() => {
+    const stored = loadFromStorage('trackingStartTime', null);
+    return stored ? new Date(stored) : null;
+  });
+  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(() => {
+    const stored = loadFromStorage('trackingEndTime', null);
+    return stored ? new Date(stored) : null;
+  });
+  const [elapsedTime, setElapsedTime] = useState<number>(() => loadFromStorage('elapsedTime', 0));
+  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>(() =>
+    loadFromStorage('routeCoordinates', [])
+  );
+  const [totalDistance, setTotalDistance] = useState<number>(() => loadFromStorage('totalDistance', 0));
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
