@@ -106,8 +106,8 @@ export function LocationTracker({
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
 
-      // Rate limit: only update every 10 seconds minimum
-      if (timeSinceLastUpdate >= 10000 || lastUpdateTime === 0) {
+      // Rate limit: update every 5 seconds for more detailed tracking
+      if (timeSinceLastUpdate >= 5000 || lastUpdateTime === 0) {
         updateLocationOnServer(latitude, longitude, accuracy);
 
         // Add to route if tracking is active
