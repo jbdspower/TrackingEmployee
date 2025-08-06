@@ -142,7 +142,7 @@ export function RouteSnapshotCapture({
         meetings: getMeetingSnapshots(),
         totalDistance: trackingSession?.totalDistance || 0,
         duration: trackingSession?.duration,
-        status: trackingSession?.status || 'active',
+        status: (trackingSession?.status as 'active' | 'completed' | 'paused') || 'active',
         mapBounds: calculateMapBounds(),
       };
 

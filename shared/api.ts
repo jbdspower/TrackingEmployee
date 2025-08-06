@@ -372,7 +372,7 @@ export interface RouteSnapshot {
   meetings: MeetingSnapshot[];
   totalDistance: number;
   duration?: number;
-  status: 'active' | 'completed';
+  status: 'active' | 'completed' | 'paused';
   title: string;
   description?: string;
   mapBounds: MapBounds;
@@ -400,6 +400,6 @@ export interface CreateRouteSnapshotRequest {
   meetings?: MeetingSnapshot[];
   totalDistance?: number;
   duration?: number;
-  status?: 'active' | 'completed';
+  status?: 'active' | 'completed' | 'paused';
   mapBounds: MapBounds;
 }
