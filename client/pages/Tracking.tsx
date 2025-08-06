@@ -841,8 +841,6 @@ export default function Tracking() {
                     <EmployeeMap
                       employees={[employee]}
                       height="300px"
-                      trackingSession={currentTrackingSession}
-                      showRoute={currentTrackingSession !== null}
                     />
                   </div>
                 )}
