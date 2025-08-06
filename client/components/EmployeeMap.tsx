@@ -38,6 +38,11 @@ export function EmployeeMap({
   const routeMarkersRef = useRef<L.Marker[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{
+    type: string;
+    confidence: string;
+    points: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -164,6 +169,7 @@ export function EmployeeMap({
 
     if (!showRoute || !trackingSession || !trackingSession.route.length) {
       setRouteError(null);
+      setRouteInfo(null);
       return;
     }
 
@@ -173,6 +179,7 @@ export function EmployeeMap({
     const displayGPSRoute = () => {
       if (route.length < 2) {
         setRouteError("Not enough points for route visualization");
+        setRouteInfo(null);
         return;
       }
 
@@ -188,9 +195,19 @@ export function EmployeeMap({
           point.lng,
         ]);
 
+        // Determine route quality based on point density and tracking session
+        const routeQuality =
+          route.length >= 10 ? "high" : route.length >= 5 ? "medium" : "low";
+        const routeColor =
+          routeQuality === "high"
+            ? "#22c55e"
+            : routeQuality === "medium"
+              ? "#f59e0b"
+              : "#ef4444";
+
         // Create polyline showing the exact path taken by the employee
         routeLayerRef.current = L.polyline(gpsCoords, {
-          color: "#22c55e", // Success green to indicate actual path
+          color: routeColor, // Color indicates route quality
           weight: 4,
           opacity: 0.9,
           smoothFactor: 0.1, // Minimal smoothing to preserve exact GPS accuracy
@@ -198,7 +215,21 @@ export function EmployeeMap({
           lineJoin: "round",
         }).addTo(mapRef.current);
 
-        console.log(`Displaying actual GPS path with ${route.length} points`);
+        // Set route info for user feedback
+        setRouteInfo({
+          type: "GPS Tracking",
+          confidence:
+            routeQuality === "high"
+              ? "High Accuracy"
+              : routeQuality === "medium"
+                ? "Medium Accuracy"
+                : "Low Accuracy",
+          points: route.length,
+        });
+
+        console.log(
+          `📍 Displaying actual GPS path with ${route.length} points (${routeQuality} quality)`,
+        );
 
         // Fit map to show the actual route
         const routeBounds = L.latLngBounds(gpsCoords);
@@ -206,6 +237,7 @@ export function EmployeeMap({
       } catch (error) {
         console.error("Error displaying GPS route:", error);
         setRouteError("Failed to display GPS route");
+        setRouteInfo(null);
       }
     };
 
@@ -305,10 +337,17 @@ export function EmployeeMap({
     // Add waypoint markers for intermediate points (every 3rd point to show more detail)
     route.forEach((point, index) => {
       if (index > 0 && index < route.length - 1 && index % 3 === 0) {
+        // Use route quality color for waypoints too
+        const waypointColor =
+          route.length >= 10
+            ? "#22c55e"
+            : route.length >= 5
+              ? "#f59e0b"
+              : "#ef4444";
         const waypointIcon = L.divIcon({
           html: `
             <div style="
-              background-color: #22c55e;
+              background-color: ${waypointColor};
               width: 10px;
               height: 10px;
               border-radius: 50%;
@@ -373,19 +412,36 @@ export function EmployeeMap({
         </div>
       )}
 
-      {/* GPS route indicator */}
-      {showRoute && trackingSession && trackingSession.route.length > 0 && (
-        <div className="absolute top-2 right-2 bg-success/90 backdrop-blur-sm border border-success rounded-md px-3 py-2 text-sm text-success-foreground z-10">
-          <span>
-            📍 Showing actual GPS path ({trackingSession.route.length} points)
-          </span>
+      {/* Route information indicator */}
+      {showRoute && routeInfo && (
+        <div
+          className={`absolute top-2 right-2 backdrop-blur-sm border rounded-md px-3 py-2 text-sm z-10 ${
+            routeInfo.confidence === "High Accuracy"
+              ? "bg-success/90 border-success text-success-foreground"
+              : routeInfo.confidence === "Medium Accuracy"
+                ? "bg-warning/90 border-warning text-warning-foreground"
+                : "bg-destructive/90 border-destructive text-destructive-foreground"
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <span>📍 {routeInfo.type}</span>
+          </div>
+          <div className="text-xs mt-1">
+            {routeInfo.confidence} • {routeInfo.points} points
+          </div>
         </div>
       )}
 
       {/* Route error indicator */}
       {routeError && (
-        <div className="absolute top-12 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
-          <span>{routeError}</span>
+        <div className="absolute top-12 right-2 bg-destructive/90 backdrop-blur-sm border border-destructive rounded-md px-3 py-2 text-sm text-destructive-foreground z-10">
+          <div className="flex items-center space-x-2">
+            <span>⚠️ Route Error</span>
+          </div>
+          <div className="text-xs mt-1">{routeError}</div>
+          <div className="text-xs mt-1 opacity-80">
+            💡 GPS tracking provides the most accurate routes
+          </div>
         </div>
       )}
     </div>

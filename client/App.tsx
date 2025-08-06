@@ -13,8 +13,9 @@ import Tracking from "./pages/Tracking";
 import TeamManagement from "./pages/TeamManagement";
 import DataManagement from "./pages/DataManagement";
 import NotFound from "./pages/NotFound";
-import {jwtDecode} from "jwt-decode";
+import { jwtDecode } from "jwt-decode";
 import { useEffect } from "react";
+import { testGPSRouting, logRoutingComparison } from "@/lib/testRouting";
 
 // Initialize HttpClient
 HttpClient.init();
@@ -80,32 +81,41 @@ const App = () => {
         console.log("Authenticated user:", decoded);
 
         // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname);
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname,
+        );
       } catch (err) {
         console.error("Invalid token:", err);
       }
     }
+
+    // Test GPS routing functionality on app startup
+    console.log("🚀 Initializing GPS routing system...");
+    testGPSRouting();
+    logRoutingComparison();
   }, []);
 
   return (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/tracking/:employeeId" element={<Tracking />} />
-          <Route path="/team-management" element={<TeamManagement />} />
-          <Route path="/data-management" element={<DataManagement />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/tracking/:employeeId" element={<Tracking />} />
+            <Route path="/team-management" element={<TeamManagement />} />
+            <Route path="/data-management" element={<DataManagement />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
 };
 
 createRoot(document.getElementById("root")!).render(<App />);
