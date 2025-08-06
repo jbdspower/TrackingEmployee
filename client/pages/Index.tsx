@@ -82,7 +82,9 @@ export default function Index() {
         // Step 2: Filter employees based on role
         const filteredEmployees = isSuperAdmin
           ? data.employees
-          : data.employees.filter((emp) => emp?.id === userId);
+          : userId
+            ? data.employees.filter((emp) => emp?.id === userId)
+            : [];
 
         // Step 3: Update state
         setEmployees(filteredEmployees);
