@@ -174,7 +174,12 @@ export function MeetingHistory({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen && !showDetailModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowDetailModal(false);
+          onClose();
+        }
+      }}>
         <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
