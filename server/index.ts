@@ -95,8 +95,14 @@ export function createServer() {
 
   // Employee routes
   app.get("/api/employees", getEmployees);
+  app.post("/api/employees", createEmployee);
   app.get("/api/employees/:id", getEmployee);
+  app.put("/api/employees/:id", updateEmployee);
+  app.delete("/api/employees/:id", deleteEmployee);
   app.put("/api/employees/:id/location", updateEmployeeLocation);
+  app.put("/api/employees/:id/status", updateEmployeeStatus);
+  app.post("/api/employees/refresh-locations", refreshEmployeeLocations);
+  app.post("/api/employees/clear-cache", clearLocationCache);
   app.post("/api/employees/sync", syncEmployees);
   app.get("/api/employees/:id/location-history", getEmployeeLocationHistory);
 
