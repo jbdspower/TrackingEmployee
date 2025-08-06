@@ -289,18 +289,11 @@ export function LocationTracker({
 
       let finalDistance = totalDistance;
 
-      // Try to get more accurate road-based distance calculation
+      // Use GPS-based distance calculation (actual path taken)
       if (routeCoordinates.length >= 2) {
-        try {
-          console.log("Calculating accurate road-based distance...");
-          const routeData = await routingService.getRouteForPoints(routeCoordinates);
-          if (routeData.totalDistance > 0) {
-            finalDistance = routeData.totalDistance;
-            console.log(`Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`);
-          }
-        } catch (error) {
-          console.warn("Failed to calculate road-based distance, using GPS distance:", error);
-        }
+        console.log("Using GPS-based distance calculation for actual path taken");
+        finalDistance = totalDistance; // Keep the GPS-calculated distance
+        console.log(`Final distance: ${(finalDistance / 1000).toFixed(2)} km (GPS-based actual path)`);
       }
 
       const updatedSession: TrackingSession = {
