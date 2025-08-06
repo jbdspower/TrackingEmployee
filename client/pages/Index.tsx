@@ -21,6 +21,7 @@ import { Link } from "react-router-dom";
 import { Employee, EmployeesResponse } from "@shared/api";
 import { EmployeeMap } from "@/components/EmployeeMap";
 import { MeetingHistory } from "@/components/MeetingHistory";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { HttpClient } from "@/lib/httpClient";
 
 export default function Index() {
