@@ -432,7 +432,12 @@ export function MeetingHistory({
 
       {/* Meeting Detail Modal */}
       {selectedMeeting && (
-        <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <Dialog open={showDetailModal} onOpenChange={(open) => {
+          setShowDetailModal(open);
+          if (!open) {
+            setSelectedMeeting(null);
+          }
+        }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Meeting Details</DialogTitle>
