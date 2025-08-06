@@ -635,10 +635,12 @@ export default function Index() {
       </div>
 
       {/* Meeting History Modal */}
-      <MeetingHistory
-        isOpen={isMeetingHistoryOpen}
-        onClose={() => setIsMeetingHistoryOpen(false)}
-      />
+      <ErrorBoundary>
+        <MeetingHistory
+          isOpen={isMeetingHistoryOpen}
+          onClose={() => setIsMeetingHistoryOpen(false)}
+        />
+      </ErrorBoundary>
     </div>
   );
 }
