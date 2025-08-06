@@ -426,11 +426,11 @@ export default function Index() {
                       <div
                         key={employee._id || employee.id}
                         className={`p-4 border-b last:border-b-0 cursor-pointer transition-colors hover:bg-muted/50 ${
-                          selectedEmployee === (employee._id || employee.id)
+                          selectedEmployee?.id === employee.id || selectedEmployee?._id === employee._id
                             ? "bg-primary/5 border-l-4 border-l-primary"
                             : ""
                         }`}
-                        onClick={() => setSelectedEmployee(employee._id || employee.id)}
+                        onClick={() => setSelectedEmployee(employee)}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
