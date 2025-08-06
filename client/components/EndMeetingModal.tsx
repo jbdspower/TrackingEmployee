@@ -10,18 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-<<<<<<< ai_main_861189a7f2e1
 import { MeetingDetails, CustomerEmployee, Customer, CustomerContact, LocationData } from "@shared/api";
 import { AlertCircle, CheckCircle, Clock, User, Building2, MapPin, Loader2 } from "lucide-react";
-=======
-import {
-  MeetingDetails,
-  CustomerEmployee,
-  Customer,
-  CustomerContact,
-} from "@shared/api";
-import { AlertCircle, CheckCircle, Clock, User, Building2 } from "lucide-react";
->>>>>>> main
 import {
   CustomerEmployeeSelector,
   CustomerEmployeeSelectorRef,
