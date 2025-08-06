@@ -157,7 +157,7 @@ export function EmployeeMap({
       mapRef.current.removeLayer(routeLayerRef.current);
       routeLayerRef.current = null;
     }
-    routeMarkersRef.current.forEach(marker => {
+    routeMarkersRef.current.forEach((marker) => {
       mapRef.current?.removeLayer(marker);
     });
     routeMarkersRef.current = [];
@@ -183,16 +183,19 @@ export function EmployeeMap({
         if (!mapRef.current) return;
 
         // Use the exact GPS coordinates captured during tracking
-        const gpsCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+        const gpsCoords: L.LatLngExpression[] = route.map((point) => [
+          point.lat,
+          point.lng,
+        ]);
 
         // Create polyline showing the exact path taken by the employee
         routeLayerRef.current = L.polyline(gpsCoords, {
-          color: '#22c55e', // Success green to indicate actual path
+          color: "#22c55e", // Success green to indicate actual path
           weight: 4,
           opacity: 0.9,
           smoothFactor: 0.1, // Minimal smoothing to preserve exact GPS accuracy
-          lineCap: 'round',
-          lineJoin: 'round'
+          lineCap: "round",
+          lineJoin: "round",
         }).addTo(mapRef.current);
 
         console.log(`Displaying actual GPS path with ${route.length} points`);
@@ -200,10 +203,9 @@ export function EmployeeMap({
         // Fit map to show the actual route
         const routeBounds = L.latLngBounds(gpsCoords);
         mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
-
       } catch (error) {
-        console.error('Error displaying GPS route:', error);
-        setRouteError('Failed to display GPS route');
+        console.error("Error displaying GPS route:", error);
+        setRouteError("Failed to display GPS route");
       }
     };
 
@@ -228,14 +230,14 @@ export function EmployeeMap({
             color: white;
           ">S</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const startMarker = L.marker(
         [trackingSession.startLocation.lat, trackingSession.startLocation.lng],
-        { icon: startIcon }
+        { icon: startIcon },
       ).addTo(mapRef.current);
 
       startMarker.bindPopup(`
@@ -254,7 +256,7 @@ export function EmployeeMap({
     }
 
     // Add end marker if tracking is completed
-    if (trackingSession.endLocation && trackingSession.status === 'completed') {
+    if (trackingSession.endLocation && trackingSession.status === "completed") {
       const endIcon = L.divIcon({
         html: `
           <div style="
@@ -272,21 +274,21 @@ export function EmployeeMap({
             color: white;
           ">E</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const endMarker = L.marker(
         [trackingSession.endLocation.lat, trackingSession.endLocation.lng],
-        { icon: endIcon }
+        { icon: endIcon },
       ).addTo(mapRef.current);
 
       endMarker.bindPopup(`
         <div style="min-width: 150px;">
           <h4 style="margin: 0 0 8px 0; color: #ef4444;">Route End</h4>
           <p style="margin: 0 0 4px 0; font-size: 12px;">
-            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : 'In progress'}
+            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : "In progress"}
           </p>
           <p style="margin: 0 0 4px 0; font-size: 12px; color: #666;">
             ${trackingSession.endLocation.address}
@@ -315,15 +317,14 @@ export function EmployeeMap({
               opacity: 0.8;
             "></div>
           `,
-          className: 'custom-div-icon',
+          className: "custom-div-icon",
           iconSize: [10, 10],
           iconAnchor: [5, 5],
         });
 
-        const waypointMarker = L.marker(
-          [point.lat, point.lng],
-          { icon: waypointIcon }
-        ).addTo(mapRef.current);
+        const waypointMarker = L.marker([point.lat, point.lng], {
+          icon: waypointIcon,
+        }).addTo(mapRef.current);
 
         waypointMarker.bindPopup(`
           <div style="min-width: 140px;">
@@ -375,7 +376,9 @@ export function EmployeeMap({
       {/* GPS route indicator */}
       {showRoute && trackingSession && trackingSession.route.length > 0 && (
         <div className="absolute top-2 right-2 bg-success/90 backdrop-blur-sm border border-success rounded-md px-3 py-2 text-sm text-success-foreground z-10">
-          <span>📍 Showing actual GPS path ({trackingSession.route.length} points)</span>
+          <span>
+            📍 Showing actual GPS path ({trackingSession.route.length} points)
+          </span>
         </div>
       )}
 
