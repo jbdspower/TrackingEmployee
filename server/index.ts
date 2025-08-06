@@ -6,12 +6,8 @@ import {
   getEmployees,
   getEmployee,
   updateEmployeeLocation,
-  updateEmployeeStatus,
-  createEmployee,
-  updateEmployee,
-  deleteEmployee,
-  refreshEmployeeLocations,
-  clearLocationCache,
+  syncEmployees,
+  getEmployeeLocationHistory,
 } from "./routes/employees";
 import {
   getMeetings,
@@ -23,12 +19,10 @@ import {
 import {
   getTrackingSessions,
   createTrackingSession,
-  updateTrackingSession,
-  addLocationToRoute,
-  getTrackingSession,
-  deleteTrackingSession,
+  updateTrackingSessionLocation,
+  endTrackingSession,
   getMeetingHistory,
-  addMeetingToHistory,
+  addMeetingHistory,
 } from "./routes/tracking";
 import {
   getEmployeeAnalytics,
@@ -95,14 +89,10 @@ export function createServer() {
 
   // Employee routes
   app.get("/api/employees", getEmployees);
-  app.post("/api/employees", createEmployee);
   app.get("/api/employees/:id", getEmployee);
-  app.put("/api/employees/:id", updateEmployee);
-  app.delete("/api/employees/:id", deleteEmployee);
   app.put("/api/employees/:id/location", updateEmployeeLocation);
-  app.put("/api/employees/:id/status", updateEmployeeStatus);
-  app.post("/api/employees/refresh-locations", refreshEmployeeLocations);
-  app.post("/api/employees/clear-cache", clearLocationCache);
+  app.post("/api/employees/sync", syncEmployees);
+  app.get("/api/employees/:id/location-history", getEmployeeLocationHistory);
 
   // Meeting routes
   app.get("/api/meetings", getMeetings);
@@ -114,14 +104,12 @@ export function createServer() {
   // Tracking session routes
   app.get("/api/tracking-sessions", getTrackingSessions);
   app.post("/api/tracking-sessions", createTrackingSession);
-  app.get("/api/tracking-sessions/:id", getTrackingSession);
-  app.put("/api/tracking-sessions/:id", updateTrackingSession);
-  app.delete("/api/tracking-sessions/:id", deleteTrackingSession);
-  app.post("/api/tracking-sessions/:id/location", addLocationToRoute);
+  app.post("/api/tracking-sessions/:sessionId/location", updateTrackingSessionLocation);
+  app.put("/api/tracking-sessions/:sessionId/end", endTrackingSession);
 
   // Meeting history routes
   app.get("/api/meeting-history", getMeetingHistory);
-  app.post("/api/meeting-history", addMeetingToHistory);
+  app.post("/api/meeting-history", addMeetingHistory);
 
   // Analytics routes
   app.get("/api/analytics/employees", getEmployeeAnalytics);
