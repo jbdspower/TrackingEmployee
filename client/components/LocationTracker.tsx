@@ -107,7 +107,9 @@ export function LocationTracker({
   const [totalDistance, setTotalDistance] = useState<number>(() =>
     loadFromStorage("totalDistance", 0),
   );
-  const [routeQuality, setRouteQuality] = useState<'high' | 'medium' | 'low'>('high');
+  const [routeQuality, setRouteQuality] = useState<"high" | "medium" | "low">(
+    "high",
+  );
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
@@ -242,11 +244,11 @@ export function LocationTracker({
           const avgAccuracy = accuracy;
           const pointDensity = newRoute.length;
 
-          let quality: 'high' | 'medium' | 'low' = 'high';
+          let quality: "high" | "medium" | "low" = "high";
           if (avgAccuracy > 20 || pointDensity < 5) {
-            quality = 'low';
+            quality = "low";
           } else if (avgAccuracy > 10 || pointDensity < 10) {
-            quality = 'medium';
+            quality = "medium";
           }
           setRouteQuality(quality);
 
@@ -343,7 +345,7 @@ export function LocationTracker({
     setElapsedTime(0);
     setRouteCoordinates([]);
     setTotalDistance(0);
-    setRouteQuality('high');
+    setRouteQuality("high");
     setIsTracking(true);
 
     // Get initial position
@@ -546,22 +548,31 @@ export function LocationTracker({
                 <Route className="h-3 w-3" />
                 <span>Route points: {routeCoordinates.length}</span>
               </div>
-              <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs ${
-                routeQuality === 'high'
-                  ? 'bg-success/20 text-success'
-                  : routeQuality === 'medium'
-                  ? 'bg-warning/20 text-warning'
-                  : 'bg-destructive/20 text-destructive'
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${
-                  routeQuality === 'high'
-                    ? 'bg-success'
-                    : routeQuality === 'medium'
-                    ? 'bg-warning'
-                    : 'bg-destructive'
-                }`}></div>
+              <div
+                className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs ${
+                  routeQuality === "high"
+                    ? "bg-success/20 text-success"
+                    : routeQuality === "medium"
+                      ? "bg-warning/20 text-warning"
+                      : "bg-destructive/20 text-destructive"
+                }`}
+              >
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    routeQuality === "high"
+                      ? "bg-success"
+                      : routeQuality === "medium"
+                        ? "bg-warning"
+                        : "bg-destructive"
+                  }`}
+                ></div>
                 <span>
-                  {routeQuality === 'high' ? 'High' : routeQuality === 'medium' ? 'Medium' : 'Low'} Quality
+                  {routeQuality === "high"
+                    ? "High"
+                    : routeQuality === "medium"
+                      ? "Medium"
+                      : "Low"}{" "}
+                  Quality
                 </span>
               </div>
             </div>
@@ -718,13 +729,16 @@ export function LocationTracker({
         {!isTracking && (
           <div className="text-xs text-muted-foreground p-3 bg-muted/50 rounded-md space-y-2">
             <p>
-              <strong>GPS Tracking:</strong> Captures your actual path with precise coordinates. Works best outdoors with clear sky view.
+              <strong>GPS Tracking:</strong> Captures your actual path with
+              precise coordinates. Works best outdoors with clear sky view.
             </p>
             <p>
-              <strong>Route Quality:</strong> Higher GPS accuracy and more points = better route visualization.
+              <strong>Route Quality:</strong> Higher GPS accuracy and more
+              points = better route visualization.
             </p>
             <p>
-              <strong>Auto-save:</strong> Complete route will be automatically saved when you stop tracking.
+              <strong>Auto-save:</strong> Complete route will be automatically
+              saved when you stop tracking.
             </p>
           </div>
         )}
@@ -734,34 +748,45 @@ export function LocationTracker({
           <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md space-y-2">
             <p className="flex items-center">
               <Route className="h-3 w-3 mr-1" />
-              <strong>GPS route will be auto-captured when tracking stops</strong>
+              <strong>
+                GPS route will be auto-captured when tracking stops
+              </strong>
             </p>
             {routeCoordinates.length > 0 && (
               <div className="flex items-center justify-between">
                 <span>Route Quality:</span>
-                <div className={`flex items-center space-x-1 px-2 py-1 rounded-full ${
-                  routeQuality === 'high'
-                    ? 'bg-success/20 text-success'
-                    : routeQuality === 'medium'
-                    ? 'bg-warning/20 text-warning'
-                    : 'bg-destructive/20 text-destructive'
-                }`}>
-                  <div className={`w-2 h-2 rounded-full ${
-                    routeQuality === 'high'
-                      ? 'bg-success'
-                      : routeQuality === 'medium'
-                      ? 'bg-warning'
-                      : 'bg-destructive'
-                  }`}></div>
+                <div
+                  className={`flex items-center space-x-1 px-2 py-1 rounded-full ${
+                    routeQuality === "high"
+                      ? "bg-success/20 text-success"
+                      : routeQuality === "medium"
+                        ? "bg-warning/20 text-warning"
+                        : "bg-destructive/20 text-destructive"
+                  }`}
+                >
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      routeQuality === "high"
+                        ? "bg-success"
+                        : routeQuality === "medium"
+                          ? "bg-warning"
+                          : "bg-destructive"
+                    }`}
+                  ></div>
                   <span>
-                    {routeQuality === 'high' ? 'High Accuracy' : routeQuality === 'medium' ? 'Medium Accuracy' : 'Low Accuracy'}
+                    {routeQuality === "high"
+                      ? "High Accuracy"
+                      : routeQuality === "medium"
+                        ? "Medium Accuracy"
+                        : "Low Accuracy"}
                   </span>
                 </div>
               </div>
             )}
-            {routeQuality === 'low' && (
+            {routeQuality === "low" && (
               <p className="text-warning text-xs mt-1">
-                💡 For better route accuracy, ensure good GPS signal and move outdoors
+                💡 For better route accuracy, ensure good GPS signal and move
+                outdoors
               </p>
             )}
           </div>

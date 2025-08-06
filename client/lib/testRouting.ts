@@ -5,87 +5,87 @@ import { routingService } from "./routingService";
 // Test GPS route creation with sample data
 export const testGPSRouting = () => {
   console.log("🧪 Testing GPS routing functionality...");
-  
+
   // Sample GPS points (simulating employee movement)
   const sampleGPSPoints: LocationData[] = [
     {
       lat: 40.7128,
-      lng: -74.0060,
+      lng: -74.006,
       address: "Start Location",
-      timestamp: "2024-01-01T10:00:00Z"
+      timestamp: "2024-01-01T10:00:00Z",
     },
     {
-      lat: 40.7130,
+      lat: 40.713,
       lng: -74.0058,
       address: "Point 1",
-      timestamp: "2024-01-01T10:01:00Z"
+      timestamp: "2024-01-01T10:01:00Z",
     },
     {
       lat: 40.7135,
       lng: -74.0055,
-      address: "Point 2", 
-      timestamp: "2024-01-01T10:02:00Z"
+      address: "Point 2",
+      timestamp: "2024-01-01T10:02:00Z",
     },
     {
-      lat: 40.7140,
-      lng: -74.0050,
+      lat: 40.714,
+      lng: -74.005,
       address: "Point 3",
-      timestamp: "2024-01-01T10:03:00Z"
+      timestamp: "2024-01-01T10:03:00Z",
     },
     {
       lat: 40.7145,
       lng: -74.0045,
       address: "End Location",
-      timestamp: "2024-01-01T10:04:00Z"
-    }
+      timestamp: "2024-01-01T10:04:00Z",
+    },
   ];
 
   // Test GPS route creation
   const gpsRoute = routingService.createGPSRoute(sampleGPSPoints);
-  
+
   console.log("📍 GPS Route Result:", {
     source: gpsRoute.source,
     confidence: gpsRoute.confidence,
     coordinateCount: gpsRoute.coordinates.length,
     distance: `${(gpsRoute.distance / 1000).toFixed(2)} km`,
-    duration: `${Math.round(gpsRoute.duration)} seconds`
+    duration: `${Math.round(gpsRoute.duration)} seconds`,
   });
 
   // Test edge cases
   console.log("🧪 Testing edge cases...");
-  
+
   // Empty points
   const emptyRoute = routingService.createGPSRoute([]);
   console.log("Empty route:", emptyRoute);
-  
+
   // Single point
   const singlePoint = routingService.createGPSRoute([sampleGPSPoints[0]]);
   console.log("Single point route:", singlePoint);
-  
+
   return gpsRoute;
 };
 
 // Validate route display logic
 export const validateRouteDisplay = (trackingSession: any) => {
   console.log("🗺️ Validating route display logic...");
-  
+
   if (!trackingSession) {
     console.log("❌ No tracking session provided");
     return false;
   }
-  
+
   if (!trackingSession.route || trackingSession.route.length < 2) {
     console.log("❌ Insufficient route data for display");
     return false;
   }
-  
+
   console.log("✅ Route display validation passed:", {
     routePoints: trackingSession.route.length,
     hasStartLocation: !!trackingSession.startLocation,
     hasEndLocation: !!trackingSession.endLocation,
-    status: trackingSession.status
+    status: trackingSession.status,
   });
-  
+
   return true;
 };
 
