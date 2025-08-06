@@ -300,23 +300,24 @@ export function EmployeeMap({
       routeMarkersRef.current.push(endMarker);
     }
 
-    // Add waypoint markers for intermediate points (every 5th point to avoid clutter)
+    // Add waypoint markers for intermediate points (every 3rd point to show more detail)
     route.forEach((point, index) => {
-      if (index > 0 && index < route.length - 1 && index % 5 === 0) {
+      if (index > 0 && index < route.length - 1 && index % 3 === 0) {
         const waypointIcon = L.divIcon({
           html: `
             <div style="
-              background-color: #6b7280;
-              width: 8px;
-              height: 8px;
+              background-color: #22c55e;
+              width: 10px;
+              height: 10px;
               border-radius: 50%;
               border: 2px solid white;
-              box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+              box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+              opacity: 0.8;
             "></div>
           `,
           className: 'custom-div-icon',
-          iconSize: [8, 8],
-          iconAnchor: [4, 4],
+          iconSize: [10, 10],
+          iconAnchor: [5, 5],
         });
 
         const waypointMarker = L.marker(
@@ -325,10 +326,14 @@ export function EmployeeMap({
         ).addTo(mapRef.current);
 
         waypointMarker.bindPopup(`
-          <div style="min-width: 120px;">
-            <h4 style="margin: 0 0 8px 0; color: #6b7280;">Waypoint</h4>
-            <p style="margin: 0; font-size: 12px;">
-              ${new Date(point.timestamp).toLocaleTimeString()}
+          <div style="min-width: 140px;">
+            <h4 style="margin: 0 0 8px 0; color: #22c55e;">GPS Point</h4>
+            <p style="margin: 0 0 4px 0; font-size: 12px;">
+              <strong>Time:</strong> ${new Date(point.timestamp).toLocaleTimeString()}
+            </p>
+            <p style="margin: 0; font-size: 11px; color: #666;">
+              Lat: ${point.lat.toFixed(6)}<br>
+              Lng: ${point.lng.toFixed(6)}
             </p>
           </div>
         `);
