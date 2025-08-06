@@ -550,12 +550,22 @@ export default function Index() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4">
-                  <EmployeeMap
-                    employees={employees}
-                    selectedEmployee={selectedEmployee}
-                    height="500px"
-                    onEmployeeClick={setSelectedEmployee}
-                  />
+                  <ErrorBoundary fallback={
+                    <div className="h-[500px] flex items-center justify-center bg-muted/20 rounded">
+                      <div className="text-center text-muted-foreground">
+                        <div className="text-4xl mb-2">🗺️</div>
+                        <p>Map temporarily unavailable</p>
+                        <p className="text-sm">Please refresh the page</p>
+                      </div>
+                    </div>
+                  }>
+                    <EmployeeMap
+                      employees={employees}
+                      selectedEmployee={selectedEmployee}
+                      height="500px"
+                      onEmployeeClick={setSelectedEmployee}
+                    />
+                  </ErrorBoundary>
                   <div className="flex items-center justify-center space-x-4 text-sm mt-4">
                     <div className="flex items-center space-x-2">
                       <div className="h-3 w-3 rounded-full bg-success"></div>
