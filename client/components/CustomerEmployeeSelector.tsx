@@ -81,9 +81,9 @@ export const CustomerEmployeeSelector = forwardRef<
         );
 
         // Filter by company if specified
-        if (filterByCompany) {
+        if (filterByCompany && typeof filterByCompany === 'string') {
           allEmployees = allEmployees.filter((employee) =>
-            employee.customerName.toLowerCase().trim() === filterByCompany.toLowerCase().trim()
+            employee.customerName?.toLowerCase().trim() === filterByCompany.toLowerCase().trim()
           );
           console.log(`Filtered employees for company "${filterByCompany}":`, allEmployees.length);
         }
