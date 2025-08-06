@@ -148,6 +148,7 @@ export function RouteSnapshotHistory({
 
   const convertSnapshotToEmployeeFormat = (snapshot: RouteSnapshot) => {
     return {
+      _id: snapshot.employeeId,
       id: snapshot.employeeId,
       name: snapshot.employeeName,
       email: "",
@@ -413,8 +414,6 @@ export function RouteSnapshotHistory({
                   <EmployeeMap
                     employees={[convertSnapshotToEmployeeFormat(selectedSnapshot)]}
                     height="400px"
-                    trackingSession={convertSnapshotToTrackingSession(selectedSnapshot)}
-                    showRoute={true}
                   />
                 </CardContent>
               </Card>
