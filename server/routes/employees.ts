@@ -579,10 +579,98 @@ export const getEmployeeLocationHistory: RequestHandler = async (req, res) => {
   }
 };
 
+// Stub implementations for missing exports
+export const updateEmployeeStatus: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!id || !status) {
+      return res.status(400).json({ error: "Employee ID and status are required" });
+    }
+
+    // Update in-memory status
+    if (employeeStatuses[id]) {
+      employeeStatuses[id].status = status;
+      employeeStatuses[id].lastUpdate = new Date().toISOString();
+    } else {
+      employeeStatuses[id] = {
+        status,
+        location: {
+          lat: 0,
+          lng: 0,
+          address: 'Location not available',
+          timestamp: new Date().toISOString()
+        },
+        lastUpdate: new Date().toISOString()
+      };
+    }
+
+    res.json({ success: true, status, message: "Employee status updated successfully" });
+  } catch (error) {
+    console.error("Error updating employee status:", error);
+    res.status(500).json({
+      error: "Failed to update employee status",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+export const createEmployee: RequestHandler = async (req, res) => {
+  res.status(501).json({ error: "Employee creation not implemented - use external API sync instead" });
+};
+
+export const updateEmployee: RequestHandler = async (req, res) => {
+  res.status(501).json({ error: "Employee update not implemented - use external API sync instead" });
+};
+
+export const deleteEmployee: RequestHandler = async (req, res) => {
+  res.status(501).json({ error: "Employee deletion not implemented - use external API for management" });
+};
+
+export const refreshEmployeeLocations: RequestHandler = async (req, res) => {
+  try {
+    // Clear status cache to force refresh
+    Object.keys(employeeStatuses).forEach(key => {
+      employeeStatuses[key].status = 'inactive';
+    });
+
+    res.json({ success: true, message: "Employee locations refreshed" });
+  } catch (error) {
+    console.error("Error refreshing employee locations:", error);
+    res.status(500).json({
+      error: "Failed to refresh employee locations",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+export const clearLocationCache: RequestHandler = async (req, res) => {
+  try {
+    // Clear geocoding cache
+    geocodeCache.clear();
+    console.log("Location cache cleared");
+
+    res.json({ success: true, message: "Location cache cleared successfully" });
+  } catch (error) {
+    console.error("Error clearing location cache:", error);
+    res.status(500).json({
+      error: "Failed to clear location cache",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
 export default {
   getEmployees,
   getEmployee,
   updateEmployeeLocation,
   syncEmployees,
   getEmployeeLocationHistory,
+  updateEmployeeStatus,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+  refreshEmployeeLocations,
+  clearLocationCache,
 };
