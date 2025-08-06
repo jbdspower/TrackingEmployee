@@ -190,7 +190,7 @@ export function EmployeeMap({
           color: '#22c55e', // Success green to indicate actual path
           weight: 4,
           opacity: 0.9,
-          smoothFactor: 0.5, // Less smoothing to preserve accuracy
+          smoothFactor: 0.1, // Minimal smoothing to preserve exact GPS accuracy
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(mapRef.current);
