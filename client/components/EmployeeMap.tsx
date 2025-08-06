@@ -76,7 +76,10 @@ export function EmployeeMap({
     markersRef.current = {};
 
     // Create custom icons for different statuses
-    const createIcon = (status: Employee["status"], isSelected: boolean = false) => {
+    const createIcon = (
+      status: Employee["status"],
+      isSelected: boolean = false,
+    ) => {
       const color =
         status === "active"
           ? "#22c55e"
@@ -114,7 +117,7 @@ export function EmployeeMap({
 
         marker.bindPopup(`
           <div style="min-width: 200px;">
-            <h3 style="margin: 0 0 8px 0; font-weight: bold;">${employee.name || 'Unknown Employee'}</h3>
+            <h3 style="margin: 0 0 8px 0; font-weight: bold;">${employee.name || "Unknown Employee"}</h3>
             <p style="margin: 0 0 4px 0; color: #666;">
               <span style="
                 display: inline-block;
@@ -125,14 +128,16 @@ export function EmployeeMap({
                 color: white;
               ">${employee.status === "active" ? "On Route" : employee.status === "meeting" ? "In Meeting" : "Offline"}</span>
             </p>
-            <p style="margin: 0 0 4px 0; font-size: 14px;">${employee.location?.address || 'Location not available'}</p>
+            <p style="margin: 0 0 4px 0; font-size: 14px;">${employee.location?.address || "Location not available"}</p>
             ${employee.currentTask ? `<p style="margin: 0 0 4px 0; font-size: 12px; font-style: italic;">${employee.currentTask}</p>` : ""}
-            <p style="margin: 0; font-size: 12px; color: #888;">Updated ${employee.lastUpdate || employee.lastSeen || 'Never'}</p>
+            <p style="margin: 0; font-size: 12px; color: #888;">Updated ${employee.lastUpdate || employee.lastSeen || "Never"}</p>
           </div>
         `);
 
         if (onEmployeeClick) {
-          marker.on("click", () => onEmployeeClick(employee._id || employee.id));
+          marker.on("click", () =>
+            onEmployeeClick(employee._id || employee.id),
+          );
         }
 
         markersRef.current[employee._id || employee.id] = marker;
@@ -155,7 +160,7 @@ export function EmployeeMap({
       mapRef.current.removeLayer(routeLayerRef.current);
       routeLayerRef.current = null;
     }
-    routeMarkersRef.current.forEach(marker => {
+    routeMarkersRef.current.forEach((marker) => {
       mapRef.current?.removeLayer(marker);
     });
     routeMarkersRef.current = [];
@@ -171,13 +176,16 @@ export function EmployeeMap({
     const route = routeData;
 
     // Create polyline for the route
-    const routeCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
+    const routeCoords: L.LatLngExpression[] = route.map((point) => [
+      point.lat,
+      point.lng,
+    ]);
 
     routeLayerRef.current = L.polyline(routeCoords, {
-      color: '#3b82f6',
+      color: "#3b82f6",
       weight: 4,
       opacity: 0.8,
-      dashArray: '5, 10'
+      dashArray: "5, 10",
     }).addTo(mapRef.current);
 
     // Add start marker
@@ -199,14 +207,14 @@ export function EmployeeMap({
             color: white;
           ">S</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const startMarker = L.marker(
         [trackingSession.startLocation.lat, trackingSession.startLocation.lng],
-        { icon: startIcon }
+        { icon: startIcon },
       ).addTo(mapRef.current);
 
       startMarker.bindPopup(`
@@ -225,7 +233,7 @@ export function EmployeeMap({
     }
 
     // Add end marker if tracking is completed
-    if (trackingSession.endLocation && trackingSession.status === 'completed') {
+    if (trackingSession.endLocation && trackingSession.status === "completed") {
       const endIcon = L.divIcon({
         html: `
           <div style="
@@ -243,21 +251,21 @@ export function EmployeeMap({
             color: white;
           ">E</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const endMarker = L.marker(
         [trackingSession.endLocation.lat, trackingSession.endLocation.lng],
-        { icon: endIcon }
+        { icon: endIcon },
       ).addTo(mapRef.current);
 
       endMarker.bindPopup(`
         <div style="min-width: 150px;">
           <h4 style="margin: 0 0 8px 0; color: #ef4444;">Route End</h4>
           <p style="margin: 0 0 4px 0; font-size: 12px;">
-            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : 'In progress'}
+            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : "In progress"}
           </p>
           <p style="margin: 0 0 4px 0; font-size: 12px; color: #666;">
             ${trackingSession.endLocation.address}
@@ -285,15 +293,14 @@ export function EmployeeMap({
               box-shadow: 0 1px 2px rgba(0,0,0,0.3);
             "></div>
           `,
-          className: 'custom-div-icon',
+          className: "custom-div-icon",
           iconSize: [8, 8],
           iconAnchor: [4, 4],
         });
 
-        const waypointMarker = L.marker(
-          [point.lat, point.lng],
-          { icon: waypointIcon }
-        ).addTo(mapRef.current);
+        const waypointMarker = L.marker([point.lat, point.lng], {
+          icon: waypointIcon,
+        }).addTo(mapRef.current);
 
         waypointMarker.bindPopup(`
           <div style="min-width: 120px;">
@@ -319,7 +326,9 @@ export function EmployeeMap({
   useEffect(() => {
     if (!mapRef.current || !selectedEmployee) return;
 
-    const employee = employees.find((emp) => (emp._id || emp.id) === selectedEmployee);
+    const employee = employees.find(
+      (emp) => (emp._id || emp.id) === selectedEmployee,
+    );
     if (employee && employee.location.lat && employee.location.lng) {
       mapRef.current.setView(
         [employee.location.lat, employee.location.lng],
