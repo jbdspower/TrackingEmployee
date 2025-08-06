@@ -156,7 +156,9 @@ export function EmployeeMap({
         {employeesWithLocation.map((employee) => {
           if (!employee?._id && !employee?.id) return null;
 
-          const isSelected = selectedEmployee?._id === employee._id || selectedEmployee?.id === employee.id;
+          const isSelected =
+            selectedEmployee?._id === employee._id ||
+            selectedEmployee?.id === employee.id;
           const position: [number, number] = [
             employee.location!.lat,
             employee.location!.lng,

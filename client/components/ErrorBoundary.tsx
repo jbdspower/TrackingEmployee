@@ -43,8 +43,8 @@ export class ErrorBoundary extends Component<Props, State> {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              An error occurred while rendering this component. This might be due to a
-              temporary issue with the interface.
+              An error occurred while rendering this component. This might be
+              due to a temporary issue with the interface.
             </p>
             {this.state.error && (
               <details className="text-xs text-muted-foreground">
@@ -58,7 +58,9 @@ export class ErrorBoundary extends Component<Props, State> {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => this.setState({ hasError: false, error: undefined })}
+                onClick={() =>
+                  this.setState({ hasError: false, error: undefined })
+                }
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
