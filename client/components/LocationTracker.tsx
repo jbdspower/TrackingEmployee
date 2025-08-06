@@ -149,6 +149,14 @@ export function LocationTracker({
     saveToStorage('elapsedTime', elapsedTime);
   }, [elapsedTime]);
 
+  // Restore tracking session on component load
+  useEffect(() => {
+    if (isTracking && currentSession && trackingStartTime && onTrackingSessionStart) {
+      console.log("Restoring tracking session from localStorage:", currentSession);
+      onTrackingSessionStart(currentSession);
+    }
+  }, []); // Run only once on mount
+
   // Timer effect
   useEffect(() => {
     if (isTracking && trackingStartTime) {
