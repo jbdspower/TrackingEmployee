@@ -15,6 +15,7 @@ import DataManagement from "./pages/DataManagement";
 import NotFound from "./pages/NotFound";
 import {jwtDecode} from "jwt-decode";
 import { useEffect } from "react";
+import { testGPSRouting, logRoutingComparison } from "@/lib/testRouting";
 
 // Initialize HttpClient
 HttpClient.init();
