@@ -427,6 +427,9 @@ export default function Dashboard() {
       return;
     }
 
+    console.log("meeting works perfectly");
+    
+
     // Find employee name from analytics or use the selected employee info
     const employeeName =
       analytics.find((emp) => emp.employeeId === employeeId)?.employeeName ||
