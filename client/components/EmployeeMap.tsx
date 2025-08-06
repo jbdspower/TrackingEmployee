@@ -173,11 +173,9 @@ export function EmployeeMap({
                       <span className="text-gray-600">Status:</span>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          employee.status === "active" ||
-                          employee.status === "on_route"
+                          employee.status === "active"
                             ? "bg-green-100 text-green-700"
-                            : employee.status === "meeting" ||
-                                employee.status === "in_meeting"
+                            : employee.status === "meeting"
                               ? "bg-yellow-100 text-yellow-700"
                               : "bg-gray-100 text-gray-700"
                         }`}

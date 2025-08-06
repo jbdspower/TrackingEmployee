@@ -61,7 +61,10 @@ export function RouteSnapshotCapture({
     if (isOpen && !title) {
       const now = new Date();
       const dateStr = now.toLocaleDateString();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const timeStr = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
       setTitle(`${employee.name} Route - ${dateStr} ${timeStr}`);
     }
   }, [isOpen, employee.name, title]);
@@ -69,17 +72,17 @@ export function RouteSnapshotCapture({
   // Calculate map bounds from route data
   const calculateMapBounds = (): MapBounds => {
     const allPoints = [];
-    
+
     // Add tracking route points
     if (trackingSession?.route) {
       allPoints.push(...trackingSession.route);
     }
-    
+
     // Add meeting locations
-    meetings.forEach(meeting => {
+    meetings.forEach((meeting) => {
       allPoints.push(meeting.location);
     });
-    
+
     // Add current employee location
     allPoints.push(employee.location);
 
@@ -93,11 +96,11 @@ export function RouteSnapshotCapture({
       };
     }
 
-    const lats = allPoints.map(p => p.lat);
-    const lngs = allPoints.map(p => p.lng);
-    
+    const lats = allPoints.map((p) => p.lat);
+    const lngs = allPoints.map((p) => p.lng);
+
     const margin = 0.005; // Add small margin around bounds
-    
+
     return {
       north: Math.max(...lats) + margin,
       south: Math.min(...lats) - margin,
@@ -108,7 +111,7 @@ export function RouteSnapshotCapture({
 
   // Convert meetings to snapshot format
   const getMeetingSnapshots = (): MeetingSnapshot[] => {
-    return meetings.map(meeting => ({
+    return meetings.map((meeting) => ({
       id: meeting.id,
       location: meeting.location,
       clientName: meeting.clientName,
@@ -142,11 +145,16 @@ export function RouteSnapshotCapture({
         meetings: getMeetingSnapshots(),
         totalDistance: trackingSession?.totalDistance || 0,
         duration: trackingSession?.duration,
-        status: trackingSession?.status || 'active',
+        status:
+          (trackingSession?.status as "active" | "completed" | "paused") ||
+          "active",
         mapBounds: calculateMapBounds(),
       };
 
-      const response = await HttpClient.post("/api/route-snapshots", snapshotData);
+      const response = await HttpClient.post(
+        "/api/route-snapshots",
+        snapshotData,
+      );
 
       if (response.ok) {
         const snapshot = await response.json();
@@ -198,7 +206,9 @@ export function RouteSnapshotCapture({
             Create Manual Route Snapshot
           </DialogTitle>
           <DialogDescription>
-            Manually capture and save {employee.name}'s current route and meeting locations for historical reference. Note: Routes are also automatically captured when tracking stops.
+            Manually capture and save {employee.name}'s current route and
+            meeting locations for historical reference. Note: Routes are also
+            automatically captured when tracking stops.
           </DialogDescription>
         </DialogHeader>
 
@@ -243,7 +253,7 @@ export function RouteSnapshotCapture({
                   </div>
                   <div className="text-2xl font-bold">{stats.routePoints}</div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <MapPin className="h-4 w-4" />
@@ -268,7 +278,9 @@ export function RouteSnapshotCapture({
                     Duration
                   </div>
                   <div className="text-2xl font-bold">
-                    {stats.duration ? `${Math.floor(stats.duration / 60)}m` : "Active"}
+                    {stats.duration
+                      ? `${Math.floor(stats.duration / 60)}m`
+                      : "Active"}
                   </div>
                 </div>
               </div>
@@ -282,7 +294,8 @@ export function RouteSnapshotCapture({
                     <div>
                       <p className="text-sm">{employee.location.address}</p>
                       <p className="text-xs text-muted-foreground">
-                        {employee.location.lat.toFixed(6)}, {employee.location.lng.toFixed(6)}
+                        {employee.location.lat.toFixed(6)},{" "}
+                        {employee.location.lng.toFixed(6)}
                       </p>
                     </div>
                   </div>
@@ -295,15 +308,19 @@ export function RouteSnapshotCapture({
                   <div className="space-y-2">
                     <h4 className="font-medium">Tracking Session</h4>
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className={
-                        trackingSession.status === 'active' 
-                          ? 'bg-success text-success-foreground'
-                          : 'bg-muted text-muted-foreground'
-                      }>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          trackingSession.status === "active"
+                            ? "bg-success text-success-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }
+                      >
                         {trackingSession.status}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
-                        Started: {new Date(trackingSession.startTime).toLocaleString()}
+                        Started:{" "}
+                        {new Date(trackingSession.startTime).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -317,7 +334,10 @@ export function RouteSnapshotCapture({
                     <h4 className="font-medium">Meetings in Snapshot</h4>
                     <div className="space-y-2 max-h-32 overflow-y-auto">
                       {meetings.slice(0, 3).map((meeting) => (
-                        <div key={meeting.id} className="flex items-center justify-between text-sm">
+                        <div
+                          key={meeting.id}
+                          className="flex items-center justify-between text-sm"
+                        >
                           <span>{meeting.clientName || "Unknown Client"}</span>
                           <Badge variant="outline" className="text-xs">
                             {meeting.status}

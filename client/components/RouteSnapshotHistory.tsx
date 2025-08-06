@@ -49,7 +49,8 @@ export function RouteSnapshotHistory({
 }: RouteSnapshotHistoryProps) {
   const [snapshots, setSnapshots] = useState<RouteSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedSnapshot, setSelectedSnapshot] = useState<RouteSnapshot | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] =
+    useState<RouteSnapshot | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -108,7 +109,9 @@ export function RouteSnapshotHistory({
     }
 
     try {
-      const response = await HttpClient.delete(`/api/route-snapshots/${snapshotId}`);
+      const response = await HttpClient.delete(
+        `/api/route-snapshots/${snapshotId}`,
+      );
 
       if (response.ok) {
         toast({
@@ -129,10 +132,12 @@ export function RouteSnapshotHistory({
     }
   };
 
-  const filteredSnapshots = snapshots.filter((snapshot) =>
-    snapshot.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    snapshot.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (snapshot.description && snapshot.description.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredSnapshots = snapshots.filter(
+    (snapshot) =>
+      snapshot.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      snapshot.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (snapshot.description &&
+        snapshot.description.toLowerCase().includes(searchTerm.toLowerCase())),
   );
 
   const formatDuration = (seconds?: number) => {
@@ -143,11 +148,14 @@ export function RouteSnapshotHistory({
   };
 
   const formatDistance = (meters: number) => {
-    return meters > 1000 ? `${(meters / 1000).toFixed(1)} km` : `${meters.toFixed(0)} m`;
+    return meters > 1000
+      ? `${(meters / 1000).toFixed(1)} km`
+      : `${meters.toFixed(0)} m`;
   };
 
   const convertSnapshotToEmployeeFormat = (snapshot: RouteSnapshot) => {
     return {
+      _id: snapshot.employeeId,
       id: snapshot.employeeId,
       name: snapshot.employeeName,
       email: "",
@@ -218,7 +226,9 @@ export function RouteSnapshotHistory({
                 onClick={() => fetchSnapshots(currentPage)}
                 disabled={loading}
               >
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                />
               </Button>
             </div>
 
@@ -228,14 +238,18 @@ export function RouteSnapshotHistory({
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">Loading snapshots...</p>
+                    <p className="text-muted-foreground">
+                      Loading snapshots...
+                    </p>
                   </div>
                 </div>
               ) : filteredSnapshots.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium mb-2">No Snapshots Found</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      No Snapshots Found
+                    </h3>
                     <p className="text-muted-foreground">
                       {searchTerm || statusFilter !== "all"
                         ? "Try adjusting your search criteria"
@@ -247,18 +261,23 @@ export function RouteSnapshotHistory({
                 <div className="overflow-y-auto h-full">
                   <div className="grid gap-4">
                     {filteredSnapshots.map((snapshot) => (
-                      <Card key={snapshot.id} className="hover:shadow-md transition-shadow">
+                      <Card
+                        key={snapshot.id}
+                        className="hover:shadow-md transition-shadow"
+                      >
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <h3 className="font-semibold">{snapshot.title}</h3>
-                                <Badge 
+                                <h3 className="font-semibold">
+                                  {snapshot.title}
+                                </h3>
+                                <Badge
                                   variant="secondary"
                                   className={
-                                    snapshot.status === 'completed'
-                                      ? 'bg-success text-success-foreground'
-                                      : 'bg-warning text-warning-foreground'
+                                    snapshot.status === "completed"
+                                      ? "bg-success text-success-foreground"
+                                      : "bg-warning text-warning-foreground"
                                   }
                                 >
                                   {snapshot.status}
@@ -268,19 +287,30 @@ export function RouteSnapshotHistory({
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                                 <div className="flex items-center gap-2 text-sm">
                                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                                  <span>{new Date(snapshot.captureTime).toLocaleDateString()}</span>
+                                  <span>
+                                    {new Date(
+                                      snapshot.captureTime,
+                                    ).toLocaleDateString()}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 text-sm">
                                   <Route className="h-4 w-4 text-muted-foreground" />
-                                  <span>{snapshot.snapshotMetadata.routePointsCount} points</span>
+                                  <span>
+                                    {snapshot.snapshotMetadata.routePointsCount}{" "}
+                                    points
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 text-sm">
                                   <MapPin className="h-4 w-4 text-muted-foreground" />
-                                  <span>{formatDistance(snapshot.totalDistance)}</span>
+                                  <span>
+                                    {formatDistance(snapshot.totalDistance)}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 text-sm">
                                   <Clock className="h-4 w-4 text-muted-foreground" />
-                                  <span>{formatDuration(snapshot.duration)}</span>
+                                  <span>
+                                    {formatDuration(snapshot.duration)}
+                                  </span>
                                 </div>
                               </div>
 
@@ -307,7 +337,9 @@ export function RouteSnapshotHistory({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleDeleteSnapshot(snapshot.id)}
+                                onClick={() =>
+                                  handleDeleteSnapshot(snapshot.id)
+                                }
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -359,15 +391,16 @@ export function RouteSnapshotHistory({
 
       {/* Snapshot Detail Modal */}
       {selectedSnapshot && (
-        <Dialog 
-          open={!!selectedSnapshot} 
+        <Dialog
+          open={!!selectedSnapshot}
           onOpenChange={() => setSelectedSnapshot(null)}
         >
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{selectedSnapshot.title}</DialogTitle>
               <DialogDescription>
-                Route snapshot captured on {new Date(selectedSnapshot.captureTime).toLocaleString()}
+                Route snapshot captured on{" "}
+                {new Date(selectedSnapshot.captureTime).toLocaleString()}
               </DialogDescription>
             </DialogHeader>
 
@@ -377,29 +410,45 @@ export function RouteSnapshotHistory({
                 <Card>
                   <CardContent className="p-4 text-center">
                     <Route className="h-8 w-8 mx-auto mb-2 text-primary" />
-                    <div className="text-2xl font-bold">{selectedSnapshot.snapshotMetadata.routePointsCount}</div>
-                    <div className="text-sm text-muted-foreground">Route Points</div>
+                    <div className="text-2xl font-bold">
+                      {selectedSnapshot.snapshotMetadata.routePointsCount}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Route Points
+                    </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4 text-center">
                     <MapPin className="h-8 w-8 mx-auto mb-2 text-primary" />
-                    <div className="text-2xl font-bold">{formatDistance(selectedSnapshot.totalDistance)}</div>
-                    <div className="text-sm text-muted-foreground">Distance</div>
+                    <div className="text-2xl font-bold">
+                      {formatDistance(selectedSnapshot.totalDistance)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Distance
+                    </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4 text-center">
                     <Calendar className="h-8 w-8 mx-auto mb-2 text-primary" />
-                    <div className="text-2xl font-bold">{selectedSnapshot.meetings.length}</div>
-                    <div className="text-sm text-muted-foreground">Meetings</div>
+                    <div className="text-2xl font-bold">
+                      {selectedSnapshot.meetings.length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Meetings
+                    </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4 text-center">
                     <Clock className="h-8 w-8 mx-auto mb-2 text-primary" />
-                    <div className="text-2xl font-bold">{formatDuration(selectedSnapshot.duration)}</div>
-                    <div className="text-sm text-muted-foreground">Duration</div>
+                    <div className="text-2xl font-bold">
+                      {formatDuration(selectedSnapshot.duration)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Duration
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -411,10 +460,10 @@ export function RouteSnapshotHistory({
                 </CardHeader>
                 <CardContent>
                   <EmployeeMap
-                    employees={[convertSnapshotToEmployeeFormat(selectedSnapshot)]}
+                    employees={[
+                      convertSnapshotToEmployeeFormat(selectedSnapshot),
+                    ]}
                     height="400px"
-                    trackingSession={convertSnapshotToTrackingSession(selectedSnapshot)}
-                    showRoute={true}
                   />
                 </CardContent>
               </Card>
@@ -440,13 +489,21 @@ export function RouteSnapshotHistory({
                   <CardContent>
                     <div className="space-y-3">
                       {selectedSnapshot.meetings.map((meeting) => (
-                        <div key={meeting.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div
+                          key={meeting.id}
+                          className="flex items-center justify-between p-3 border rounded-lg"
+                        >
                           <div>
-                            <div className="font-medium">{meeting.clientName || "Unknown Client"}</div>
-                            <div className="text-sm text-muted-foreground">{meeting.location.address}</div>
+                            <div className="font-medium">
+                              {meeting.clientName || "Unknown Client"}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {meeting.location.address}
+                            </div>
                             <div className="text-sm text-muted-foreground">
                               {new Date(meeting.startTime).toLocaleString()}
-                              {meeting.endTime && ` - ${new Date(meeting.endTime).toLocaleString()}`}
+                              {meeting.endTime &&
+                                ` - ${new Date(meeting.endTime).toLocaleString()}`}
                             </div>
                           </div>
                           <Badge variant="outline">{meeting.status}</Badge>
