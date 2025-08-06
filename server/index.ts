@@ -6,6 +6,12 @@ import {
   getEmployees,
   getEmployee,
   updateEmployeeLocation,
+  updateEmployeeStatus,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+  refreshEmployeeLocations,
+  clearLocationCache,
   syncEmployees,
   getEmployeeLocationHistory,
 } from "./routes/employees";
