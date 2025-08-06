@@ -198,7 +198,14 @@ export default function Dashboard() {
       }
     } else {
       // If not super admin, force filter by logged-in user's ID
-      queryParams.append("employeeId", user._id);
+      const userId = user._id || user.id;
+      if (userId) {
+        queryParams.append("employeeId", userId);
+      } else {
+        console.error("User ID not found in localStorage");
+        setLoading(false);
+        return;
+      }
     }
 
     queryParams.append("dateRange", filters.dateRange);
