@@ -80,42 +80,46 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
 async function getAddressFromCoordinates(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
 
+  const fallbackAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   const cached = geocodeCache.get(cacheKey);
-  
+
   // Return cached address if available and not expired
   if (cached && cached.expires > Date.now()) {
     return cached.address;
   }
 
-  try {
-    const response = await axios.get(NOMINATIM_URL, {
-      params: {
-        format: 'json',
-        lat,
-        lon: lng,
-        zoom: 18,
-        addressdetails: 1
-      },
-      headers: {
-        'User-Agent': 'YourAppName/1.0 (your@email.com)' // Required by Nominatim
-      },
-      timeout: 5000
-    });
+  // Return fallback immediately and try geocoding in background
+  setTimeout(async () => {
+    try {
+      const response = await axios.get(NOMINATIM_URL, {
+        params: {
+          format: 'json',
+          lat,
+          lon: lng,
+          zoom: 18,
+          addressdetails: 1
+        },
+        headers: {
+          'User-Agent': 'YourAppName/1.0 (your@email.com)'
+        },
+        timeout: 3000 // Reduced timeout
+      });
 
-    const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    
-    // Cache the result
-    geocodeCache.set(cacheKey, {
-      address,
-      expires: Date.now() + GEOCACHE_TTL
-    });
+      const address = response.data?.display_name || fallbackAddress;
 
-    return address;
-  } catch (error) {
-    console.error('Reverse geocoding failed:', error);
-    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-  }
+      // Cache the result for future use
+      geocodeCache.set(cacheKey, {
+        address,
+        expires: Date.now() + GEOCACHE_TTL
+      });
+    } catch (error) {
+      // Silent background failure - don't block the main flow
+      console.warn('Background geocoding failed for', lat, lng);
+    }
+  }, 0);
+
+  return fallbackAddress;
 }
 
 async function getEmployeeLatestLocation(employeeId: string) {
