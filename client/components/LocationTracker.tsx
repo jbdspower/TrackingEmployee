@@ -120,6 +120,35 @@ export function LocationTracker({
     [],
   );
 
+  // Persist state changes to localStorage
+  useEffect(() => {
+    saveToStorage('isTracking', isTracking);
+  }, [isTracking]);
+
+  useEffect(() => {
+    saveToStorage('currentSession', currentSession);
+  }, [currentSession]);
+
+  useEffect(() => {
+    saveToStorage('trackingStartTime', trackingStartTime);
+  }, [trackingStartTime]);
+
+  useEffect(() => {
+    saveToStorage('trackingEndTime', trackingEndTime);
+  }, [trackingEndTime]);
+
+  useEffect(() => {
+    saveToStorage('routeCoordinates', routeCoordinates);
+  }, [routeCoordinates]);
+
+  useEffect(() => {
+    saveToStorage('totalDistance', totalDistance);
+  }, [totalDistance]);
+
+  useEffect(() => {
+    saveToStorage('elapsedTime', elapsedTime);
+  }, [elapsedTime]);
+
   // Timer effect
   useEffect(() => {
     if (isTracking && trackingStartTime) {
