@@ -160,10 +160,13 @@ export function EmployeeMap({
     });
     routeMarkersRef.current = [];
 
+    // Check if we have a valid tracking session first
+    if (!showRoute || !trackingSession) return;
+
     // Get route data with fallback to locations for backward compatibility
     const routeData = trackingSession.route || trackingSession.locations || [];
 
-    if (!showRoute || !trackingSession || !routeData.length) return;
+    if (!routeData.length) return;
 
     const route = routeData;
 
