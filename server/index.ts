@@ -25,9 +25,14 @@ import {
 import {
   getTrackingSessions,
   createTrackingSession,
+  updateTrackingSession,
+  addLocationToRoute,
+  getTrackingSession,
+  deleteTrackingSession,
   updateTrackingSessionLocation,
   endTrackingSession,
   getMeetingHistory,
+  addMeetingToHistory,
   addMeetingHistory,
 } from "./routes/tracking";
 import {
