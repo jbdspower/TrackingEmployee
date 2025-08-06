@@ -32,6 +32,7 @@ export interface ExternalUser {
 
 // Internal Employee structure (mapped from external API)
 export interface Employee {
+  _id: string;
   id: string;
   name: string;
   email: string;
@@ -39,12 +40,15 @@ export interface Employee {
   status: "active" | "inactive" | "meeting";
   location: LocationData;
   lastUpdate: string;
+  lastSeen?: string;
   currentTask?: string;
   deviceId?: string;
   designation?: string;
   department?: string;
   companyName?: string;
   reportTo?: string;
+  trackingSessionId?: string;
+  isActive?: boolean;
 }
 
 export interface LocationUpdate {
@@ -63,12 +67,15 @@ export interface TrackingSession {
   employeeId: string;
   startTime: string;
   endTime?: string;
-  startLocation: LocationData;
+  startLocation?: LocationData;
   endLocation?: LocationData;
   route: LocationData[]; // Array of coordinates for route
+  locations?: LocationData[]; // Backward compatibility
   totalDistance: number; // in meters
   duration?: number; // in seconds
-  status: "active" | "completed";
+  status: "active" | "completed" | "paused";
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // Individual customer contact details
@@ -98,13 +105,28 @@ export interface MeetingDetails {
 export interface MeetingLog {
   id: string;
   employeeId: string;
-  location: LocationData;
+  location?: LocationData;
+  startLocation?: LocationData;
+  endLocation?: LocationData;
   startTime: string;
   endTime?: string;
+  duration?: number;
   clientName?: string;
+  customerName?: string;
+  customerEmployeeName?: string;
+  customerEmail?: string;
+  customerMobile?: string;
+  customerDesignation?: string;
+  customerDepartment?: string;
+  customers?: any[];
   notes?: string;
-  status: "started" | "in-progress" | "completed";
+  discussion?: string;
+  status: "started" | "in-progress" | "completed" | "active";
   trackingSessionId?: string;
+  routeScreenshot?: {
+    thumbnail: string;
+    fullImage: string;
+  };
   leadId?: string; // Associated lead ID
   leadInfo?: {
     id: string;
@@ -112,6 +134,8 @@ export interface MeetingLog {
     contactName: string;
   };
   meetingDetails?: MeetingDetails;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // API Response types
@@ -132,14 +156,31 @@ export interface MeetingLogsResponse {
 
 export interface CreateMeetingRequest {
   employeeId: string;
-  location: {
+  location?: {
     lat: number;
     lng: number;
     address: string;
   };
+  startLocation?: {
+    lat: number;
+    lng: number;
+    address: string;
+    timestamp?: string;
+  };
   clientName?: string;
+  customerName?: string;
   notes?: string;
   trackingSessionId?: string;
+  customers?: any[];
+  customerEmployeeName?: string;
+  customerEmail?: string;
+  customerMobile?: string;
+  customerDesignation?: string;
+  customerDepartment?: string;
+  discussion?: string;
+  startTime?: string;
+  leadId?: string;
+  leadInfo?: any;
 }
 
 // New interfaces for enhanced functionality

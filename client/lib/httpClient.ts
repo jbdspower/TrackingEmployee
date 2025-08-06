@@ -256,6 +256,25 @@ export class HttpClient {
   ): Promise<Response> {
     this.ensureInitialized();
 
+    // Validate endpoint before URL construction
+    if (!endpoint || typeof endpoint !== 'string') {
+      console.error("HttpClient: Invalid endpoint provided:", {
+        endpoint: endpoint,
+        type: typeof endpoint,
+        options: options
+      });
+      throw new Error(`Invalid endpoint provided: ${endpoint} (type: ${typeof endpoint})`);
+    }
+
+    // Check if endpoint contains undefined placeholders
+    if (endpoint.includes('/undefined') || endpoint.includes('undefined/')) {
+      console.error("HttpClient: Endpoint contains undefined parameters:", {
+        endpoint,
+        baseUrl: this.baseUrl,
+      });
+      throw new Error(`Invalid endpoint contains undefined parameters: ${endpoint}`);
+    }
+
     const url = endpoint.startsWith("http")
       ? endpoint
       : `${this.baseUrl}${endpoint}`;
@@ -274,7 +293,7 @@ export class HttpClient {
       `HttpClient: Request to ${url} (baseUrl: ${this.baseUrl}, endpoint: ${endpoint})`,
     );
 
-    // Validate URL
+    // Validate final URL
     if (!url || url === "undefined" || url.includes("undefined")) {
       console.error("HttpClient: Invalid URL constructed:", {
         url,

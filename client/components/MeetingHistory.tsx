@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { HttpClient } from "@/lib/httpClient";
 import { MeetingDetails } from "@shared/api";
+import { RouteImageViewer } from "@/components/RouteImageViewer";
+import { getRouteScreenshot } from "@/lib/routeScreenshot";
 import {
   Calendar,
   Clock,
@@ -26,6 +28,7 @@ import {
   FileText,
   Filter,
   Target,
+  MapPin,
 } from "lucide-react";
 
 interface MeetingHistoryEntry {
@@ -296,52 +299,77 @@ export function MeetingHistory({
                               </p>
                             </div>
 
-                            <div className="flex flex-wrap gap-2">
-                              {/* Show contact badges from multiple customers */}
-                              {meeting.meetingDetails.customers && meeting.meetingDetails.customers.length > 0 ? (
-                                meeting.meetingDetails.customers.map((customer, index) => (
-                                  <div key={index} className="flex flex-wrap gap-1">
-                                    {customer.customerEmail && (
+                            <div className="flex items-center justify-between">
+                              <div className="flex flex-wrap gap-2">
+                                {/* Show contact badges from multiple customers */}
+                                {meeting.meetingDetails.customers && meeting.meetingDetails.customers.length > 0 ? (
+                                  meeting.meetingDetails.customers.map((customer, index) => (
+                                    <div key={index} className="flex flex-wrap gap-1">
+                                      {customer.customerEmail && (
+                                        <Badge variant="outline" className="text-xs">
+                                          <Mail className="h-3 w-3 mr-1" />
+                                          {customer.customerEmail}
+                                        </Badge>
+                                      )}
+                                      {customer.customerMobile && (
+                                        <Badge variant="outline" className="text-xs">
+                                          <Phone className="h-3 w-3 mr-1" />
+                                          {customer.customerMobile}
+                                        </Badge>
+                                      )}
+                                      {customer.customerDepartment && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          {customer.customerDepartment}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  ))
+                                ) : (
+                                  /* Fallback to legacy fields */
+                                  <>
+                                    {meeting.meetingDetails.customerEmail && (
                                       <Badge variant="outline" className="text-xs">
                                         <Mail className="h-3 w-3 mr-1" />
-                                        {customer.customerEmail}
+                                        {meeting.meetingDetails.customerEmail}
                                       </Badge>
                                     )}
-                                    {customer.customerMobile && (
+                                    {meeting.meetingDetails.customerMobile && (
                                       <Badge variant="outline" className="text-xs">
                                         <Phone className="h-3 w-3 mr-1" />
-                                        {customer.customerMobile}
+                                        {meeting.meetingDetails.customerMobile}
                                       </Badge>
                                     )}
-                                    {customer.customerDepartment && (
+                                    {meeting.meetingDetails.customerDepartment && (
                                       <Badge variant="secondary" className="text-xs">
-                                        {customer.customerDepartment}
+                                        {meeting.meetingDetails.customerDepartment}
                                       </Badge>
                                     )}
-                                  </div>
-                                ))
-                              ) : (
-                                /* Fallback to legacy fields */
-                                <>
-                                  {meeting.meetingDetails.customerEmail && (
-                                    <Badge variant="outline" className="text-xs">
-                                      <Mail className="h-3 w-3 mr-1" />
-                                      {meeting.meetingDetails.customerEmail}
-                                    </Badge>
-                                  )}
-                                  {meeting.meetingDetails.customerMobile && (
-                                    <Badge variant="outline" className="text-xs">
-                                      <Phone className="h-3 w-3 mr-1" />
-                                      {meeting.meetingDetails.customerMobile}
-                                    </Badge>
-                                  )}
-                                  {meeting.meetingDetails.customerDepartment && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      {meeting.meetingDetails.customerDepartment}
-                                    </Badge>
-                                  )}
-                                </>
-                              )}
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Route Image */}
+                              <div className="flex items-center space-x-2">
+                                <span className="text-xs text-muted-foreground">Route:</span>
+                                {(() => {
+                                  // Try to get route screenshot if there's a tracking session ID
+                                  if (meeting.sessionId) {
+                                    const routeData = getRouteScreenshot(meeting.employeeId, meeting.sessionId);
+                                    return (
+                                      <RouteImageViewer
+                                        routeData={routeData}
+                                        employeeName={meeting.meetingDetails.customerName}
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <div className="w-8 h-8 bg-muted rounded border flex items-center justify-center" title="No route data available">
+                                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                  );
+                                })()
+                                }
+                              </div>
                             </div>
                           </div>
 

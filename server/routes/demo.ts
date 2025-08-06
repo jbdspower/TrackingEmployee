@@ -7,3 +7,7 @@ export const handleDemo: RequestHandler = (req, res) => {
   };
   res.status(200).json(response);
 };
+
+export default {
+  handleDemo,
+};

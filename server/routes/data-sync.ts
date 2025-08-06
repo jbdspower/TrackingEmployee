@@ -14,17 +14,15 @@ export const syncAllData: RequestHandler = async (req, res) => {
     
     console.log(`Found ${mongoMeetings.length} meetings and ${mongoHistory.length} history entries in MongoDB`);
     
-    // Get in-memory data for comparison
-    const { meetings: inMemoryMeetings } = await import("./meetings");
-    
-    console.log(`Found ${inMemoryMeetings.length} meetings in memory`);
+    // MongoDB is the primary data source
+    console.log("Data sync using MongoDB only");
     
     // Synchronize missing data
     let syncedMeetings = 0;
     let syncedHistory = 0;
     
-    // Sync in-memory meetings to MongoDB
-    for (const meeting of inMemoryMeetings) {
+    // No in-memory meetings to sync anymore
+    for (const meeting of []) {
       if (employeeId && meeting.employeeId !== employeeId) continue;
       
       const exists = await Meeting.findOne({ 
@@ -117,11 +115,8 @@ export const getDataStatus: RequestHandler = async (req, res) => {
     const mongoEmployeesCount = await Employee.countDocuments();
     const mongoTrackingCount = await TrackingSession.countDocuments(employeeId ? { employeeId } : {});
     
-    // In-memory counts
-    const { meetings: inMemoryMeetings } = await import("./meetings");
-    const filteredInMemoryMeetings = employeeId 
-      ? inMemoryMeetings.filter(m => m.employeeId === employeeId)
-      : inMemoryMeetings;
+    // Legacy in-memory counts (no longer used)
+    const filteredInMemoryMeetings: any[] = [];
     
     // Sample data for debugging
     const sampleMongoMeeting = await Meeting.findOne(employeeId ? { employeeId } : {}).lean();
@@ -163,9 +158,14 @@ export const getDataStatus: RequestHandler = async (req, res) => {
     
   } catch (error) {
     console.error("Error getting data status:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to get data status",
-      details: error.message 
+      details: error.message
     });
   }
+};
+
+export default {
+  syncAllData,
+  getDataStatus,
 };

@@ -15,10 +15,9 @@ export const debugEmployeeData: RequestHandler = async (req, res) => {
     const mongoHistory = await MeetingHistory.find({ employeeId }).lean();
     console.log(`Found ${mongoHistory.length} history entries in MongoDB for employee ${employeeId}`);
     
-    // Get in-memory meetings
-    const { meetings: inMemoryMeetings } = await import("./meetings");
-    const filteredInMemory = inMemoryMeetings.filter(m => m.employeeId === employeeId);
-    console.log(`Found ${filteredInMemory.length} meetings in memory for employee ${employeeId}`);
+    // Legacy in-memory meetings (no longer used)
+    const filteredInMemory: any[] = [];
+    console.log("In-memory storage no longer used");
     
     const debugData = {
       employeeId,
@@ -88,4 +87,8 @@ export const debugEmployeeData: RequestHandler = async (req, res) => {
     console.error("Error in debug endpoint:", error);
     res.status(500).json({ error: "Debug failed", details: error.message });
   }
+};
+
+export default {
+  debugEmployeeData,
 };

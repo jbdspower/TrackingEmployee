@@ -248,7 +248,7 @@ export default function Index() {
               </Button>
               <Button size="sm" asChild disabled={employees.length === 0}>
                 <Link
-                  to={`/tracking/${selectedEmployee || (employees.length > 0 ? employees[0].id : "1")}`}
+                  to={`/tracking/${selectedEmployee || (employees.length > 0 ? employees[0]._id || employees[0].id : "1")}`}
                 >
                   <Navigation className="h-4 w-4 mr-2" />
                   {selectedEmployee ? "View Selected" : "Live View"}
@@ -363,7 +363,7 @@ export default function Index() {
                           const firstEmployee = employees[0];
                           if (firstEmployee) {
                             window.open(
-                              `/tracking/${firstEmployee.id}`,
+                              `/tracking/${firstEmployee._id || firstEmployee.id}`,
                               "_blank",
                             );
                           }
@@ -424,13 +424,13 @@ export default function Index() {
                   <div className="space-y-0">
                     {employees.map((employee) => (
                       <div
-                        key={employee.id}
+                        key={employee._id || employee.id}
                         className={`p-4 border-b last:border-b-0 cursor-pointer transition-colors hover:bg-muted/50 ${
-                          selectedEmployee === employee.id
+                          selectedEmployee === (employee._id || employee.id)
                             ? "bg-primary/5 border-l-4 border-l-primary"
                             : ""
                         }`}
-                        onClick={() => setSelectedEmployee(employee.id)}
+                        onClick={() => setSelectedEmployee(employee._id || employee.id)}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -499,7 +499,7 @@ export default function Index() {
                               title="Track employee"
                             >
                               <Link
-                                to={`/tracking/${employee.id}`}
+                                to={`/tracking/${employee._id || employee.id}`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <Navigation className="h-3 w-3" />
@@ -584,7 +584,7 @@ export default function Index() {
                     .slice(0, 3)
                     .map((employee, index) => (
                       <div
-                        key={employee.id}
+                        key={`activity-${employee._id || employee.id}-${index}`}
                         className="flex items-start space-x-3"
                       >
                         <div

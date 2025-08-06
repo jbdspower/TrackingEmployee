@@ -857,7 +857,6 @@ export default function Tracking() {
               employeeId={employee.id}
               employeeName={employee.name}
               onLocationUpdate={handleLocationUpdate}
-              trackingEnabled={employee.status === "active"}
               onTrackingSessionStart={handleTrackingSessionStart}
               onTrackingSessionEnd={handleTrackingSessionEnd}
             />
