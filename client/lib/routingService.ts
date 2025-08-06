@@ -4,6 +4,8 @@ interface RouteResponse {
   coordinates: [number, number][];
   distance: number;
   duration: number;
+  source?: 'gps' | 'road-api' | 'straight-line'; // Track data source
+  confidence?: 'high' | 'medium' | 'low'; // Confidence in route accuracy
 }
 
 class RoutingService {
@@ -60,7 +62,9 @@ class RoutingService {
         return {
           coordinates,
           distance: route.properties.segments[0].distance || 0,
-          duration: route.properties.segments[0].duration || 0
+          duration: route.properties.segments[0].duration || 0,
+          source: 'road-api',
+          confidence: 'high'
         };
       }
     } catch (error) {
@@ -89,7 +93,9 @@ class RoutingService {
         return {
           coordinates,
           distance: route.distance || 0,
-          duration: route.duration || 0
+          duration: route.duration || 0,
+          source: 'road-api',
+          confidence: 'high'
         };
       }
     } catch (error) {
@@ -101,7 +107,7 @@ class RoutingService {
   private createStraightLineRoute(start: LocationData, end: LocationData): RouteResponse {
     // Fallback to straight line if routing services fail
     const coordinates: [number, number][] = [[start.lat, start.lng], [end.lat, end.lng]];
-    
+
     // Simple distance calculation (Haversine)
     const R = 6371e3; // Earth's radius in meters
     const φ1 = (start.lat * Math.PI) / 180;
@@ -114,10 +120,13 @@ class RoutingService {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
 
+    console.warn('Using straight-line route - routing APIs failed');
     return {
       coordinates,
       distance,
-      duration: distance / 13.89 // Assume ~50 km/h average speed
+      duration: distance / 13.89, // Assume ~50 km/h average speed
+      source: 'straight-line',
+      confidence: 'low'
     };
   }
 
@@ -130,15 +139,16 @@ class RoutingService {
       return cached;
     }
 
-    // Try routing services in order of preference
+    // Try routing services in order of preference with better error handling
     let route = await this.getRouteFromOSRM(start, end);
-    
+
     if (!route) {
       route = await this.getRouteFromORS(start, end);
     }
-    
+
     if (!route) {
-      console.warn('All routing services failed, falling back to straight line');
+      console.warn('⚠️ All road routing services failed - using straight line fallback');
+      console.warn('This may not represent the actual route taken by the employee');
       route = this.createStraightLineRoute(start, end);
     }
 
@@ -154,10 +164,68 @@ class RoutingService {
     return route;
   }
 
+  /**
+   * Get GPS-based route from actual tracking points
+   * This should be preferred over road routing when actual GPS data is available
+   */
+  createGPSRoute(gpsPoints: LocationData[]): RouteResponse {
+    if (gpsPoints.length < 2) {
+      return {
+        coordinates: [],
+        distance: 0,
+        duration: 0,
+        source: 'gps',
+        confidence: 'high'
+      };
+    }
+
+    const coordinates: [number, number][] = gpsPoints.map(point => [point.lat, point.lng]);
+
+    // Calculate total distance from GPS points
+    let totalDistance = 0;
+    for (let i = 1; i < gpsPoints.length; i++) {
+      const prev = gpsPoints[i - 1];
+      const curr = gpsPoints[i];
+
+      const R = 6371e3; // Earth's radius in meters
+      const φ1 = (prev.lat * Math.PI) / 180;
+      const φ2 = (curr.lat * Math.PI) / 180;
+      const Δφ = ((curr.lat - prev.lat) * Math.PI) / 180;
+      const Δλ = ((prev.lng - curr.lng) * Math.PI) / 180;
+
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      totalDistance += R * c;
+    }
+
+    // Calculate duration based on timestamps if available
+    let duration = 0;
+    if (gpsPoints[0].timestamp && gpsPoints[gpsPoints.length - 1].timestamp) {
+      const startTime = new Date(gpsPoints[0].timestamp).getTime();
+      const endTime = new Date(gpsPoints[gpsPoints.length - 1].timestamp).getTime();
+      duration = (endTime - startTime) / 1000; // Convert to seconds
+    } else {
+      // Fallback: estimate duration based on distance
+      duration = totalDistance / 13.89; // Assume ~50 km/h average speed
+    }
+
+    console.log(`📍 Using GPS route with ${gpsPoints.length} points, distance: ${(totalDistance/1000).toFixed(2)}km`);
+    return {
+      coordinates,
+      distance: totalDistance,
+      duration,
+      source: 'gps',
+      confidence: 'high'
+    };
+  }
+
   async getRouteForPoints(points: LocationData[]): Promise<{
     coordinates: [number, number][];
     totalDistance: number;
     segments: RouteResponse[];
+    source?: string;
+    confidence?: string;
   }> {
     if (points.length < 2) {
       return { coordinates: [], totalDistance: 0, segments: [] };
@@ -186,7 +254,9 @@ class RoutingService {
     return {
       coordinates: allCoordinates,
       totalDistance,
-      segments
+      segments,
+      source: segments.length > 0 ? segments[0].source : 'unknown',
+      confidence: segments.length > 0 ? segments[0].confidence : 'unknown'
     };
   }
 
