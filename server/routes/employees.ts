@@ -124,13 +124,15 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
 
 async function getEmployeeLatestLocation(employeeId: string) {
   try {
-    // First try Employee model
-    const employee = await EmployeeModel.findOne({ id: employeeId }).lean();
+    // First try Employee model with timeout
+    const employee = await Promise.race([
+      EmployeeModel.findOne({ id: employeeId }).lean(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('db timeout')), 500))
+    ]) as any;
+
     if (employee?.location?.lat && employee.location.lng !== 0) {
-      const address = employee.location.address?.includes(',') 
-        ? await getAddressFromCoordinates(employee.location.lat, employee.location.lng)
-        : employee.location.address || await getAddressFromCoordinates(employee.location.lat, employee.location.lng);
-      
+      const address = employee.location.address || `${employee.location.lat.toFixed(6)}, ${employee.location.lng.toFixed(6)}`;
+
       return {
         lat: employee.location.lat,
         lng: employee.location.lng,
@@ -140,29 +142,30 @@ async function getEmployeeLatestLocation(employeeId: string) {
       };
     }
 
-    // Fallback to tracking sessions
-    const latestSession = await TrackingSession.findOne({
-      employeeId,
-      $or: [{ status: 'active' }, { status: 'completed' }]
-    }).sort({ startTime: -1 }).lean();
+    // Quick fallback to tracking sessions
+    const latestSession = await Promise.race([
+      TrackingSession.findOne({
+        employeeId,
+        $or: [{ status: 'active' }, { status: 'completed' }]
+      }).sort({ startTime: -1 }).lean(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('db timeout')), 500))
+    ]) as any;
 
     if (latestSession) {
-      const latestLocation = latestSession.route?.length 
+      const latestLocation = latestSession.route?.length
         ? latestSession.route[latestSession.route.length - 1]
         : latestSession.startLocation;
 
-      if (latestLocation.lat !== 0 && latestLocation.lng !== 0) {
-        const address = latestLocation.address?.includes(',')
-          ? await getAddressFromCoordinates(latestLocation.lat, latestLocation.lng)
-          : latestLocation.address || await getAddressFromCoordinates(latestLocation.lat, latestLocation.lng);
-        
+      if (latestLocation?.lat !== 0 && latestLocation?.lng !== 0) {
+        const address = latestLocation.address || `${latestLocation.lat.toFixed(6)}, ${latestLocation.lng.toFixed(6)}`;
+
         return {
           lat: latestLocation.lat,
           lng: latestLocation.lng,
           address,
           timestamp: latestLocation.timestamp,
-          lastUpdate: latestSession.status === 'active' 
-            ? "Currently tracking" 
+          lastUpdate: latestSession.status === 'active'
+            ? "Currently tracking"
             : "From last session"
         };
       }
@@ -170,7 +173,7 @@ async function getEmployeeLatestLocation(employeeId: string) {
 
     return null;
   } catch (error) {
-    console.error(`Location lookup failed for ${employeeId}:`, error);
+    console.warn(`Location lookup failed for ${employeeId}:`, error.message);
     return null;
   }
 }
