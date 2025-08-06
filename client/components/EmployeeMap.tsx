@@ -169,76 +169,45 @@ export function EmployeeMap({
 
     const route = trackingSession.route;
 
-    // Use road-based routing for better route visualization
-    const generateRoadRoute = async () => {
+    // Show exact GPS path (the actual route the employee took)
+    const displayGPSRoute = () => {
       if (route.length < 2) {
-        setRouteError("Not enough points for route generation");
+        setRouteError("Not enough points for route visualization");
         return;
       }
 
-      setIsLoadingRoute(true);
+      setIsLoadingRoute(false);
       setRouteError(null);
 
       try {
-        // Get road-based route between all points
-        const routeData = await routingService.getRouteForPoints(route);
-
         if (!mapRef.current) return;
 
-        // Create polyline with road-based coordinates
-        const routeCoords: L.LatLngExpression[] = routeData.coordinates;
+        // Use the exact GPS coordinates captured during tracking
+        const gpsCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
 
-        if (routeCoords.length > 0) {
-          routeLayerRef.current = L.polyline(routeCoords, {
-            color: '#3b82f6',
-            weight: 4,
-            opacity: 0.8,
-            smoothFactor: 1.0
-          }).addTo(mapRef.current);
+        // Create polyline showing the exact path taken by the employee
+        routeLayerRef.current = L.polyline(gpsCoords, {
+          color: '#22c55e', // Success green to indicate actual path
+          weight: 4,
+          opacity: 0.9,
+          smoothFactor: 0.5, // Less smoothing to preserve accuracy
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(mapRef.current);
 
-          // Update tracking session with accurate distance
-          if (trackingSession && routeData.totalDistance > 0) {
-            console.log(`Route updated: ${(routeData.totalDistance / 1000).toFixed(2)} km (was ${((trackingSession.totalDistance || 0) / 1000).toFixed(2)} km)`);
-          }
+        console.log(`Displaying actual GPS path with ${route.length} points`);
 
-          // Fit map to show the route
-          const routeBounds = L.latLngBounds(routeCoords);
-          mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
-        } else {
-          // Fallback to straight line if no road route available
-          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
-          routeLayerRef.current = L.polyline(fallbackCoords, {
-            color: '#f59e0b',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '10, 5'
-          }).addTo(mapRef.current);
-          setRouteError("Using direct path - road routing unavailable");
+        // Fit map to show the actual route
+        const routeBounds = L.latLngBounds(gpsCoords);
+        mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
 
-          // Fit map to show the fallback route
-          const fallbackBounds = L.latLngBounds(fallbackCoords);
-          mapRef.current.fitBounds(fallbackBounds, { padding: [30, 30] });
-        }
       } catch (error) {
-        console.error('Error generating road route:', error);
-        setRouteError('Failed to generate road route');
-
-        // Fallback to straight line on error
-        if (mapRef.current) {
-          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
-          routeLayerRef.current = L.polyline(fallbackCoords, {
-            color: '#f59e0b',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '10, 5'
-          }).addTo(mapRef.current);
-        }
-      } finally {
-        setIsLoadingRoute(false);
+        console.error('Error displaying GPS route:', error);
+        setRouteError('Failed to display GPS route');
       }
     };
 
-    generateRoadRoute();
+    displayGPSRoute();
 
     // Add start marker
     if (trackingSession.startLocation) {
