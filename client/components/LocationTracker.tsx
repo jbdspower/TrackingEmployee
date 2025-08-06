@@ -145,7 +145,7 @@ export function LocationTracker({
         onLocationUpdate?.(latitude, longitude, accuracy);
       } else {
         console.log(
-          `Rate limited: ${Math.ceil((10000 - timeSinceLastUpdate) / 1000)}s remaining`,
+          `Rate limited: ${Math.ceil((5000 - timeSinceLastUpdate) / 1000)}s remaining`,
         );
       }
     }
