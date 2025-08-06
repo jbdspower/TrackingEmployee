@@ -121,6 +121,10 @@ export function createServer() {
   // Tracking session routes
   app.get("/api/tracking-sessions", getTrackingSessions);
   app.post("/api/tracking-sessions", createTrackingSession);
+  app.get("/api/tracking-sessions/:id", getTrackingSession);
+  app.put("/api/tracking-sessions/:id", updateTrackingSession);
+  app.delete("/api/tracking-sessions/:id", deleteTrackingSession);
+  app.post("/api/tracking-sessions/:id/location", addLocationToRoute);
   app.post("/api/tracking-sessions/:sessionId/location", updateTrackingSessionLocation);
   app.put("/api/tracking-sessions/:sessionId/end", endTrackingSession);
 
