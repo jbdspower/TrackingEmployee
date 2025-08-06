@@ -1,5 +1,5 @@
 import { RequestHandler } from "express";
-import Database from '../config/database.js';
+import Database from "../config/database.js";
 import {
   TrackingSession as TrackingSessionType,
   TrackingSessionResponse,
@@ -7,7 +7,12 @@ import {
   MeetingDetails,
   MeetingHistoryResponse,
 } from "@shared/api";
-import { MeetingHistory, IMeetingHistory, TrackingSession, ITrackingSession } from "../models";
+import {
+  MeetingHistory,
+  IMeetingHistory,
+  TrackingSession,
+  ITrackingSession,
+} from "../models";
 
 // In-memory storage for demo purposes
 let trackingSessions: TrackingSessionType[] = [];
@@ -50,19 +55,22 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
       }
     }
 
-    console.log(`Fetching tracking sessions with query:`, JSON.stringify(query, null, 2));
+    console.log(
+      `Fetching tracking sessions with query:`,
+      JSON.stringify(query, null, 2),
+    );
 
     // Execute with fallback pattern
     const sessions = await db.executeWithFallback(
       async () => {
-        console.log('Fetching tracking sessions from MongoDB...');
+        console.log("Fetching tracking sessions from MongoDB...");
         const dbSessions = await TrackingSession.find(query)
           .sort({ startTime: -1 })
           .limit(parseInt(limit as string))
           .lean();
-        
+
         console.log(`Found ${dbSessions.length} tracking sessions in database`);
-        return dbSessions.map(session => ({
+        return dbSessions.map((session) => ({
           id: session._id.toString(),
           employeeId: session.employeeId,
           startTime: session.startTime,
@@ -76,34 +84,41 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
         })) as TrackingSessionType[];
       },
       () => {
-        console.log('MongoDB query failed, falling back to in-memory storage');
+        console.log("MongoDB query failed, falling back to in-memory storage");
         let filteredSessions = trackingSessions;
-        
+
         if (employeeId) {
-          filteredSessions = filteredSessions.filter(s => s.employeeId === employeeId);
+          filteredSessions = filteredSessions.filter(
+            (s) => s.employeeId === employeeId,
+          );
         }
         if (status) {
-          filteredSessions = filteredSessions.filter(s => s.status === status);
+          filteredSessions = filteredSessions.filter(
+            (s) => s.status === status,
+          );
         }
         if (startDate) {
-          filteredSessions = filteredSessions.filter(s => 
-            new Date(s.startTime) >= new Date(startDate as string)
+          filteredSessions = filteredSessions.filter(
+            (s) => new Date(s.startTime) >= new Date(startDate as string),
           );
         }
         if (endDate) {
-          filteredSessions = filteredSessions.filter(s => 
-            new Date(s.startTime) <= new Date(endDate as string)
+          filteredSessions = filteredSessions.filter(
+            (s) => new Date(s.startTime) <= new Date(endDate as string),
           );
         }
-        
+
         const result = filteredSessions
-          .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+          .sort(
+            (a, b) =>
+              new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+          )
           .slice(0, parseInt(limit as string));
-        
+
         console.log(`Found ${result.length} tracking sessions in memory`);
         return result;
       },
-      'fetch tracking sessions'
+      "fetch tracking sessions",
     );
 
     const response: TrackingSessionResponse = {
@@ -114,19 +129,19 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("Error fetching tracking sessions:", error);
-    
+
     // Final fallback
     try {
       const response: TrackingSessionResponse = {
         sessions: [],
         total: 0,
-        error: "Service temporarily unavailable"
+        error: "Service temporarily unavailable",
       };
       res.json(response);
     } catch (fallbackError) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to fetch tracking sessions",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -139,40 +154,42 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
 
     // Enhanced validation
     if (!employeeId) {
-      console.error('createTrackingSession: Missing employeeId');
+      console.error("createTrackingSession: Missing employeeId");
       return res.status(400).json({
         error: "Employee ID is required",
-        details: "No employeeId provided in request body"
+        details: "No employeeId provided in request body",
       });
     }
 
-    if (typeof employeeId !== 'string' || employeeId.trim() === '') {
-      console.error('createTrackingSession: Invalid employeeId format:', {
+    if (typeof employeeId !== "string" || employeeId.trim() === "") {
+      console.error("createTrackingSession: Invalid employeeId format:", {
         employeeId,
-        type: typeof employeeId
+        type: typeof employeeId,
       });
       return res.status(400).json({
         error: "Invalid Employee ID format",
-        details: "Employee ID must be a non-empty string"
+        details: "Employee ID must be a non-empty string",
       });
     }
 
-    if (employeeId === 'undefined' || employeeId === 'null') {
-      console.error('createTrackingSession: employeeId is literal undefined/null string');
+    if (employeeId === "undefined" || employeeId === "null") {
+      console.error(
+        "createTrackingSession: employeeId is literal undefined/null string",
+      );
       return res.status(400).json({
         error: "Invalid Employee ID",
-        details: "Employee ID cannot be 'undefined' or 'null'"
+        details: "Employee ID cannot be 'undefined' or 'null'",
       });
     }
 
-    const sessionId = `session_${String(sessionIdCounter++).padStart(3, '0')}`;
+    const sessionId = `session_${String(sessionIdCounter++).padStart(3, "0")}`;
     const startTime = new Date().toISOString();
 
     const sessionData = {
       _id: sessionId,
       employeeId,
       startTime,
-      status: 'active' as const,
+      status: "active" as const,
       locations: startLocation ? [startLocation] : [],
       totalDistance: 0,
       createdAt: startTime,
@@ -182,11 +199,11 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
     // Execute with fallback pattern
     const session = await db.executeWithFallback(
       async () => {
-        console.log('Creating tracking session in MongoDB...');
+        console.log("Creating tracking session in MongoDB...");
         const newSession = new TrackingSession(sessionData);
         const savedSession = await newSession.save();
-        
-        console.log('Tracking session saved to MongoDB:', savedSession._id);
+
+        console.log("Tracking session saved to MongoDB:", savedSession._id);
         return {
           id: savedSession._id.toString(),
           employeeId: savedSession.employeeId,
@@ -200,93 +217,110 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
         } as TrackingSessionType;
       },
       () => {
-        console.log('MongoDB save failed, falling back to in-memory storage');
+        console.log("MongoDB save failed, falling back to in-memory storage");
         const memorySession: TrackingSessionType = {
           id: sessionId,
           employeeId,
           startTime,
-          status: 'active',
+          status: "active",
           locations: startLocation ? [startLocation] : [],
           totalDistance: 0,
           createdAt: startTime,
           updatedAt: startTime,
         };
-        
+
         trackingSessions.push(memorySession);
-        console.log('Tracking session saved to memory:', sessionId);
+        console.log("Tracking session saved to memory:", sessionId);
         return memorySession;
       },
-      'create tracking session'
+      "create tracking session",
     );
 
     res.status(201).json(session);
   } catch (error) {
     console.error("Error creating tracking session:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to create tracking session",
-      details: error instanceof Error ? error.message : "Unknown error"
+      details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const updateTrackingSessionLocation: RequestHandler = async (req, res) => {
+export const updateTrackingSessionLocation: RequestHandler = async (
+  req,
+  res,
+) => {
   try {
     const { sessionId } = req.params;
     const locationData: LocationData = req.body;
     const db = Database.getInstance();
 
     // Enhanced validation
-    if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-      console.error('updateTrackingSessionLocation: Invalid sessionId:', {
+    if (
+      !sessionId ||
+      typeof sessionId !== "string" ||
+      sessionId.trim() === ""
+    ) {
+      console.error("updateTrackingSessionLocation: Invalid sessionId:", {
         sessionId,
-        type: typeof sessionId
+        type: typeof sessionId,
       });
       return res.status(400).json({
         error: "Session ID is required",
-        details: "Valid session ID must be provided"
+        details: "Valid session ID must be provided",
       });
     }
 
-    if (sessionId === 'undefined' || sessionId === 'null') {
-      console.error('updateTrackingSessionLocation: sessionId is literal undefined/null string');
+    if (sessionId === "undefined" || sessionId === "null") {
+      console.error(
+        "updateTrackingSessionLocation: sessionId is literal undefined/null string",
+      );
       return res.status(400).json({
         error: "Invalid Session ID",
-        details: "Session ID cannot be 'undefined' or 'null'"
+        details: "Session ID cannot be 'undefined' or 'null'",
       });
     }
 
-    if (!locationData || typeof locationData !== 'object') {
+    if (!locationData || typeof locationData !== "object") {
       return res.status(400).json({
         error: "Location data is required",
-        details: "Location data object must be provided"
+        details: "Location data object must be provided",
       });
     }
 
-    if (!locationData.lat || !locationData.lng || typeof locationData.lat !== 'number' || typeof locationData.lng !== 'number') {
+    if (
+      !locationData.lat ||
+      !locationData.lng ||
+      typeof locationData.lat !== "number" ||
+      typeof locationData.lng !== "number"
+    ) {
       return res.status(400).json({
         error: "Location coordinates are required",
-        details: "Valid latitude and longitude numbers must be provided"
+        details: "Valid latitude and longitude numbers must be provided",
       });
     }
 
     // Execute with fallback pattern
     const session = await db.executeWithFallback(
       async () => {
-        console.log('Updating tracking session location in MongoDB:', sessionId);
+        console.log(
+          "Updating tracking session location in MongoDB:",
+          sessionId,
+        );
         const updatedSession = await TrackingSession.findByIdAndUpdate(
           sessionId,
           {
             $push: { locations: locationData },
-            $set: { updatedAt: new Date().toISOString() }
+            $set: { updatedAt: new Date().toISOString() },
           },
-          { new: true }
+          { new: true },
         ).lean();
 
         if (!updatedSession) {
-          throw new Error('Tracking session not found');
+          throw new Error("Tracking session not found");
         }
 
-        console.log('Tracking session location updated in MongoDB');
+        console.log("Tracking session location updated in MongoDB");
         return {
           id: updatedSession._id.toString(),
           employeeId: updatedSession.employeeId,
@@ -300,47 +334,55 @@ export const updateTrackingSessionLocation: RequestHandler = async (req, res) =>
         } as TrackingSessionType;
       },
       () => {
-        console.log('MongoDB update failed, falling back to in-memory storage');
-        const sessionIndex = trackingSessions.findIndex(s => s.id === sessionId);
-        
+        console.log("MongoDB update failed, falling back to in-memory storage");
+        const sessionIndex = trackingSessions.findIndex(
+          (s) => s.id === sessionId,
+        );
+
         if (sessionIndex === -1) {
-          throw new Error('Tracking session not found in memory');
+          throw new Error("Tracking session not found in memory");
         }
 
         trackingSessions[sessionIndex].locations.push(locationData);
         trackingSessions[sessionIndex].updatedAt = new Date().toISOString();
-        
+
         // Calculate total distance if we have multiple locations
         if (trackingSessions[sessionIndex].locations.length > 1) {
           const locations = trackingSessions[sessionIndex].locations;
           let totalDistance = 0;
-          
+
           for (let i = 1; i < locations.length; i++) {
             const prev = locations[i - 1];
             const curr = locations[i];
-            const distance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+            const distance = calculateDistance(
+              prev.lat,
+              prev.lng,
+              curr.lat,
+              curr.lng,
+            );
             totalDistance += distance;
           }
-          
-          trackingSessions[sessionIndex].totalDistance = Math.round(totalDistance * 100) / 100;
+
+          trackingSessions[sessionIndex].totalDistance =
+            Math.round(totalDistance * 100) / 100;
         }
 
-        console.log('Tracking session location updated in memory');
+        console.log("Tracking session location updated in memory");
         return trackingSessions[sessionIndex];
       },
-      'update tracking session location'
+      "update tracking session location",
     );
 
     res.json(session);
   } catch (error) {
     console.error("Error updating tracking session location:", error);
-    
-    if (error instanceof Error && error.message.includes('not found')) {
+
+    if (error instanceof Error && error.message.includes("not found")) {
       res.status(404).json({ error: "Tracking session not found" });
     } else {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to update tracking session location",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -353,22 +395,28 @@ export const endTrackingSession: RequestHandler = async (req, res) => {
     const db = Database.getInstance();
 
     // Enhanced validation
-    if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-      console.error('endTrackingSession: Invalid sessionId:', {
+    if (
+      !sessionId ||
+      typeof sessionId !== "string" ||
+      sessionId.trim() === ""
+    ) {
+      console.error("endTrackingSession: Invalid sessionId:", {
         sessionId,
-        type: typeof sessionId
+        type: typeof sessionId,
       });
       return res.status(400).json({
         error: "Session ID is required",
-        details: "Valid session ID must be provided"
+        details: "Valid session ID must be provided",
       });
     }
 
-    if (sessionId === 'undefined' || sessionId === 'null') {
-      console.error('endTrackingSession: sessionId is literal undefined/null string');
+    if (sessionId === "undefined" || sessionId === "null") {
+      console.error(
+        "endTrackingSession: sessionId is literal undefined/null string",
+      );
       return res.status(400).json({
         error: "Invalid Session ID",
-        details: "Session ID cannot be 'undefined' or 'null'"
+        details: "Session ID cannot be 'undefined' or 'null'",
       });
     }
 
@@ -377,11 +425,11 @@ export const endTrackingSession: RequestHandler = async (req, res) => {
     // Execute with fallback pattern
     const session = await db.executeWithFallback(
       async () => {
-        console.log('Ending tracking session in MongoDB:', sessionId);
+        console.log("Ending tracking session in MongoDB:", sessionId);
         const updateData: any = {
-          status: 'completed',
+          status: "completed",
           endTime,
-          updatedAt: endTime
+          updatedAt: endTime,
         };
 
         if (endLocation) {
@@ -391,14 +439,14 @@ export const endTrackingSession: RequestHandler = async (req, res) => {
         const updatedSession = await TrackingSession.findByIdAndUpdate(
           sessionId,
           updateData,
-          { new: true }
+          { new: true },
         ).lean();
 
         if (!updatedSession) {
-          throw new Error('Tracking session not found');
+          throw new Error("Tracking session not found");
         }
 
-        console.log('Tracking session ended in MongoDB');
+        console.log("Tracking session ended in MongoDB");
         return {
           id: updatedSession._id.toString(),
           employeeId: updatedSession.employeeId,
@@ -412,37 +460,39 @@ export const endTrackingSession: RequestHandler = async (req, res) => {
         } as TrackingSessionType;
       },
       () => {
-        console.log('MongoDB update failed, falling back to in-memory storage');
-        const sessionIndex = trackingSessions.findIndex(s => s.id === sessionId);
-        
+        console.log("MongoDB update failed, falling back to in-memory storage");
+        const sessionIndex = trackingSessions.findIndex(
+          (s) => s.id === sessionId,
+        );
+
         if (sessionIndex === -1) {
-          throw new Error('Tracking session not found in memory');
+          throw new Error("Tracking session not found in memory");
         }
 
         if (endLocation) {
           trackingSessions[sessionIndex].locations.push(endLocation);
         }
 
-        trackingSessions[sessionIndex].status = 'completed';
+        trackingSessions[sessionIndex].status = "completed";
         trackingSessions[sessionIndex].endTime = endTime;
         trackingSessions[sessionIndex].updatedAt = endTime;
 
-        console.log('Tracking session ended in memory');
+        console.log("Tracking session ended in memory");
         return trackingSessions[sessionIndex];
       },
-      'end tracking session'
+      "end tracking session",
     );
 
     res.json(session);
   } catch (error) {
     console.error("Error ending tracking session:", error);
-    
-    if (error instanceof Error && error.message.includes('not found')) {
+
+    if (error instanceof Error && error.message.includes("not found")) {
       res.status(404).json({ error: "Tracking session not found" });
     } else {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to end tracking session",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -453,46 +503,58 @@ export const getMeetingHistory: RequestHandler = async (req, res) => {
     const { employeeId, leadId, dateRange, startDate, endDate } = req.query;
     const db = Database.getInstance();
 
-    console.log('=== MEETING HISTORY REQUEST ===');
-    console.log('Meeting history params:', {
+    console.log("=== MEETING HISTORY REQUEST ===");
+    console.log("Meeting history params:", {
       employeeId,
       leadId,
       dateRange,
       startDate,
-      endDate
+      endDate,
     });
 
     // Build MongoDB query
     const query: any = {};
-    
+
     if (employeeId) {
       query.employeeId = employeeId;
     }
-    
+
     if (leadId) {
       query.leadId = leadId;
     }
 
     // Handle date filtering
-    if (dateRange === 'today') {
+    if (dateRange === "today") {
       const today = new Date();
-      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      const startOfDay = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
+      const endOfDay = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() + 1,
+      );
       query.timestamp = {
         $gte: startOfDay.toISOString(),
-        $lt: endOfDay.toISOString()
+        $lt: endOfDay.toISOString(),
       };
-    } else if (dateRange === 'week') {
+    } else if (dateRange === "week") {
       const today = new Date();
-      const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+      const startOfWeek = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() - today.getDay(),
+      );
       query.timestamp = {
-        $gte: startOfWeek.toISOString()
+        $gte: startOfWeek.toISOString(),
       };
-    } else if (dateRange === 'month') {
+    } else if (dateRange === "month") {
       const today = new Date();
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       query.timestamp = {
-        $gte: startOfMonth.toISOString()
+        $gte: startOfMonth.toISOString(),
       };
     } else if (startDate || endDate) {
       query.timestamp = {};
@@ -504,19 +566,21 @@ export const getMeetingHistory: RequestHandler = async (req, res) => {
       }
     }
 
-    console.log('Built MongoDB query:', JSON.stringify(query, null, 2));
+    console.log("Built MongoDB query:", JSON.stringify(query, null, 2));
 
     // Execute with fallback pattern
     const history = await db.executeWithFallback(
       async () => {
-        console.log('Fetching meeting history from MongoDB...');
+        console.log("Fetching meeting history from MongoDB...");
         const dbHistory = await MeetingHistory.find(query)
           .sort({ timestamp: -1 })
           .limit(100)
           .lean();
-        
-        console.log(`Found ${dbHistory.length} meeting history entries in database`);
-        return dbHistory.map(entry => ({
+
+        console.log(
+          `Found ${dbHistory.length} meeting history entries in database`,
+        );
+        return dbHistory.map((entry) => ({
           id: entry._id.toString(),
           sessionId: entry.sessionId,
           employeeId: entry.employeeId,
@@ -526,50 +590,77 @@ export const getMeetingHistory: RequestHandler = async (req, res) => {
         }));
       },
       () => {
-        console.log('MongoDB query failed, falling back to in-memory storage');
+        console.log("MongoDB query failed, falling back to in-memory storage");
         let filteredHistory = meetingHistory;
-        
+
         if (employeeId) {
-          filteredHistory = filteredHistory.filter(h => h.employeeId === employeeId);
+          filteredHistory = filteredHistory.filter(
+            (h) => h.employeeId === employeeId,
+          );
         }
         if (leadId) {
-          filteredHistory = filteredHistory.filter(h => h.leadId === leadId);
+          filteredHistory = filteredHistory.filter((h) => h.leadId === leadId);
         }
-        
+
         // Apply date filtering for in-memory data
-        if (dateRange === 'today') {
+        if (dateRange === "today") {
           const today = new Date();
-          const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-          const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-          filteredHistory = filteredHistory.filter(h => {
+          const startOfDay = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate(),
+          );
+          const endOfDay = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() + 1,
+          );
+          filteredHistory = filteredHistory.filter((h) => {
             const timestamp = new Date(h.timestamp);
             return timestamp >= startOfDay && timestamp < endOfDay;
           });
-        } else if (dateRange === 'week') {
+        } else if (dateRange === "week") {
           const today = new Date();
-          const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
-          filteredHistory = filteredHistory.filter(h => new Date(h.timestamp) >= startOfWeek);
-        } else if (dateRange === 'month') {
+          const startOfWeek = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() - today.getDay(),
+          );
+          filteredHistory = filteredHistory.filter(
+            (h) => new Date(h.timestamp) >= startOfWeek,
+          );
+        } else if (dateRange === "month") {
           const today = new Date();
-          const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-          filteredHistory = filteredHistory.filter(h => new Date(h.timestamp) >= startOfMonth);
+          const startOfMonth = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            1,
+          );
+          filteredHistory = filteredHistory.filter(
+            (h) => new Date(h.timestamp) >= startOfMonth,
+          );
         } else if (startDate || endDate) {
-          filteredHistory = filteredHistory.filter(h => {
+          filteredHistory = filteredHistory.filter((h) => {
             const timestamp = new Date(h.timestamp);
-            if (startDate && timestamp < new Date(startDate as string)) return false;
-            if (endDate && timestamp > new Date(endDate as string)) return false;
+            if (startDate && timestamp < new Date(startDate as string))
+              return false;
+            if (endDate && timestamp > new Date(endDate as string))
+              return false;
             return true;
           });
         }
-        
+
         const result = filteredHistory
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          .sort(
+            (a, b) =>
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+          )
           .slice(0, 100);
-        
+
         console.log(`Found ${result.length} meeting history entries in memory`);
         return result;
       },
-      'fetch meeting history'
+      "fetch meeting history",
     );
 
     const response: MeetingHistoryResponse = {
@@ -581,13 +672,13 @@ export const getMeetingHistory: RequestHandler = async (req, res) => {
         dateRange: dateRange as string,
         startDate: startDate as string,
         endDate: endDate as string,
-      }
+      },
     };
 
     res.json(response);
   } catch (error) {
     console.error("Error fetching meeting history:", error);
-    
+
     // Final fallback
     try {
       const response: MeetingHistoryResponse = {
@@ -600,13 +691,13 @@ export const getMeetingHistory: RequestHandler = async (req, res) => {
           startDate: req.query.startDate as string,
           endDate: req.query.endDate as string,
         },
-        error: "Service temporarily unavailable"
+        error: "Service temporarily unavailable",
       };
       res.json(response);
     } catch (fallbackError) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to fetch meeting history",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -618,12 +709,12 @@ export const addMeetingHistory: RequestHandler = async (req, res) => {
     const db = Database.getInstance();
 
     if (!sessionId || !employeeId || !meetingDetails) {
-      return res.status(400).json({ 
-        error: "Session ID, employee ID, and meeting details are required" 
+      return res.status(400).json({
+        error: "Session ID, employee ID, and meeting details are required",
       });
     }
 
-    const historyId = `history_${String(historyIdCounter++).padStart(3, '0')}`;
+    const historyId = `history_${String(historyIdCounter++).padStart(3, "0")}`;
     const timestamp = new Date().toISOString();
 
     const historyData = {
@@ -638,11 +729,11 @@ export const addMeetingHistory: RequestHandler = async (req, res) => {
     // Execute with fallback pattern
     const history = await db.executeWithFallback(
       async () => {
-        console.log('Adding meeting history to MongoDB...');
+        console.log("Adding meeting history to MongoDB...");
         const newHistory = new MeetingHistory(historyData);
         const savedHistory = await newHistory.save();
-        
-        console.log('Meeting history saved to MongoDB:', savedHistory._id);
+
+        console.log("Meeting history saved to MongoDB:", savedHistory._id);
         return {
           id: savedHistory._id.toString(),
           sessionId: savedHistory.sessionId,
@@ -653,7 +744,7 @@ export const addMeetingHistory: RequestHandler = async (req, res) => {
         };
       },
       () => {
-        console.log('MongoDB save failed, falling back to in-memory storage');
+        console.log("MongoDB save failed, falling back to in-memory storage");
         const memoryHistory = {
           id: historyId,
           sessionId,
@@ -662,33 +753,40 @@ export const addMeetingHistory: RequestHandler = async (req, res) => {
           timestamp,
           leadId,
         };
-        
+
         meetingHistory.push(memoryHistory);
-        console.log('Meeting history saved to memory:', historyId);
+        console.log("Meeting history saved to memory:", historyId);
         return memoryHistory;
       },
-      'add meeting history'
+      "add meeting history",
     );
 
     res.status(201).json(history);
   } catch (error) {
     console.error("Error adding meeting history:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to add meeting history",
-      details: error instanceof Error ? error.message : "Unknown error"
+      details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
 // Helper function to calculate distance between two points (Haversine formula)
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function calculateDistance(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
   const R = 6371; // Earth's radius in kilometers
   const dLat = toRadians(lat2 - lat1);
   const dLng = toRadians(lng2 - lng1);
-  const a = 
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }

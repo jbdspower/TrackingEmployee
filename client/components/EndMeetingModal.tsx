@@ -10,8 +10,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MeetingDetails, CustomerEmployee, Customer, CustomerContact, LocationData } from "@shared/api";
-import { AlertCircle, CheckCircle, Clock, User, Building2, MapPin, Loader2 } from "lucide-react";
+import {
+  MeetingDetails,
+  CustomerEmployee,
+  Customer,
+  CustomerContact,
+  LocationData,
+} from "@shared/api";
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  User,
+  Building2,
+  MapPin,
+  Loader2,
+} from "lucide-react";
 import {
   CustomerEmployeeSelector,
   CustomerEmployeeSelectorRef,
@@ -55,7 +69,9 @@ export function EndMeetingModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(
+    null,
+  );
   const [locationError, setLocationError] = useState<string | null>(null);
 
   // Multiple customer selection state
@@ -86,14 +102,14 @@ export function EndMeetingModal({
           setLocationError(null);
         },
         (error) => {
-          console.warn('Failed to get current location:', error);
-          setLocationError('Unable to get current location');
+          console.warn("Failed to get current location:", error);
+          setLocationError("Unable to get current location");
         },
         {
           enableHighAccuracy: true,
           timeout: 10000,
           maximumAge: 60000,
-        }
+        },
       );
     }
   }, [isOpen]);
@@ -412,7 +428,10 @@ export function EndMeetingModal({
               <>
                 <CheckCircle className="h-3 w-3 text-green-600" />
                 <span className="text-green-600">End location captured</span>
-                <span>({currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)})</span>
+                <span>
+                  ({currentLocation.lat.toFixed(4)},{" "}
+                  {currentLocation.lng.toFixed(4)})
+                </span>
               </>
             ) : locationError ? (
               <>

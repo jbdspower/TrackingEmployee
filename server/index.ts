@@ -42,13 +42,8 @@ import {
   saveAttendance,
   getMeetingTrends,
 } from "./routes/analytics";
-import {
-  syncAllData,
-  getDataStatus,
-} from "./routes/data-sync";
-import {
-  debugEmployeeData,
-} from "./routes/debug";
+import { syncAllData, getDataStatus } from "./routes/data-sync";
+import { debugEmployeeData } from "./routes/debug";
 import {
   getRouteSnapshots,
   getRouteSnapshot,
@@ -67,7 +62,7 @@ export function createServer() {
       const db = Database.getInstance();
       await db.connect();
     } catch (error) {
-      console.error('Failed to initialize database:', error);
+      console.error("Failed to initialize database:", error);
       // Continue without database for development
     }
   };
@@ -125,7 +120,10 @@ export function createServer() {
   app.put("/api/tracking-sessions/:id", updateTrackingSession);
   app.delete("/api/tracking-sessions/:id", deleteTrackingSession);
   app.post("/api/tracking-sessions/:id/location", addLocationToRoute);
-  app.post("/api/tracking-sessions/:sessionId/location", updateTrackingSessionLocation);
+  app.post(
+    "/api/tracking-sessions/:sessionId/location",
+    updateTrackingSessionLocation,
+  );
   app.put("/api/tracking-sessions/:sessionId/end", endTrackingSession);
 
   // Meeting history routes
