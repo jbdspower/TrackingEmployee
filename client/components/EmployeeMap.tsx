@@ -114,11 +114,14 @@ export function EmployeeMap({
   // Default center if not provided
   const defaultCenter: [number, number] = center || [20.5937, 78.9629]; // Center of India
 
+  // Defensive check for employees array
+  const safeEmployees = Array.isArray(employees) ? employees : [];
+
   // Filter employees with valid locations
-  const employeesWithLocation = employees.filter(
+  const employeesWithLocation = safeEmployees.filter(
     (emp) =>
-      emp.location?.lat &&
-      emp.location?.lng &&
+      emp?.location?.lat &&
+      emp?.location?.lng &&
       emp.location.lat !== 0 &&
       emp.location.lng !== 0,
   );
