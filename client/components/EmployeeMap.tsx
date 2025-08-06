@@ -154,7 +154,9 @@ export function EmployeeMap({
         />
 
         {employeesWithLocation.map((employee) => {
-          const isSelected = selectedEmployee?._id === employee._id;
+          if (!employee?._id && !employee?.id) return null;
+
+          const isSelected = selectedEmployee?._id === employee._id || selectedEmployee?.id === employee.id;
           const position: [number, number] = [
             employee.location!.lat,
             employee.location!.lng,
@@ -162,7 +164,7 @@ export function EmployeeMap({
 
           return (
             <Marker
-              key={employee._id}
+              key={employee._id || employee.id}
               position={position}
               icon={createCustomIcon(employee.status || "inactive", isSelected)}
               eventHandlers={{
