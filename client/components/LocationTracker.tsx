@@ -716,6 +716,17 @@ export function LocationTracker({
               works best outdoors or near windows. High accuracy mode uses GPS
               and may drain battery faster.
             </p>
+            {isPWAMode ? (
+              <p className="mt-2 text-success">
+                <strong>PWA Mode:</strong> Enhanced background tracking is active.
+                Your route will be tracked even when the phone is in your pocket.
+              </p>
+            ) : (
+              <p className="mt-2">
+                <strong>Tip:</strong> Install this app to your home screen for better
+                background tracking when phone is in pocket.
+              </p>
+            )}
             <p className="mt-2">
               <strong>Auto-capture:</strong> Route map will be automatically saved
               when you stop tracking.
