@@ -38,6 +38,11 @@ export function EmployeeMap({
   const routeMarkersRef = useRef<L.Marker[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{
+    type: string;
+    confidence: string;
+    points: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -157,88 +162,86 @@ export function EmployeeMap({
       mapRef.current.removeLayer(routeLayerRef.current);
       routeLayerRef.current = null;
     }
-    routeMarkersRef.current.forEach(marker => {
+    routeMarkersRef.current.forEach((marker) => {
       mapRef.current?.removeLayer(marker);
     });
     routeMarkersRef.current = [];
 
     if (!showRoute || !trackingSession || !trackingSession.route.length) {
       setRouteError(null);
+      setRouteInfo(null);
       return;
     }
 
     const route = trackingSession.route;
 
-    // Use road-based routing for better route visualization
-    const generateRoadRoute = async () => {
+    // Show exact GPS path (the actual route the employee took)
+    const displayGPSRoute = () => {
       if (route.length < 2) {
-        setRouteError("Not enough points for route generation");
+        setRouteError("Not enough points for route visualization");
+        setRouteInfo(null);
         return;
       }
 
-      setIsLoadingRoute(true);
+      setIsLoadingRoute(false);
       setRouteError(null);
 
       try {
-        // Get road-based route between all points
-        const routeData = await routingService.getRouteForPoints(route);
-
         if (!mapRef.current) return;
 
-        // Create polyline with road-based coordinates
-        const routeCoords: L.LatLngExpression[] = routeData.coordinates;
+        // Use the exact GPS coordinates captured during tracking
+        const gpsCoords: L.LatLngExpression[] = route.map((point) => [
+          point.lat,
+          point.lng,
+        ]);
 
-        if (routeCoords.length > 0) {
-          routeLayerRef.current = L.polyline(routeCoords, {
-            color: '#3b82f6',
-            weight: 4,
-            opacity: 0.8,
-            smoothFactor: 1.0
-          }).addTo(mapRef.current);
+        // Determine route quality based on point density and tracking session
+        const routeQuality =
+          route.length >= 10 ? "high" : route.length >= 5 ? "medium" : "low";
+        const routeColor =
+          routeQuality === "high"
+            ? "#22c55e"
+            : routeQuality === "medium"
+              ? "#f59e0b"
+              : "#ef4444";
 
-          // Update tracking session with accurate distance
-          if (trackingSession && routeData.totalDistance > 0) {
-            console.log(`Route updated: ${(routeData.totalDistance / 1000).toFixed(2)} km (was ${((trackingSession.totalDistance || 0) / 1000).toFixed(2)} km)`);
-          }
+        // Create polyline showing the exact path taken by the employee
+        routeLayerRef.current = L.polyline(gpsCoords, {
+          color: routeColor, // Color indicates route quality
+          weight: 4,
+          opacity: 0.9,
+          smoothFactor: 0.1, // Minimal smoothing to preserve exact GPS accuracy
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(mapRef.current);
 
-          // Fit map to show the route
-          const routeBounds = L.latLngBounds(routeCoords);
-          mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
-        } else {
-          // Fallback to straight line if no road route available
-          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
-          routeLayerRef.current = L.polyline(fallbackCoords, {
-            color: '#f59e0b',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '10, 5'
-          }).addTo(mapRef.current);
-          setRouteError("Using direct path - road routing unavailable");
+        // Set route info for user feedback
+        setRouteInfo({
+          type: "GPS Tracking",
+          confidence:
+            routeQuality === "high"
+              ? "High Accuracy"
+              : routeQuality === "medium"
+                ? "Medium Accuracy"
+                : "Low Accuracy",
+          points: route.length,
+        });
 
-          // Fit map to show the fallback route
-          const fallbackBounds = L.latLngBounds(fallbackCoords);
-          mapRef.current.fitBounds(fallbackBounds, { padding: [30, 30] });
-        }
+        console.log(
+          `📍 Displaying actual GPS path with ${route.length} points (${routeQuality} quality)`,
+        );
+
+        // Fit map to show the actual route
+        const routeBounds = L.latLngBounds(gpsCoords);
+        mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
       } catch (error) {
-        console.error('Error generating road route:', error);
-        setRouteError('Failed to generate road route');
-
-        // Fallback to straight line on error
-        if (mapRef.current) {
-          const fallbackCoords: L.LatLngExpression[] = route.map(point => [point.lat, point.lng]);
-          routeLayerRef.current = L.polyline(fallbackCoords, {
-            color: '#f59e0b',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '10, 5'
-          }).addTo(mapRef.current);
-        }
-      } finally {
-        setIsLoadingRoute(false);
+        console.error("Error displaying GPS route:", error);
+        setRouteError("Failed to display GPS route");
+        setRouteInfo(null);
       }
     };
 
-    generateRoadRoute();
+    displayGPSRoute();
 
     // Add start marker
     if (trackingSession.startLocation) {
@@ -259,14 +262,14 @@ export function EmployeeMap({
             color: white;
           ">S</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const startMarker = L.marker(
         [trackingSession.startLocation.lat, trackingSession.startLocation.lng],
-        { icon: startIcon }
+        { icon: startIcon },
       ).addTo(mapRef.current);
 
       startMarker.bindPopup(`
@@ -285,7 +288,7 @@ export function EmployeeMap({
     }
 
     // Add end marker if tracking is completed
-    if (trackingSession.endLocation && trackingSession.status === 'completed') {
+    if (trackingSession.endLocation && trackingSession.status === "completed") {
       const endIcon = L.divIcon({
         html: `
           <div style="
@@ -303,21 +306,21 @@ export function EmployeeMap({
             color: white;
           ">E</div>
         `,
-        className: 'custom-div-icon',
+        className: "custom-div-icon",
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
       const endMarker = L.marker(
         [trackingSession.endLocation.lat, trackingSession.endLocation.lng],
-        { icon: endIcon }
+        { icon: endIcon },
       ).addTo(mapRef.current);
 
       endMarker.bindPopup(`
         <div style="min-width: 150px;">
           <h4 style="margin: 0 0 8px 0; color: #ef4444;">Route End</h4>
           <p style="margin: 0 0 4px 0; font-size: 12px;">
-            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : 'In progress'}
+            ${trackingSession.endTime ? new Date(trackingSession.endTime).toLocaleString() : "In progress"}
           </p>
           <p style="margin: 0 0 4px 0; font-size: 12px; color: #666;">
             ${trackingSession.endLocation.address}
@@ -331,35 +334,46 @@ export function EmployeeMap({
       routeMarkersRef.current.push(endMarker);
     }
 
-    // Add waypoint markers for intermediate points (every 5th point to avoid clutter)
+    // Add waypoint markers for intermediate points (every 3rd point to show more detail)
     route.forEach((point, index) => {
-      if (index > 0 && index < route.length - 1 && index % 5 === 0) {
+      if (index > 0 && index < route.length - 1 && index % 3 === 0) {
+        // Use route quality color for waypoints too
+        const waypointColor =
+          route.length >= 10
+            ? "#22c55e"
+            : route.length >= 5
+              ? "#f59e0b"
+              : "#ef4444";
         const waypointIcon = L.divIcon({
           html: `
             <div style="
-              background-color: #6b7280;
-              width: 8px;
-              height: 8px;
+              background-color: ${waypointColor};
+              width: 10px;
+              height: 10px;
               border-radius: 50%;
               border: 2px solid white;
-              box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+              box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+              opacity: 0.8;
             "></div>
           `,
-          className: 'custom-div-icon',
-          iconSize: [8, 8],
-          iconAnchor: [4, 4],
+          className: "custom-div-icon",
+          iconSize: [10, 10],
+          iconAnchor: [5, 5],
         });
 
-        const waypointMarker = L.marker(
-          [point.lat, point.lng],
-          { icon: waypointIcon }
-        ).addTo(mapRef.current);
+        const waypointMarker = L.marker([point.lat, point.lng], {
+          icon: waypointIcon,
+        }).addTo(mapRef.current);
 
         waypointMarker.bindPopup(`
-          <div style="min-width: 120px;">
-            <h4 style="margin: 0 0 8px 0; color: #6b7280;">Waypoint</h4>
-            <p style="margin: 0; font-size: 12px;">
-              ${new Date(point.timestamp).toLocaleTimeString()}
+          <div style="min-width: 140px;">
+            <h4 style="margin: 0 0 8px 0; color: #22c55e;">GPS Point</h4>
+            <p style="margin: 0 0 4px 0; font-size: 12px;">
+              <strong>Time:</strong> ${new Date(point.timestamp).toLocaleTimeString()}
+            </p>
+            <p style="margin: 0; font-size: 11px; color: #666;">
+              Lat: ${point.lat.toFixed(6)}<br>
+              Lng: ${point.lng.toFixed(6)}
             </p>
           </div>
         `);
@@ -398,10 +412,36 @@ export function EmployeeMap({
         </div>
       )}
 
+      {/* Route information indicator */}
+      {showRoute && routeInfo && (
+        <div
+          className={`absolute top-2 right-2 backdrop-blur-sm border rounded-md px-3 py-2 text-sm z-10 ${
+            routeInfo.confidence === "High Accuracy"
+              ? "bg-success/90 border-success text-success-foreground"
+              : routeInfo.confidence === "Medium Accuracy"
+                ? "bg-warning/90 border-warning text-warning-foreground"
+                : "bg-destructive/90 border-destructive text-destructive-foreground"
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <span>📍 {routeInfo.type}</span>
+          </div>
+          <div className="text-xs mt-1">
+            {routeInfo.confidence} • {routeInfo.points} points
+          </div>
+        </div>
+      )}
+
       {/* Route error indicator */}
       {routeError && (
-        <div className="absolute top-2 right-2 bg-warning/90 backdrop-blur-sm border border-warning rounded-md px-3 py-2 text-sm text-warning-foreground z-10">
-          <span>{routeError}</span>
+        <div className="absolute top-12 right-2 bg-destructive/90 backdrop-blur-sm border border-destructive rounded-md px-3 py-2 text-sm text-destructive-foreground z-10">
+          <div className="flex items-center space-x-2">
+            <span>⚠️ Route Error</span>
+          </div>
+          <div className="text-xs mt-1">{routeError}</div>
+          <div className="text-xs mt-1 opacity-80">
+            💡 GPS tracking provides the most accurate routes
+          </div>
         </div>
       )}
     </div>

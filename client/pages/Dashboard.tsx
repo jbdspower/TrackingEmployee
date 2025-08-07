@@ -182,56 +182,58 @@ export default function Dashboard() {
   }, [filters.dateRange, filters.startDate, filters.endDate]);
 
   const fetchAnalytics = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // Get user from localStorage
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    const isSuperAdmin = user?.role === "super_admin";
+      // Get user from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const isSuperAdmin = user?.role === "super_admin";
 
-    // Build query parameters
-    const queryParams = new URLSearchParams();
+      // Build query parameters
+      const queryParams = new URLSearchParams();
 
-    if (isSuperAdmin) {
-      if (filters.employeeId !== "all") {
-        queryParams.append("employeeId", filters.employeeId);
-      }
-    } else {
-      // If not super admin, force filter by logged-in user's ID
-      queryParams.append("employeeId", user._id);
-    }
-
-    queryParams.append("dateRange", filters.dateRange);
-    if (filters.startDate) queryParams.append("startDate", filters.startDate);
-    if (filters.endDate) queryParams.append("endDate", filters.endDate);
-    if (filters.searchTerm) queryParams.append("search", filters.searchTerm);
-
-    const response = await HttpClient.get(`/api/analytics/employees?${queryParams}`);
-
-    if (response.ok) {
-      const data = await response.json();
-
-      setAnalytics(data.analytics || []);
-      setSummaryStats(
-        data.summary || {
-          totalEmployees: 0,
-          activeMeetings: 0,
-          totalMeetingsToday: 0,
-          avgMeetingDuration: 0,
+      if (isSuperAdmin) {
+        if (filters.employeeId && filters.employeeId !== "all") {
+          queryParams.append("employeeId", filters.employeeId);
         }
-      );
-    } else {
-      console.error("Failed to fetch analytics");
-      setAnalytics([]);
-    }
-  } catch (error) {
-    console.error("Error fetching analytics", error);
-    setAnalytics([]);
-  } finally {
-    setLoading(false);
-  }
-};
+      } else if (user?._id) {
+        // If not super admin and user has valid ID, filter by logged-in user's ID
+        queryParams.append("employeeId", user._id);
+      }
+      // If no valid user ID, fetch all analytics (super admin view)
 
+      queryParams.append("dateRange", filters.dateRange);
+      if (filters.startDate) queryParams.append("startDate", filters.startDate);
+      if (filters.endDate) queryParams.append("endDate", filters.endDate);
+      if (filters.searchTerm) queryParams.append("search", filters.searchTerm);
+
+      const response = await HttpClient.get(
+        `/api/analytics/employees?${queryParams}`,
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+
+        setAnalytics(data.analytics || []);
+        setSummaryStats(
+          data.summary || {
+            totalEmployees: 0,
+            activeMeetings: 0,
+            totalMeetingsToday: 0,
+            avgMeetingDuration: 0,
+          },
+        );
+      } else {
+        console.error("Failed to fetch analytics");
+        setAnalytics([]);
+      }
+    } catch (error) {
+      console.error("Error fetching analytics", error);
+      setAnalytics([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleFilterChange = (key: keyof DashboardFilters, value: string) => {
     setFilters((prev) => {
@@ -426,6 +428,8 @@ export default function Dashboard() {
       console.error("No employee ID provided for meeting history");
       return;
     }
+
+    console.log("meeting works perfectly");
 
     // Find employee name from analytics or use the selected employee info
     const employeeName =
