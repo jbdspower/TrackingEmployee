@@ -56,7 +56,8 @@ export function LocationTracker({
 
   // PWA background tracking state
   const [isPWAMode, setIsPWAMode] = useState(false);
-  const [backgroundTrackingSupported, setBackgroundTrackingSupported] = useState(false);
+  const [backgroundTrackingSupported, setBackgroundTrackingSupported] =
+    useState(false);
   const [serviceWorkerReady, setServiceWorkerReady] = useState(false);
   const [wakeLock, setWakeLock] = useState<WakeLockSentinel | null>(null);
 
@@ -71,82 +72,97 @@ export function LocationTracker({
   // PWA Detection and Service Worker Setup
   useEffect(() => {
     // Check if running as PWA
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    const isStandalone = window.matchMedia(
+      "(display-mode: standalone)",
+    ).matches;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isAndroidPWA = window.matchMedia('(display-mode: standalone)').matches;
+    const isAndroidPWA = window.matchMedia(
+      "(display-mode: standalone)",
+    ).matches;
 
     setIsPWAMode(isStandalone || isAndroidPWA);
 
     // Check for background tracking capabilities
-    const hasServiceWorker = 'serviceWorker' in navigator;
-    const hasNotifications = 'Notification' in window;
-    const hasBackgroundSync = 'serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype;
+    const hasServiceWorker = "serviceWorker" in navigator;
+    const hasNotifications = "Notification" in window;
+    const hasBackgroundSync =
+      "serviceWorker" in navigator &&
+      "sync" in window.ServiceWorkerRegistration.prototype;
 
     setBackgroundTrackingSupported(hasServiceWorker && hasNotifications);
 
     // Set up service worker communication
     if (hasServiceWorker) {
       navigator.serviceWorker.ready.then((registration) => {
-        console.log('Service Worker ready for location tracking');
+        console.log("Service Worker ready for location tracking");
         setServiceWorkerReady(true);
 
         // Listen for messages from service worker
-        navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+        navigator.serviceWorker.addEventListener(
+          "message",
+          handleServiceWorkerMessage,
+        );
       });
     }
 
     return () => {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          "message",
+          handleServiceWorkerMessage,
+        );
       }
     };
   }, []);
 
   // Handle messages from service worker
-  const handleServiceWorkerMessage = useCallback((event: MessageEvent) => {
-    if (event.data?.type === 'LOCATION_UPDATE') {
-      const locationData = event.data.payload;
-      console.log('Received background location update:', locationData);
+  const handleServiceWorkerMessage = useCallback(
+    (event: MessageEvent) => {
+      if (event.data?.type === "LOCATION_UPDATE") {
+        const locationData = event.data.payload;
+        console.log("Received background location update:", locationData);
 
-      // Update local state with background location
-      if (isTracking) {
-        const newLocation: LocationData = {
-          lat: locationData.latitude,
-          lng: locationData.longitude,
-          address: `${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}`,
-          timestamp: locationData.timestamp,
-        };
+        // Update local state with background location
+        if (isTracking) {
+          const newLocation: LocationData = {
+            lat: locationData.latitude,
+            lng: locationData.longitude,
+            address: `${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}`,
+            timestamp: locationData.timestamp,
+          };
 
-        setRouteCoordinates((prevRoute) => {
-          const newRoute = [...prevRoute, newLocation];
+          setRouteCoordinates((prevRoute) => {
+            const newRoute = [...prevRoute, newLocation];
 
-          // Calculate distance if we have a previous point
-          if (prevRoute.length > 0) {
-            const lastPoint = prevRoute[prevRoute.length - 1];
-            const distance = calculateDistance(
-              lastPoint.lat,
-              lastPoint.lng,
-              locationData.latitude,
-              locationData.longitude,
-            );
-            setTotalDistance((prev) => prev + distance);
-          }
+            // Calculate distance if we have a previous point
+            if (prevRoute.length > 0) {
+              const lastPoint = prevRoute[prevRoute.length - 1];
+              const distance = calculateDistance(
+                lastPoint.lat,
+                lastPoint.lng,
+                locationData.latitude,
+                locationData.longitude,
+              );
+              setTotalDistance((prev) => prev + distance);
+            }
 
-          return newRoute;
-        });
+            return newRoute;
+          });
+        }
       }
-    }
 
-    if (event.data?.type === 'GET_EMPLOYEE_ID') {
-      // Send employee ID to service worker
-      if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'EMPLOYEE_ID_RESPONSE',
-          payload: employeeId
-        });
+      if (event.data?.type === "GET_EMPLOYEE_ID") {
+        // Send employee ID to service worker
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "EMPLOYEE_ID_RESPONSE",
+            payload: employeeId,
+          });
+        }
       }
-    }
-  }, [isTracking, employeeId, calculateDistance]);
+    },
+    [isTracking, employeeId, calculateDistance],
+  );
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = useCallback(
@@ -320,13 +336,13 @@ export function LocationTracker({
 
     // Request wake lock to prevent screen from sleeping during tracking
     try {
-      if ('wakeLock' in navigator) {
-        const wakeLockSentinel = await navigator.wakeLock.request('screen');
+      if ("wakeLock" in navigator) {
+        const wakeLockSentinel = await navigator.wakeLock.request("screen");
         setWakeLock(wakeLockSentinel);
-        console.log('Wake lock acquired for better tracking');
+        console.log("Wake lock acquired for better tracking");
       }
     } catch (error) {
-      console.warn('Wake lock failed:', error);
+      console.warn("Wake lock failed:", error);
     }
 
     // Get initial position
@@ -334,10 +350,10 @@ export function LocationTracker({
 
     // Start background tracking if PWA capabilities are available
     if (serviceWorkerReady && backgroundTrackingSupported) {
-      console.log('Starting background tracking via Service Worker');
+      console.log("Starting background tracking via Service Worker");
       navigator.serviceWorker.controller?.postMessage({
-        type: 'START_BACKGROUND_TRACKING',
-        payload: { employeeId }
+        type: "START_BACKGROUND_TRACKING",
+        payload: { employeeId },
       });
     }
 
@@ -346,7 +362,10 @@ export function LocationTracker({
     const startLocation = {
       lat: latitude || 0,
       lng: longitude || 0,
-      address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Getting location...",
+      address:
+        latitude && longitude
+          ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+          : "Getting location...",
       timestamp: now.toISOString(),
     };
 
@@ -375,17 +394,17 @@ export function LocationTracker({
       try {
         await wakeLock.release();
         setWakeLock(null);
-        console.log('Wake lock released');
+        console.log("Wake lock released");
       } catch (error) {
-        console.warn('Failed to release wake lock:', error);
+        console.warn("Failed to release wake lock:", error);
       }
     }
 
     // Stop background tracking
     if (serviceWorkerReady) {
-      console.log('Stopping background tracking via Service Worker');
+      console.log("Stopping background tracking via Service Worker");
       navigator.serviceWorker.controller?.postMessage({
-        type: 'STOP_BACKGROUND_TRACKING'
+        type: "STOP_BACKGROUND_TRACKING",
       });
     }
 
@@ -401,7 +420,7 @@ export function LocationTracker({
       longitude,
       routePointsCount: routeCoordinates.length,
       totalDistance,
-      elapsedTime
+      elapsedTime,
     });
 
     // Update current session - create session even if coordinates aren't perfect
@@ -409,7 +428,10 @@ export function LocationTracker({
       const endLocation = {
         lat: latitude || currentSession.startLocation.lat,
         lng: longitude || currentSession.startLocation.lng,
-        address: latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable",
+        address:
+          latitude && longitude
+            ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+            : "Location unavailable",
         timestamp: now.toISOString(),
       };
 
@@ -419,13 +441,19 @@ export function LocationTracker({
       if (routeCoordinates.length >= 2) {
         try {
           console.log("Calculating accurate road-based distance...");
-          const routeData = await routingService.getRouteForPoints(routeCoordinates);
+          const routeData =
+            await routingService.getRouteForPoints(routeCoordinates);
           if (routeData.totalDistance > 0) {
             finalDistance = routeData.totalDistance;
-            console.log(`Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`);
+            console.log(
+              `Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`,
+            );
           }
         } catch (error) {
-          console.warn("Failed to calculate road-based distance, using GPS distance:", error);
+          console.warn(
+            "Failed to calculate road-based distance, using GPS distance:",
+            error,
+          );
         }
       }
 
@@ -433,7 +461,10 @@ export function LocationTracker({
         ...currentSession,
         endTime: now.toISOString(),
         endLocation,
-        route: routeCoordinates.length > 0 ? routeCoordinates : [currentSession.startLocation],
+        route:
+          routeCoordinates.length > 0
+            ? routeCoordinates
+            : [currentSession.startLocation],
         totalDistance: finalDistance,
         duration: elapsedTime / 1000, // Convert to seconds
         status: "completed",
@@ -511,7 +542,9 @@ export function LocationTracker({
             <Shield className="h-4 w-4 text-primary" />
             <span className="text-primary font-medium">PWA Mode Active</span>
             <Badge variant="secondary" className="text-xs">
-              {backgroundTrackingSupported ? "Background Tracking Enabled" : "Limited Background"}
+              {backgroundTrackingSupported
+                ? "Background Tracking Enabled"
+                : "Limited Background"}
             </Badge>
           </div>
         )}
@@ -521,9 +554,14 @@ export function LocationTracker({
           <div className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2">
             <div className="flex items-center space-x-1">
               <Shield className="h-3 w-3 text-amber-600" />
-              <span className="font-medium text-amber-700 dark:text-amber-400">Better Tracking Available</span>
+              <span className="font-medium text-amber-700 dark:text-amber-400">
+                Better Tracking Available
+              </span>
             </div>
-            <p className="mt-1">Install this app to your home screen for improved background GPS tracking when phone is in pocket.</p>
+            <p className="mt-1">
+              Install this app to your home screen for improved background GPS
+              tracking when phone is in pocket.
+            </p>
           </div>
         )}
 
@@ -718,18 +756,19 @@ export function LocationTracker({
             </p>
             {isPWAMode ? (
               <p className="mt-2 text-success">
-                <strong>PWA Mode:</strong> Enhanced background tracking is active.
-                Your route will be tracked even when the phone is in your pocket.
+                <strong>PWA Mode:</strong> Enhanced background tracking is
+                active. Your route will be tracked even when the phone is in
+                your pocket.
               </p>
             ) : (
               <p className="mt-2">
-                <strong>Tip:</strong> Install this app to your home screen for better
-                background tracking when phone is in pocket.
+                <strong>Tip:</strong> Install this app to your home screen for
+                better background tracking when phone is in pocket.
               </p>
             )}
             <p className="mt-2">
-              <strong>Auto-capture:</strong> Route map will be automatically saved
-              when you stop tracking.
+              <strong>Auto-capture:</strong> Route map will be automatically
+              saved when you stop tracking.
             </p>
           </div>
         )}
@@ -744,7 +783,9 @@ export function LocationTracker({
             {isPWAMode && backgroundTrackingSupported && (
               <p className="flex items-center mt-1 text-success">
                 <Shield className="h-3 w-3 mr-1" />
-                <strong>Background tracking active - keep phone in pocket</strong>
+                <strong>
+                  Background tracking active - keep phone in pocket
+                </strong>
               </p>
             )}
             {wakeLock && (

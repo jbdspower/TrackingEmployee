@@ -6,7 +6,10 @@
     <title>Fusion Tracker - Employee Location Tracking</title>
 
     <!-- PWA Meta Tags -->
-    <meta name="description" content="Real-time employee location tracking and meeting management system" />
+    <meta
+      name="description"
+      content="Real-time employee location tracking and meeting management system"
+    />
     <meta name="theme-color" content="#0ea5e9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -31,21 +34,25 @@
 
     <!-- Service Worker Registration -->
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
             .then((registration) => {
-              console.log('SW registered: ', registration);
+              console.log("SW registered: ", registration);
 
               // Request notification permission for background tracking
-              if ('Notification' in window && Notification.permission === 'default') {
+              if (
+                "Notification" in window &&
+                Notification.permission === "default"
+              ) {
                 Notification.requestPermission().then((permission) => {
-                  console.log('Notification permission:', permission);
+                  console.log("Notification permission:", permission);
                 });
               }
             })
             .catch((registrationError) => {
-              console.log('SW registration failed: ', registrationError);
+              console.log("SW registration failed: ", registrationError);
             });
         });
       }

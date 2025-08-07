@@ -17,19 +17,14 @@
     },
     {
       "src": "/placeholder.svg",
-      "sizes": "512x512", 
+      "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ],
   "categories": ["business", "productivity", "navigation"],
-  "features": [
-    "background-sync",
-    "geolocation"
-  ],
-  "permissions": [
-    "geolocation"
-  ],
+  "features": ["background-sync", "geolocation"],
+  "permissions": ["geolocation"],
   "screenshots": [
     {
       "src": "/placeholder.svg",
