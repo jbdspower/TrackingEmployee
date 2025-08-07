@@ -75,22 +75,12 @@ export default function Index() {
 
       if (response.ok) {
         const data: EmployeesResponse = await response.json();
-
-        // Step 1: Get user from localStorage
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
-        const isSuperAdmin = user?.role === "super_admin";
-        const userId = user?._id;
-
-        // Step 2: Filter employees based on role
-        const filteredEmployees = isSuperAdmin
-          ? data.employees
-          : data.employees.filter((emp) => emp?.id === userId);
-
-        // Step 3: Update state
-        setEmployees(filteredEmployees);
+        setEmployees(data.employees || []);
         setLastRefresh(new Date());
-
-        console.log("Employees data fetched and filtered:", filteredEmployees);
+        console.log(
+          "Employees data fetched successfully:",
+          data.employees?.length || 0,
+        );
       } else {
         console.error(
           `Failed to fetch employees: ${response.status} ${response.statusText}`,
@@ -99,6 +89,7 @@ export default function Index() {
       }
     } catch (error) {
       console.error("Error fetching employees:", error);
+      setEmployees([]);
     } finally {
       setLoading(false);
     }
