@@ -342,6 +342,16 @@ export default function Index() {
           </div>
         )}
 
+        {/* PWA Install Prompt */}
+        {canInstall && !isInstalled && (
+          <div className="mb-6">
+            <PWAInstallPrompt
+              onInstall={() => console.log('PWA installed')}
+              onDismiss={() => console.log('PWA install dismissed')}
+            />
+          </div>
+        )}
+
         {/* Location Update Prompt */}
         {showLocationPrompt && employees.length > 0 && (
           <Card className="border-info bg-info/5">
