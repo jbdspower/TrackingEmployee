@@ -370,6 +370,25 @@ export function LocationTracker({
     setTrackingEndTime(now);
     setIsTracking(false);
 
+    // Release wake lock
+    if (wakeLock) {
+      try {
+        await wakeLock.release();
+        setWakeLock(null);
+        console.log('Wake lock released');
+      } catch (error) {
+        console.warn('Failed to release wake lock:', error);
+      }
+    }
+
+    // Stop background tracking
+    if (serviceWorkerReady) {
+      console.log('Stopping background tracking via Service Worker');
+      navigator.serviceWorker.controller?.postMessage({
+        type: 'STOP_BACKGROUND_TRACKING'
+      });
+    }
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
