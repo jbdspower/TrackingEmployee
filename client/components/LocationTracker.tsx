@@ -16,6 +16,7 @@ import {
   Timer,
   Route,
   Ruler,
+  Shield,
 } from "lucide-react";
 
 interface LocationTrackerProps {
