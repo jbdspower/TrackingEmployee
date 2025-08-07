@@ -21,6 +21,7 @@ import { Link } from "react-router-dom";
 import { Employee, EmployeesResponse } from "@shared/api";
 import { EmployeeMap } from "@/components/EmployeeMap";
 import { MeetingHistory } from "@/components/MeetingHistory";
+import { PWAInstallPrompt, usePWAInstall } from "@/components/PWAInstallPrompt";
 import { HttpClient } from "@/lib/httpClient";
 
 export default function Index() {
