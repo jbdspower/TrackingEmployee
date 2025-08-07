@@ -318,8 +318,28 @@ export function LocationTracker({
     setTotalDistance(0);
     setIsTracking(true);
 
+    // Request wake lock to prevent screen from sleeping during tracking
+    try {
+      if ('wakeLock' in navigator) {
+        const wakeLockSentinel = await navigator.wakeLock.request('screen');
+        setWakeLock(wakeLockSentinel);
+        console.log('Wake lock acquired for better tracking');
+      }
+    } catch (error) {
+      console.warn('Wake lock failed:', error);
+    }
+
     // Get initial position
     getCurrentPosition();
+
+    // Start background tracking if PWA capabilities are available
+    if (serviceWorkerReady && backgroundTrackingSupported) {
+      console.log('Starting background tracking via Service Worker');
+      navigator.serviceWorker.controller?.postMessage({
+        type: 'START_BACKGROUND_TRACKING',
+        payload: { employeeId }
+      });
+    }
 
     // Create tracking session immediately, even if coordinates aren't ready yet
     const sessionId = `session_${employeeId}_${now.getTime()}`;
