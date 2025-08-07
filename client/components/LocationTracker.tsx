@@ -505,6 +505,28 @@ export function LocationTracker({
           Tracking for: <span className="font-medium">{employeeName}</span>
         </div>
 
+        {/* PWA Status Indicator */}
+        {isPWAMode && (
+          <div className="flex items-center space-x-2 text-sm bg-primary/10 border border-primary/20 rounded-lg p-2">
+            <Shield className="h-4 w-4 text-primary" />
+            <span className="text-primary font-medium">PWA Mode Active</span>
+            <Badge variant="secondary" className="text-xs">
+              {backgroundTrackingSupported ? "Background Tracking Enabled" : "Limited Background"}
+            </Badge>
+          </div>
+        )}
+
+        {/* Background Tracking Status */}
+        {!isPWAMode && backgroundTrackingSupported && (
+          <div className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2">
+            <div className="flex items-center space-x-1">
+              <Shield className="h-3 w-3 text-amber-600" />
+              <span className="font-medium text-amber-700 dark:text-amber-400">Better Tracking Available</span>
+            </div>
+            <p className="mt-1">Install this app to your home screen for improved background GPS tracking when phone is in pocket.</p>
+          </div>
+        )}
+
         {/* Tracking Session Info */}
         {isTracking && trackingStartTime && (
           <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-2">
