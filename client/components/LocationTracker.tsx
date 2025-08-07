@@ -741,6 +741,18 @@ export function LocationTracker({
               <Route className="h-3 w-3 mr-1" />
               <strong>Route will be auto-captured when tracking stops</strong>
             </p>
+            {isPWAMode && backgroundTrackingSupported && (
+              <p className="flex items-center mt-1 text-success">
+                <Shield className="h-3 w-3 mr-1" />
+                <strong>Background tracking active - keep phone in pocket</strong>
+              </p>
+            )}
+            {wakeLock && (
+              <p className="flex items-center mt-1 text-amber-600">
+                <Timer className="h-3 w-3 mr-1" />
+                Screen sleep disabled for better tracking
+              </p>
+            )}
           </div>
         )}
       </CardContent>
