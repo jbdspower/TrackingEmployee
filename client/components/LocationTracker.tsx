@@ -54,6 +54,12 @@ export function LocationTracker({
   const [totalDistance, setTotalDistance] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // PWA background tracking state
+  const [isPWAMode, setIsPWAMode] = useState(false);
+  const [backgroundTrackingSupported, setBackgroundTrackingSupported] = useState(false);
+  const [serviceWorkerReady, setServiceWorkerReady] = useState(false);
+  const [wakeLock, setWakeLock] = useState<WakeLockSentinel | null>(null);
+
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
     useGeolocation({
       enableHighAccuracy: true,
