@@ -21,6 +21,7 @@ import { Link } from "react-router-dom";
 import { Employee, EmployeesResponse } from "@shared/api";
 import { EmployeeMap } from "@/components/EmployeeMap";
 import { MeetingHistory } from "@/components/MeetingHistory";
+import { PWAInstallPrompt, usePWAInstall } from "@/components/PWAInstallPrompt";
 import { HttpClient } from "@/lib/httpClient";
 
 export default function Index() {
@@ -30,6 +31,9 @@ export default function Index() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showLocationPrompt, setShowLocationPrompt] = useState(true);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
+
+  // PWA install functionality
+  const { canInstall, isInstalled } = usePWAInstall();
 
   useEffect(() => {
     fetchEmployees();
@@ -78,16 +82,9 @@ export default function Index() {
         const userId = user?._id;
 
         // Step 2: Filter employees based on role
-        let filteredEmployees;
-        if (isSuperAdmin || !userId) {
-          // Super admin or no user authentication - show all employees
-          filteredEmployees = data.employees;
-        } else {
-          // Regular user - filter by their ID
-          filteredEmployees = data.employees.filter(
-            (emp) => emp?.id === userId,
-          );
-        }
+        const filteredEmployees = isSuperAdmin
+          ? data.employees
+          : data.employees.filter((emp) => emp?.id === userId);
 
         // Step 3: Update state
         setEmployees(filteredEmployees);
@@ -342,6 +339,16 @@ export default function Index() {
           <div className="text-center py-12">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
             <p className="text-muted-foreground">Loading employee data...</p>
+          </div>
+        )}
+
+        {/* PWA Install Prompt */}
+        {canInstall && !isInstalled && (
+          <div className="mb-6">
+            <PWAInstallPrompt
+              onInstall={() => console.log("PWA installed")}
+              onDismiss={() => console.log("PWA install dismissed")}
+            />
           </div>
         )}
 

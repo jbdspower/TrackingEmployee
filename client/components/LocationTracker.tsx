@@ -16,6 +16,7 @@ import {
   Timer,
   Route,
   Ruler,
+  Shield,
 } from "lucide-react";
 
 interface LocationTrackerProps {
@@ -35,90 +36,133 @@ export function LocationTracker({
   onTrackingSessionStart,
   onTrackingSessionEnd,
 }: LocationTrackerProps) {
-  // Helper functions for localStorage persistence
-  const getStorageKey = (key: string) => `tracking_${employeeId}_${key}`;
+  const [isTracking, setIsTracking] = useState(trackingEnabled);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [updateCount, setUpdateCount] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [failureCount, setFailureCount] = useState(0);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
 
-  const loadFromStorage = (key: string, defaultValue: any) => {
-    try {
-      const stored = localStorage.getItem(getStorageKey(key));
-      return stored ? JSON.parse(stored) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  };
-
-  const saveToStorage = (key: string, value: any) => {
-    try {
-      localStorage.setItem(getStorageKey(key), JSON.stringify(value));
-    } catch (error) {
-      console.warn("Failed to save to localStorage:", error);
-    }
-  };
-
-  const clearFromStorage = (key: string) => {
-    try {
-      localStorage.removeItem(getStorageKey(key));
-    } catch (error) {
-      console.warn("Failed to clear from localStorage:", error);
-    }
-  };
-
-  // Initialize state from localStorage or defaults
-  const [isTracking, setIsTracking] = useState(() =>
-    loadFromStorage("isTracking", trackingEnabled),
-  );
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(() => {
-    const stored = loadFromStorage("lastUpdate", null);
-    return stored ? new Date(stored) : null;
-  });
-  const [updateCount, setUpdateCount] = useState(() =>
-    loadFromStorage("updateCount", 0),
-  );
-  const [updateError, setUpdateError] = useState<string | null>(() =>
-    loadFromStorage("updateError", null),
-  );
-  const [failureCount, setFailureCount] = useState(() =>
-    loadFromStorage("failureCount", 0),
-  );
-  const [lastUpdateTime, setLastUpdateTime] = useState<number>(() =>
-    loadFromStorage("lastUpdateTime", 0),
-  );
-
-  // Enhanced tracking state with persistence
+  // Enhanced tracking state
   const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
-    () => loadFromStorage("currentSession", null),
+    null,
   );
-  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(
-    () => {
-      const stored = loadFromStorage("trackingStartTime", null);
-      return stored ? new Date(stored) : null;
-    },
-  );
-  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(() => {
-    const stored = loadFromStorage("trackingEndTime", null);
-    return stored ? new Date(stored) : null;
-  });
-  const [elapsedTime, setElapsedTime] = useState<number>(() =>
-    loadFromStorage("elapsedTime", 0),
-  );
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>(() =>
-    loadFromStorage("routeCoordinates", []),
-  );
-  const [totalDistance, setTotalDistance] = useState<number>(() =>
-    loadFromStorage("totalDistance", 0),
-  );
-  const [routeQuality, setRouteQuality] = useState<"high" | "medium" | "low">(
-    "high",
-  );
+  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(null);
+  const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
+  const [totalDistance, setTotalDistance] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // PWA background tracking state
+  const [isPWAMode, setIsPWAMode] = useState(false);
+  const [backgroundTrackingSupported, setBackgroundTrackingSupported] =
+    useState(false);
+  const [serviceWorkerReady, setServiceWorkerReady] = useState(false);
+  const [wakeLock, setWakeLock] = useState<WakeLockSentinel | null>(null);
 
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
     useGeolocation({
       enableHighAccuracy: true,
-      maximumAge: 5000, // 5 seconds for fresher data
-      timeout: 15000, // 15 seconds timeout
+      maximumAge: 60000, // 1 minute
+      timeout: 30000, // 30 seconds
       watchPosition: isTracking,
     });
+
+  // PWA Detection and Service Worker Setup
+  useEffect(() => {
+    // Check if running as PWA
+    const isStandalone = window.matchMedia(
+      "(display-mode: standalone)",
+    ).matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroidPWA = window.matchMedia(
+      "(display-mode: standalone)",
+    ).matches;
+
+    setIsPWAMode(isStandalone || isAndroidPWA);
+
+    // Check for background tracking capabilities
+    const hasServiceWorker = "serviceWorker" in navigator;
+    const hasNotifications = "Notification" in window;
+    const hasBackgroundSync =
+      "serviceWorker" in navigator &&
+      "sync" in window.ServiceWorkerRegistration.prototype;
+
+    setBackgroundTrackingSupported(hasServiceWorker && hasNotifications);
+
+    // Set up service worker communication
+    if (hasServiceWorker) {
+      navigator.serviceWorker.ready.then((registration) => {
+        console.log("Service Worker ready for location tracking");
+        setServiceWorkerReady(true);
+
+        // Listen for messages from service worker
+        navigator.serviceWorker.addEventListener(
+          "message",
+          handleServiceWorkerMessage,
+        );
+      });
+    }
+
+    return () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          "message",
+          handleServiceWorkerMessage,
+        );
+      }
+    };
+  }, []);
+
+  // Handle messages from service worker
+  const handleServiceWorkerMessage = useCallback(
+    (event: MessageEvent) => {
+      if (event.data?.type === "LOCATION_UPDATE") {
+        const locationData = event.data.payload;
+        console.log("Received background location update:", locationData);
+
+        // Update local state with background location
+        if (isTracking) {
+          const newLocation: LocationData = {
+            lat: locationData.latitude,
+            lng: locationData.longitude,
+            address: `${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}`,
+            timestamp: locationData.timestamp,
+          };
+
+          setRouteCoordinates((prevRoute) => {
+            const newRoute = [...prevRoute, newLocation];
+
+            // Calculate distance if we have a previous point
+            if (prevRoute.length > 0) {
+              const lastPoint = prevRoute[prevRoute.length - 1];
+              const distance = calculateDistance(
+                lastPoint.lat,
+                lastPoint.lng,
+                locationData.latitude,
+                locationData.longitude,
+              );
+              setTotalDistance((prev) => prev + distance);
+            }
+
+            return newRoute;
+          });
+        }
+      }
+
+      if (event.data?.type === "GET_EMPLOYEE_ID") {
+        // Send employee ID to service worker
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "EMPLOYEE_ID_RESPONSE",
+            payload: employeeId,
+          });
+        }
+      }
+    },
+    [isTracking, employeeId, calculateDistance],
+  );
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = useCallback(
@@ -138,51 +182,6 @@ export function LocationTracker({
     },
     [],
   );
-
-  // Persist state changes to localStorage
-  useEffect(() => {
-    saveToStorage("isTracking", isTracking);
-  }, [isTracking]);
-
-  useEffect(() => {
-    saveToStorage("currentSession", currentSession);
-  }, [currentSession]);
-
-  useEffect(() => {
-    saveToStorage("trackingStartTime", trackingStartTime);
-  }, [trackingStartTime]);
-
-  useEffect(() => {
-    saveToStorage("trackingEndTime", trackingEndTime);
-  }, [trackingEndTime]);
-
-  useEffect(() => {
-    saveToStorage("routeCoordinates", routeCoordinates);
-  }, [routeCoordinates]);
-
-  useEffect(() => {
-    saveToStorage("totalDistance", totalDistance);
-  }, [totalDistance]);
-
-  useEffect(() => {
-    saveToStorage("elapsedTime", elapsedTime);
-  }, [elapsedTime]);
-
-  // Restore tracking session on component load
-  useEffect(() => {
-    if (
-      isTracking &&
-      currentSession &&
-      trackingStartTime &&
-      onTrackingSessionStart
-    ) {
-      console.log(
-        "Restoring tracking session from localStorage:",
-        currentSession,
-      );
-      onTrackingSessionStart(currentSession);
-    }
-  }, []); // Run only once on mount
 
   // Timer effect
   useEffect(() => {
@@ -210,8 +209,8 @@ export function LocationTracker({
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
 
-      // Rate limit: update every 5 seconds for more detailed tracking
-      if (timeSinceLastUpdate >= 5000 || lastUpdateTime === 0) {
+      // Rate limit: only update every 10 seconds minimum
+      if (timeSinceLastUpdate >= 10000 || lastUpdateTime === 0) {
         updateLocationOnServer(latitude, longitude, accuracy);
 
         // Add to route if tracking is active
@@ -240,18 +239,6 @@ export function LocationTracker({
             setTotalDistance((prev) => prev + distance);
           }
 
-          // Update route quality based on GPS accuracy and point density
-          const avgAccuracy = accuracy;
-          const pointDensity = newRoute.length;
-
-          let quality: "high" | "medium" | "low" = "high";
-          if (avgAccuracy > 20 || pointDensity < 5) {
-            quality = "low";
-          } else if (avgAccuracy > 10 || pointDensity < 10) {
-            quality = "medium";
-          }
-          setRouteQuality(quality);
-
           return newRoute;
         });
 
@@ -261,7 +248,7 @@ export function LocationTracker({
         onLocationUpdate?.(latitude, longitude, accuracy);
       } else {
         console.log(
-          `Rate limited: ${Math.ceil((5000 - timeSinceLastUpdate) / 1000)}s remaining`,
+          `Rate limited: ${Math.ceil((10000 - timeSinceLastUpdate) / 1000)}s remaining`,
         );
       }
     }
@@ -345,11 +332,30 @@ export function LocationTracker({
     setElapsedTime(0);
     setRouteCoordinates([]);
     setTotalDistance(0);
-    setRouteQuality("high");
     setIsTracking(true);
+
+    // Request wake lock to prevent screen from sleeping during tracking
+    try {
+      if ("wakeLock" in navigator) {
+        const wakeLockSentinel = await navigator.wakeLock.request("screen");
+        setWakeLock(wakeLockSentinel);
+        console.log("Wake lock acquired for better tracking");
+      }
+    } catch (error) {
+      console.warn("Wake lock failed:", error);
+    }
 
     // Get initial position
     getCurrentPosition();
+
+    // Start background tracking if PWA capabilities are available
+    if (serviceWorkerReady && backgroundTrackingSupported) {
+      console.log("Starting background tracking via Service Worker");
+      navigator.serviceWorker.controller?.postMessage({
+        type: "START_BACKGROUND_TRACKING",
+        payload: { employeeId },
+      });
+    }
 
     // Create tracking session immediately, even if coordinates aren't ready yet
     const sessionId = `session_${employeeId}_${now.getTime()}`;
@@ -383,6 +389,25 @@ export function LocationTracker({
     setTrackingEndTime(now);
     setIsTracking(false);
 
+    // Release wake lock
+    if (wakeLock) {
+      try {
+        await wakeLock.release();
+        setWakeLock(null);
+        console.log("Wake lock released");
+      } catch (error) {
+        console.warn("Failed to release wake lock:", error);
+      }
+    }
+
+    // Stop background tracking
+    if (serviceWorkerReady) {
+      console.log("Stopping background tracking via Service Worker");
+      navigator.serviceWorker.controller?.postMessage({
+        type: "STOP_BACKGROUND_TRACKING",
+      });
+    }
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -412,17 +437,24 @@ export function LocationTracker({
 
       let finalDistance = totalDistance;
 
-      // Use GPS-based distance calculation (actual path taken)
+      // Try to get more accurate road-based distance calculation
       if (routeCoordinates.length >= 2) {
-        console.log(
-          "📍 Using GPS-based distance calculation for actual path taken",
-        );
-        finalDistance = totalDistance; // Keep the GPS-calculated distance
-        console.log(
-          `📏 Final distance: ${(finalDistance / 1000).toFixed(2)} km (GPS-based actual path with ${routeCoordinates.length} points)`,
-        );
-      } else {
-        console.warn("⚠️ Limited GPS data - route may not be fully accurate");
+        try {
+          console.log("Calculating accurate road-based distance...");
+          const routeData =
+            await routingService.getRouteForPoints(routeCoordinates);
+          if (routeData.totalDistance > 0) {
+            finalDistance = routeData.totalDistance;
+            console.log(
+              `Distance updated: ${(finalDistance / 1000).toFixed(2)} km (was ${(totalDistance / 1000).toFixed(2)} km)`,
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "Failed to calculate road-based distance, using GPS distance:",
+            error,
+          );
+        }
       }
 
       const updatedSession: TrackingSession = {
@@ -441,17 +473,6 @@ export function LocationTracker({
       console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
       onTrackingSessionEnd?.(updatedSession);
-
-      // Clear all tracking data from localStorage when session ends
-      clearFromStorage("isTracking");
-      clearFromStorage("currentSession");
-      clearFromStorage("trackingStartTime");
-      clearFromStorage("trackingEndTime");
-      clearFromStorage("routeCoordinates");
-      clearFromStorage("totalDistance");
-      clearFromStorage("elapsedTime");
-
-      console.log("Cleared tracking data from localStorage");
     } else {
       console.log("Cannot end tracking session - no current session");
     }
@@ -515,6 +536,35 @@ export function LocationTracker({
           Tracking for: <span className="font-medium">{employeeName}</span>
         </div>
 
+        {/* PWA Status Indicator */}
+        {isPWAMode && (
+          <div className="flex items-center space-x-2 text-sm bg-primary/10 border border-primary/20 rounded-lg p-2">
+            <Shield className="h-4 w-4 text-primary" />
+            <span className="text-primary font-medium">PWA Mode Active</span>
+            <Badge variant="secondary" className="text-xs">
+              {backgroundTrackingSupported
+                ? "Background Tracking Enabled"
+                : "Limited Background"}
+            </Badge>
+          </div>
+        )}
+
+        {/* Background Tracking Status */}
+        {!isPWAMode && backgroundTrackingSupported && (
+          <div className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2">
+            <div className="flex items-center space-x-1">
+              <Shield className="h-3 w-3 text-amber-600" />
+              <span className="font-medium text-amber-700 dark:text-amber-400">
+                Better Tracking Available
+              </span>
+            </div>
+            <p className="mt-1">
+              Install this app to your home screen for improved background GPS
+              tracking when phone is in pocket.
+            </p>
+          </div>
+        )}
+
         {/* Tracking Session Info */}
         {isTracking && trackingStartTime && (
           <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-2">
@@ -543,38 +593,9 @@ export function LocationTracker({
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center space-x-2 text-muted-foreground">
-                <Route className="h-3 w-3" />
-                <span>Route points: {routeCoordinates.length}</span>
-              </div>
-              <div
-                className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs ${
-                  routeQuality === "high"
-                    ? "bg-success/20 text-success"
-                    : routeQuality === "medium"
-                      ? "bg-warning/20 text-warning"
-                      : "bg-destructive/20 text-destructive"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    routeQuality === "high"
-                      ? "bg-success"
-                      : routeQuality === "medium"
-                        ? "bg-warning"
-                        : "bg-destructive"
-                  }`}
-                ></div>
-                <span>
-                  {routeQuality === "high"
-                    ? "High"
-                    : routeQuality === "medium"
-                      ? "Medium"
-                      : "Low"}{" "}
-                  Quality
-                </span>
-              </div>
+            <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+              <Route className="h-3 w-3" />
+              <span>Route points: {routeCoordinates.length}</span>
             </div>
           </div>
         )}
@@ -707,7 +728,7 @@ export function LocationTracker({
           {!isTracking ? (
             <Button onClick={handleStartTracking} className="flex-1">
               <Navigation className="h-4 w-4 mr-2" />
-              Start Tracking
+              LogIn
             </Button>
           ) : (
             <Button
@@ -715,7 +736,7 @@ export function LocationTracker({
               variant="destructive"
               className="flex-1"
             >
-              Stop Tracking
+              LogOut
             </Button>
           )}
 
@@ -727,17 +748,26 @@ export function LocationTracker({
 
         {/* Instructions */}
         {!isTracking && (
-          <div className="text-xs text-muted-foreground p-3 bg-muted/50 rounded-md space-y-2">
+          <div className="text-xs text-muted-foreground p-3 bg-muted/50 rounded-md">
             <p>
-              <strong>GPS Tracking:</strong> Captures your actual path with
-              precise coordinates. Works best outdoors with clear sky view.
+              <strong>Note:</strong> Location tracking requires permission and
+              works best outdoors or near windows. High accuracy mode uses GPS
+              and may drain battery faster.
             </p>
-            <p>
-              <strong>Route Quality:</strong> Higher GPS accuracy and more
-              points = better route visualization.
-            </p>
-            <p>
-              <strong>Auto-save:</strong> Complete route will be automatically
+            {isPWAMode ? (
+              <p className="mt-2 text-success">
+                <strong>PWA Mode:</strong> Enhanced background tracking is
+                active. Your route will be tracked even when the phone is in
+                your pocket.
+              </p>
+            ) : (
+              <p className="mt-2">
+                <strong>Tip:</strong> Install this app to your home screen for
+                better background tracking when phone is in pocket.
+              </p>
+            )}
+            <p className="mt-2">
+              <strong>Auto-capture:</strong> Route map will be automatically
               saved when you stop tracking.
             </p>
           </div>
@@ -745,48 +775,23 @@ export function LocationTracker({
 
         {/* Active tracking info */}
         {isTracking && (
-          <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md space-y-2">
+          <div className="text-xs text-info p-3 bg-info/10 border border-info/20 rounded-md">
             <p className="flex items-center">
               <Route className="h-3 w-3 mr-1" />
-              <strong>
-                GPS route will be auto-captured when tracking stops
-              </strong>
+              <strong>Route will be auto-captured when tracking stops</strong>
             </p>
-            {routeCoordinates.length > 0 && (
-              <div className="flex items-center justify-between">
-                <span>Route Quality:</span>
-                <div
-                  className={`flex items-center space-x-1 px-2 py-1 rounded-full ${
-                    routeQuality === "high"
-                      ? "bg-success/20 text-success"
-                      : routeQuality === "medium"
-                        ? "bg-warning/20 text-warning"
-                        : "bg-destructive/20 text-destructive"
-                  }`}
-                >
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      routeQuality === "high"
-                        ? "bg-success"
-                        : routeQuality === "medium"
-                          ? "bg-warning"
-                          : "bg-destructive"
-                    }`}
-                  ></div>
-                  <span>
-                    {routeQuality === "high"
-                      ? "High Accuracy"
-                      : routeQuality === "medium"
-                        ? "Medium Accuracy"
-                        : "Low Accuracy"}
-                  </span>
-                </div>
-              </div>
+            {isPWAMode && backgroundTrackingSupported && (
+              <p className="flex items-center mt-1 text-success">
+                <Shield className="h-3 w-3 mr-1" />
+                <strong>
+                  Background tracking active - keep phone in pocket
+                </strong>
+              </p>
             )}
-            {routeQuality === "low" && (
-              <p className="text-warning text-xs mt-1">
-                💡 For better route accuracy, ensure good GPS signal and move
-                outdoors
+            {wakeLock && (
+              <p className="flex items-center mt-1 text-amber-600">
+                <Timer className="h-3 w-3 mr-1" />
+                Screen sleep disabled for better tracking
               </p>
             )}
           </div>
