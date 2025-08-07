@@ -68,6 +68,86 @@ export function LocationTracker({
       watchPosition: isTracking,
     });
 
+  // PWA Detection and Service Worker Setup
+  useEffect(() => {
+    // Check if running as PWA
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroidPWA = window.matchMedia('(display-mode: standalone)').matches;
+
+    setIsPWAMode(isStandalone || isAndroidPWA);
+
+    // Check for background tracking capabilities
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const hasNotifications = 'Notification' in window;
+    const hasBackgroundSync = 'serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype;
+
+    setBackgroundTrackingSupported(hasServiceWorker && hasNotifications);
+
+    // Set up service worker communication
+    if (hasServiceWorker) {
+      navigator.serviceWorker.ready.then((registration) => {
+        console.log('Service Worker ready for location tracking');
+        setServiceWorkerReady(true);
+
+        // Listen for messages from service worker
+        navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+      });
+    }
+
+    return () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+      }
+    };
+  }, []);
+
+  // Handle messages from service worker
+  const handleServiceWorkerMessage = useCallback((event: MessageEvent) => {
+    if (event.data?.type === 'LOCATION_UPDATE') {
+      const locationData = event.data.payload;
+      console.log('Received background location update:', locationData);
+
+      // Update local state with background location
+      if (isTracking) {
+        const newLocation: LocationData = {
+          lat: locationData.latitude,
+          lng: locationData.longitude,
+          address: `${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}`,
+          timestamp: locationData.timestamp,
+        };
+
+        setRouteCoordinates((prevRoute) => {
+          const newRoute = [...prevRoute, newLocation];
+
+          // Calculate distance if we have a previous point
+          if (prevRoute.length > 0) {
+            const lastPoint = prevRoute[prevRoute.length - 1];
+            const distance = calculateDistance(
+              lastPoint.lat,
+              lastPoint.lng,
+              locationData.latitude,
+              locationData.longitude,
+            );
+            setTotalDistance((prev) => prev + distance);
+          }
+
+          return newRoute;
+        });
+      }
+    }
+
+    if (event.data?.type === 'GET_EMPLOYEE_ID') {
+      // Send employee ID to service worker
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'EMPLOYEE_ID_RESPONSE',
+          payload: employeeId
+        });
+      }
+    }
+  }, [isTracking, employeeId, calculateDistance]);
+
   // Calculate distance between two points using Haversine formula
   const calculateDistance = useCallback(
     (lat1: number, lng1: number, lat2: number, lng2: number): number => {
