@@ -32,6 +32,9 @@ export default function Index() {
   const [showLocationPrompt, setShowLocationPrompt] = useState(true);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
 
+  // PWA install functionality
+  const { canInstall, isInstalled } = usePWAInstall();
+
   useEffect(() => {
     fetchEmployees();
     // Set up auto-refresh every 60 seconds (reduced from 30s)
