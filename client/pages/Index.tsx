@@ -77,7 +77,10 @@ export default function Index() {
         const data: EmployeesResponse = await response.json();
         setEmployees(data.employees || []);
         setLastRefresh(new Date());
-        console.log("Employees data fetched successfully:", data.employees?.length || 0);
+        console.log(
+          "Employees data fetched successfully:",
+          data.employees?.length || 0,
+        );
       } else {
         console.error(
           `Failed to fetch employees: ${response.status} ${response.statusText}`,
