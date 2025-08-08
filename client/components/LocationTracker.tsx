@@ -36,7 +36,22 @@ export function LocationTracker({
   onTrackingSessionStart,
   onTrackingSessionEnd,
 }: LocationTrackerProps) {
-  const [isTracking, setIsTracking] = useState(trackingEnabled);
+  // Initialize tracking state from localStorage if available
+  const getInitialTrackingState = () => {
+    try {
+      const savedState = localStorage.getItem(`tracking_${employeeId}`);
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        console.log("🔄 Restored tracking state from localStorage:", parsed);
+        return parsed.isTracking || false;
+      }
+    } catch (error) {
+      console.warn("Error reading tracking state from localStorage:", error);
+    }
+    return trackingEnabled;
+  };
+
+  const [isTracking, setIsTracking] = useState(getInitialTrackingState);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [updateCount, setUpdateCount] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
