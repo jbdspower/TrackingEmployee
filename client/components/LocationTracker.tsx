@@ -390,9 +390,17 @@ export function LocationTracker({
               latitude,
               longitude,
             );
-            setTotalDistance((prev) => prev + distance);
+            setTotalDistance((prev) => {
+              const newDistance = prev + distance;
+              // Save updated tracking state to localStorage
+              saveTrackingState(true, currentSession, trackingStartTime, newRoute, newDistance);
+              return newDistance;
+            });
 
             console.log(`Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points`);
+          } else {
+            // Save tracking state even for first point
+            saveTrackingState(true, currentSession, trackingStartTime, newRoute, totalDistance);
           }
 
           return newRoute;
