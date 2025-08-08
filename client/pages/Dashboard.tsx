@@ -115,9 +115,11 @@ export default function Dashboard() {
   // Check authentication on component mount
   useEffect(() => {
     if (!isAuthenticated()) {
-      console.log("⚠️ User not authenticated, redirecting to home...");
+      console.log("⚠️ User not authenticated in Dashboard, redirecting to home...");
       window.location.href = "/";
       return;
+    } else {
+      console.log("✅ User authenticated in Dashboard");
     }
   }, []);
 
