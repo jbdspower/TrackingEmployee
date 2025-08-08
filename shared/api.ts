@@ -9,6 +9,7 @@ export interface LocationData {
   lng: number;
   address: string;
   timestamp: string;
+  accuracy?: number; // GPS accuracy in meters
 }
 
 // External API User structure
