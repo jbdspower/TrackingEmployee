@@ -11,7 +11,6 @@ import { RouteSnapshotCapture } from "@/components/RouteSnapshotCapture";
 import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
 import { useToast } from "@/hooks/use-toast";
-import { isAuthenticated } from "@/lib/auth";
 import {
   Employee,
   MeetingLog,
