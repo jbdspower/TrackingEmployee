@@ -88,9 +88,13 @@ export function getAuthToken(): string | null {
  * Clear authentication data
  */
 export function clearAuthData(): void {
-  localStorage.removeItem("idToken");
-  localStorage.removeItem("user");
-  console.log("🔒 Authentication data cleared");
+  try {
+    localStorage.removeItem("idToken");
+    localStorage.removeItem("user");
+    console.log("🔒 Authentication data cleared");
+  } catch (error) {
+    console.error("❌ Error clearing authentication data:", error);
+  }
 }
 
 /**
