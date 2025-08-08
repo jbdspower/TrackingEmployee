@@ -315,6 +315,9 @@ export function LocationTracker({
   // Timer effect
   useEffect(() => {
     if (isTracking && trackingStartTime) {
+      // Set initial elapsed time if we're restoring from a previous session
+      setElapsedTime(Date.now() - trackingStartTime.getTime());
+
       timerRef.current = setInterval(() => {
         setElapsedTime(Date.now() - trackingStartTime.getTime());
       }, 1000);
