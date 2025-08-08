@@ -13,9 +13,9 @@ import Tracking from "./pages/Tracking";
 import TeamManagement from "./pages/TeamManagement";
 import DataManagement from "./pages/DataManagement";
 import NotFound from "./pages/NotFound";
+import { jwtDecode } from "jwt-decode";
 import { useEffect } from "react";
 import { testGPSRouting, logRoutingComparison } from "@/lib/testRouting";
-import { loginWithToken, isAuthenticated, getCurrentUser, clearAuthData } from "@/lib/auth";
 
 // Initialize HttpClient
 HttpClient.init();
