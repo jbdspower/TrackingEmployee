@@ -977,6 +977,14 @@ export function LocationTracker({
               <Route className="h-3 w-3 mr-1" />
               <strong>Route will be auto-captured when tracking stops</strong>
             </p>
+            {trackingStartTime && currentSession && (
+              <p className="flex items-center mt-1 text-success">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                <strong>
+                  Tracking restored from previous session
+                </strong>
+              </p>
+            )}
             {isPWAMode && backgroundTrackingSupported && (
               <p className="flex items-center mt-1 text-success">
                 <Shield className="h-3 w-3 mr-1" />
