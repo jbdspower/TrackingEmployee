@@ -633,9 +633,15 @@ export function LocationTracker({
 
       console.log("Calling onTrackingSessionEnd with session:", updatedSession);
       setCurrentSession(updatedSession);
+
+      // Clear tracking state from localStorage when tracking ends
+      clearTrackingState();
+
       onTrackingSessionEnd?.(updatedSession);
     } else {
       console.log("Cannot end tracking session - no current session");
+      // Clear tracking state even if no session
+      clearTrackingState();
     }
   };
 
