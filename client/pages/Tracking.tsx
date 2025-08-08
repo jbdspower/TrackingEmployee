@@ -55,6 +55,13 @@ export default function Tracking() {
   const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
 
   useEffect(() => {
+    // Check authentication first
+    if (!isAuthenticated()) {
+      console.log("⚠️ User not authenticated, redirecting to home...");
+      navigate("/");
+      return;
+    }
+
     if (!employeeId) {
       navigate("/");
       return;
