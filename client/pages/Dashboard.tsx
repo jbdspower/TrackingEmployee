@@ -215,11 +215,11 @@ export default function Dashboard() {
       // Build query parameters
       const queryParams = new URLSearchParams();
 
-      if (isSuperAdmin) {
+      if (isUserSuperAdmin) {
         if (filters.employeeId && filters.employeeId !== "all") {
           queryParams.append("employeeId", filters.employeeId);
         }
-      } else if (user?._id) {
+      } else if (user._id) {
         // If not super admin and user has valid ID, filter by logged-in user's ID
         queryParams.append("employeeId", user._id);
       }
