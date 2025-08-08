@@ -185,22 +185,9 @@ export default function Dashboard() {
     try {
       setLoading(true);
 
-      // Check authentication first
-      if (!isAuthenticated()) {
-        console.log("⚠️ User not authenticated in fetchAnalytics");
-        window.location.href = "/";
-        return;
-      }
-
-      // Get current authenticated user
-      const user = getCurrentUser();
-      if (!user) {
-        console.log("⚠️ Could not get current user");
-        window.location.href = "/";
-        return;
-      }
-
-      const isUserSuperAdmin = isSuperAdmin();
+      // Get user from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const isSuperAdmin = user?.role === "super_admin";
 
       // Build query parameters
       const queryParams = new URLSearchParams();
