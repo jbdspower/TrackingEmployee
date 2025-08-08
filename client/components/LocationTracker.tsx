@@ -159,6 +159,28 @@ export function LocationTracker({
       watchPosition: isTracking,
     });
 
+  // Restore tracking state on component mount
+  useEffect(() => {
+    if (isTracking && trackingStartTime && currentSession) {
+      console.log("🔄 Restored active tracking session, resuming...");
+
+      // Restart geolocation watching
+      getCurrentPosition();
+
+      // Call onTrackingSessionStart to notify parent component
+      onTrackingSessionStart?.(currentSession);
+
+      // If PWA tracking was enabled, restart it
+      if (serviceWorkerReady && backgroundTrackingSupported) {
+        console.log("🔄 Restarting background tracking via Service Worker");
+        navigator.serviceWorker.controller?.postMessage({
+          type: "START_BACKGROUND_TRACKING",
+          payload: { employeeId },
+        });
+      }
+    }
+  }, []); // Only run on mount
+
   // PWA Detection and Service Worker Setup
   useEffect(() => {
     // Check if running as PWA
