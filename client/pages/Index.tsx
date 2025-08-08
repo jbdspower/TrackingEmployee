@@ -23,6 +23,7 @@ import { EmployeeMap } from "@/components/EmployeeMap";
 import { MeetingHistory } from "@/components/MeetingHistory";
 import { PWAInstallPrompt, usePWAInstall } from "@/components/PWAInstallPrompt";
 import { HttpClient } from "@/lib/httpClient";
+import { isAuthenticated, getCurrentUser } from "@/lib/auth";
 
 export default function Index() {
   const [employees, setEmployees] = useState<Employee[]>([]);
