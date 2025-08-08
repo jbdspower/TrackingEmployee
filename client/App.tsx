@@ -90,7 +90,7 @@ const App = () => {
       // Check for existing authentication in localStorage
       if (isAuthenticated()) {
         const user = getCurrentUser();
-        console.log("✅ Restored authentication from localStorage:", user);
+        console.log("✅ Restored authentication from localStorage:", user?.name || "Unknown User");
       } else {
         console.log("ℹ️ No valid authentication found");
       }
