@@ -538,6 +538,10 @@ export function LocationTracker({
 
     console.log("Starting tracking session:", session);
     setCurrentSession(session);
+
+    // Save tracking state to localStorage
+    saveTrackingState(true, session, now, [], 0);
+
     onTrackingSessionStart?.(session);
   };
 
