@@ -209,11 +209,40 @@ export function LocationTracker({
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
 
-      // Rate limit: only update every 10 seconds minimum
-      if (timeSinceLastUpdate >= 10000 || lastUpdateTime === 0) {
+      // Smart rate limiting based on movement and accuracy
+      const shouldUpdate = (() => {
+        // Always update if it's the first location
+        if (lastUpdateTime === 0) return true;
+
+        // Minimum 5 seconds between updates (reduced for better tracking)
+        if (timeSinceLastUpdate < 5000) return false;
+
+        // Force update every 30 seconds regardless
+        if (timeSinceLastUpdate >= 30000) return true;
+
+        // Check if we've moved significantly since last update
+        if (routeCoordinates.length > 0) {
+          const lastPoint = routeCoordinates[routeCoordinates.length - 1];
+          const distance = calculateDistance(
+            lastPoint.lat,
+            lastPoint.lng,
+            latitude,
+            longitude,
+          );
+
+          // Update if moved more than 10m or accuracy is very good
+          if (distance > 10 || (accuracy && accuracy < 15)) {
+            return true;
+          }
+        }
+
+        return false;
+      })();
+
+      if (shouldUpdate) {
         updateLocationOnServer(latitude, longitude, accuracy);
 
-        // Add to route if tracking is active
+        // Add to route if tracking is active with smart filtering
         const newLocation: LocationData = {
           lat: latitude,
           lng: longitude,
@@ -222,14 +251,49 @@ export function LocationTracker({
         };
 
         setRouteCoordinates((prevRoute) => {
-          const newRoute = [...prevRoute, newLocation];
+          // Smart route point addition
+          const shouldAddPoint = (() => {
+            // Always add first point
+            if (prevRoute.length === 0) return true;
+
+            const lastPoint = prevRoute[prevRoute.length - 1];
+            const distance = calculateDistance(
+              lastPoint.lat,
+              lastPoint.lng,
+              latitude,
+              longitude,
+            );
+
+            // Add point if moved more than 8 meters
+            if (distance > 8) return true;
+
+            // Add point if accuracy is significantly better
+            if (accuracy && accuracy < 10 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.7)) {
+              return true;
+            }
+
+            // Add point occasionally for long stationary periods (every 5 minutes)
+            const timeSinceLastPoint = new Date().getTime() - new Date(lastPoint.timestamp).getTime();
+            if (timeSinceLastPoint > 5 * 60 * 1000) return true;
+
+            return false;
+          })();
+
+          if (!shouldAddPoint) {
+            console.log(`Route point filtered: moved ${calculateDistance(
+              prevRoute[prevRoute.length - 1].lat,
+              prevRoute[prevRoute.length - 1].lng,
+              latitude,
+              longitude,
+            ).toFixed(1)}m`);
+            return prevRoute;
+          }
+
+          const newRoute = [...prevRoute, { ...newLocation, accuracy }];
 
           // Calculate distance if we have a previous point
           if (prevRoute.length > 0) {
             const lastPoint = prevRoute[prevRoute.length - 1];
-
-            // Use straight-line distance for real-time tracking (faster)
-            // Road-based distance will be calculated when route is finalized
             const distance = calculateDistance(
               lastPoint.lat,
               lastPoint.lng,
@@ -237,6 +301,8 @@ export function LocationTracker({
               longitude,
             );
             setTotalDistance((prev) => prev + distance);
+
+            console.log(`Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points`);
           }
 
           return newRoute;
@@ -247,9 +313,10 @@ export function LocationTracker({
         setLastUpdateTime(now);
         onLocationUpdate?.(latitude, longitude, accuracy);
       } else {
-        console.log(
-          `Rate limited: ${Math.ceil((10000 - timeSinceLastUpdate) / 1000)}s remaining`,
-        );
+        const reason = timeSinceLastUpdate < 5000
+          ? `Rate limited: ${Math.ceil((5000 - timeSinceLastUpdate) / 1000)}s remaining`
+          : 'No significant movement detected';
+        console.log(reason);
       }
     }
   }, [
