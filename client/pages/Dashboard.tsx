@@ -111,17 +111,6 @@ export default function Dashboard() {
     searchTerm: "",
   });
 
-  // Check authentication on component mount
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      console.log("⚠️ User not authenticated in Dashboard, redirecting to home...");
-      window.location.href = "/";
-      return;
-    } else {
-      console.log("✅ User authenticated in Dashboard");
-    }
-  }, []);
-
   // Detailed employee view state
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [employeeDayRecords, setEmployeeDayRecords] = useState<
