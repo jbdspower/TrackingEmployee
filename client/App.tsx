@@ -75,50 +75,24 @@ const App = () => {
 
     if (token) {
       // Handle new token from URL
-      try {
-        const decoded: any = jwtDecode(token);
-        localStorage.setItem("idToken", token);
-        localStorage.setItem("user", JSON.stringify(decoded));
-        console.log("✅ New authentication - user logged in:", decoded);
-
+      const user = loginWithToken(token);
+      if (user) {
         // Clean up URL
         window.history.replaceState(
           {},
           document.title,
           window.location.pathname,
         );
-      } catch (err) {
-        console.error("❌ Invalid token:", err);
-        // Clear any existing auth data if token is invalid
-        localStorage.removeItem("idToken");
-        localStorage.removeItem("user");
+      } else {
+        console.error("❌ Failed to login with provided token");
       }
     } else {
       // Check for existing authentication in localStorage
-      try {
-        const existingToken = localStorage.getItem("idToken");
-        const existingUser = localStorage.getItem("user");
-
-        if (existingToken && existingUser) {
-          // Verify token is still valid
-          const decoded = jwtDecode(existingToken);
-          const now = Date.now() / 1000;
-
-          if (decoded.exp && decoded.exp > now) {
-            console.log("✅ Restored authentication from localStorage:", JSON.parse(existingUser));
-          } else {
-            console.log("⚠️ Token expired, clearing authentication");
-            localStorage.removeItem("idToken");
-            localStorage.removeItem("user");
-          }
-        } else {
-          console.log("ℹ️ No existing authentication found");
-        }
-      } catch (err) {
-        console.error("❌ Error checking existing authentication:", err);
-        // Clear corrupted auth data
-        localStorage.removeItem("idToken");
-        localStorage.removeItem("user");
+      if (isAuthenticated()) {
+        const user = getCurrentUser();
+        console.log("✅ Restored authentication from localStorage:", user);
+      } else {
+        console.log("ℹ️ No valid authentication found");
       }
     }
 
