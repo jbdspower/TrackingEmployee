@@ -36,14 +36,6 @@ export default function Index() {
   const { canInstall, isInstalled } = usePWAInstall();
 
   useEffect(() => {
-    // Check if user is already authenticated and redirect to dashboard
-    if (isAuthenticated()) {
-      const user = getCurrentUser();
-      console.log("✅ User already authenticated, redirecting to dashboard:", user);
-      window.location.href = "/dashboard";
-      return;
-    }
-
     fetchEmployees();
     // Set up auto-refresh every 60 seconds (reduced from 30s)
     const interval = setInterval(fetchEmployees, 60000);
