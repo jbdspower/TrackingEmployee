@@ -102,6 +102,48 @@ export function LocationTracker({
   );
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Function to save tracking state to localStorage
+  const saveTrackingState = (
+    trackingState: boolean,
+    session: TrackingSession | null,
+    startTime: Date | null,
+    coordinates: LocationData[],
+    distance: number,
+  ) => {
+    try {
+      const trackingStateData = {
+        isTracking: trackingState,
+        timestamp: new Date().toISOString(),
+      };
+
+      const trackingData = {
+        currentSession: session,
+        trackingStartTime: startTime?.toISOString(),
+        routeCoordinates: coordinates,
+        totalDistance: distance,
+        lastSaved: new Date().toISOString(),
+      };
+
+      localStorage.setItem(`tracking_${employeeId}`, JSON.stringify(trackingStateData));
+      localStorage.setItem(`trackingData_${employeeId}`, JSON.stringify(trackingData));
+
+      console.log("💾 Tracking state saved to localStorage");
+    } catch (error) {
+      console.warn("Error saving tracking state to localStorage:", error);
+    }
+  };
+
+  // Function to clear tracking state from localStorage
+  const clearTrackingState = () => {
+    try {
+      localStorage.removeItem(`tracking_${employeeId}`);
+      localStorage.removeItem(`trackingData_${employeeId}`);
+      console.log("🗑️ Tracking state cleared from localStorage");
+    } catch (error) {
+      console.warn("Error clearing tracking state from localStorage:", error);
+    }
+  };
+
   // PWA background tracking state
   const [isPWAMode, setIsPWAMode] = useState(false);
   const [backgroundTrackingSupported, setBackgroundTrackingSupported] =
