@@ -28,24 +28,25 @@ export function isAuthenticated(): boolean {
   try {
     const token = localStorage.getItem("idToken");
     const user = localStorage.getItem("user");
-    
+
     if (!token || !user) {
       return false;
     }
-    
+
     // Verify token is not expired
     const decoded = jwtDecode(token);
     const now = Date.now() / 1000;
-    
+
     if (decoded.exp && decoded.exp <= now) {
       // Token expired, clear auth data
+      console.log("🔒 Token expired, clearing authentication");
       clearAuthData();
       return false;
     }
-    
+
     return true;
   } catch (error) {
-    console.error("Error checking authentication:", error);
+    console.error("❌ Error checking authentication:", error);
     clearAuthData();
     return false;
   }
