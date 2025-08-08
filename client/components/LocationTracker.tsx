@@ -58,15 +58,48 @@ export function LocationTracker({
   const [failureCount, setFailureCount] = useState(0);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
 
+  // Restore tracking session data from localStorage
+  const getInitialTrackingData = () => {
+    try {
+      const savedData = localStorage.getItem(`trackingData_${employeeId}`);
+      if (savedData) {
+        const parsed = JSON.parse(savedData);
+        console.log("🔄 Restored tracking data from localStorage:", parsed);
+        return {
+          currentSession: parsed.currentSession,
+          trackingStartTime: parsed.trackingStartTime ? new Date(parsed.trackingStartTime) : null,
+          routeCoordinates: parsed.routeCoordinates || [],
+          totalDistance: parsed.totalDistance || 0,
+        };
+      }
+    } catch (error) {
+      console.warn("Error reading tracking data from localStorage:", error);
+    }
+    return {
+      currentSession: null,
+      trackingStartTime: null,
+      routeCoordinates: [],
+      totalDistance: 0,
+    };
+  };
+
+  const initialData = getInitialTrackingData();
+
   // Enhanced tracking state
   const [currentSession, setCurrentSession] = useState<TrackingSession | null>(
-    null,
+    initialData.currentSession,
   );
-  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(null);
+  const [trackingStartTime, setTrackingStartTime] = useState<Date | null>(
+    initialData.trackingStartTime,
+  );
   const [trackingEndTime, setTrackingEndTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>([]);
-  const [totalDistance, setTotalDistance] = useState<number>(0);
+  const [routeCoordinates, setRouteCoordinates] = useState<LocationData[]>(
+    initialData.routeCoordinates,
+  );
+  const [totalDistance, setTotalDistance] = useState<number>(
+    initialData.totalDistance,
+  );
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // PWA background tracking state
