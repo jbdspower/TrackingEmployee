@@ -181,6 +181,23 @@ export function LocationTracker({
     }
   }, []); // Only run on mount
 
+  // Handle page unload - save current state
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isTracking && currentSession) {
+        // Save the current state one more time before page unloads
+        saveTrackingState(isTracking, currentSession, trackingStartTime, routeCoordinates, totalDistance);
+        console.log("💾 Saved tracking state before page unload");
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isTracking, currentSession, trackingStartTime, routeCoordinates, totalDistance]);
+
   // PWA Detection and Service Worker Setup
   useEffect(() => {
     // Check if running as PWA
