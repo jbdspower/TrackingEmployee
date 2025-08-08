@@ -68,31 +68,26 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
-  // ✅ Handle authentication on app load
+  // ✅ Handle token on first load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
 
     if (token) {
-      // Handle new token from URL
-      const user = loginWithToken(token);
-      if (user) {
+      try {
+        const decoded: any = jwtDecode(token);
+        localStorage.setItem("idToken", token);
+        localStorage.setItem("user", JSON.stringify(decoded));
+        console.log("Authenticated user:", decoded);
+
         // Clean up URL
         window.history.replaceState(
           {},
           document.title,
           window.location.pathname,
         );
-      } else {
-        console.error("❌ Failed to login with provided token");
-      }
-    } else {
-      // Check for existing authentication in localStorage
-      if (isAuthenticated()) {
-        const user = getCurrentUser();
-        console.log("✅ Restored authentication from localStorage:", user?.name || "Unknown User");
-      } else {
-        console.log("ℹ️ No valid authentication found");
+      } catch (err) {
+        console.error("Invalid token:", err);
       }
     }
 
