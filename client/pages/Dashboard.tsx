@@ -45,7 +45,6 @@ import {
 } from "lucide-react";
 import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
-import { getCurrentUser, isAuthenticated, isSuperAdmin } from "@/lib/auth";
 import {
   format,
   startOfDay,
