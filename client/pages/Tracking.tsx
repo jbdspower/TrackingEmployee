@@ -57,9 +57,11 @@ export default function Tracking() {
   useEffect(() => {
     // Check authentication first
     if (!isAuthenticated()) {
-      console.log("⚠️ User not authenticated, redirecting to home...");
+      console.log("⚠️ User not authenticated in Tracking, redirecting to home...");
       navigate("/");
       return;
+    } else {
+      console.log("✅ User authenticated in Tracking");
     }
 
     if (!employeeId) {
