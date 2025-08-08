@@ -153,7 +153,7 @@ export function EmployeeMap({
     }
   }, [employees, selectedEmployee, onEmployeeClick]);
 
-  // Handle route visualization with road-based routing
+  // Handle route visualization with intelligent road-based routing
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -175,73 +175,209 @@ export function EmployeeMap({
 
     const route = trackingSession.route;
 
-    // Show exact GPS path (the actual route the employee took)
-    const displayGPSRoute = () => {
+    // Enhanced route display with road-based routing for better visualization
+    const displayEnhancedRoute = async () => {
       if (route.length < 2) {
         setRouteError("Not enough points for route visualization");
         setRouteInfo(null);
         return;
       }
 
-      setIsLoadingRoute(false);
+      setIsLoadingRoute(true);
       setRouteError(null);
 
       try {
         if (!mapRef.current) return;
 
-        // Use the exact GPS coordinates captured during tracking
-        const gpsCoords: L.LatLngExpression[] = route.map((point) => [
-          point.lat,
-          point.lng,
-        ]);
+        let finalCoordinates: L.LatLngExpression[] = [];
+        let routeSource = "gps";
+        let routeConfidence = "high";
 
-        // Determine route quality based on point density and tracking session
-        const routeQuality =
-          route.length >= 10 ? "high" : route.length >= 5 ? "medium" : "low";
-        const routeColor =
-          routeQuality === "high"
-            ? "#22c55e"
-            : routeQuality === "medium"
-              ? "#f59e0b"
-              : "#ef4444";
+        // Strategy 1: If we have good GPS density (many points), use GPS with road snapping
+        if (route.length >= 8) {
+          console.log("Using enhanced GPS route with road intelligence");
 
-        // Create polyline showing the exact path taken by the employee
-        routeLayerRef.current = L.polyline(gpsCoords, {
-          color: routeColor, // Color indicates route quality
-          weight: 4,
-          opacity: 0.9,
-          smoothFactor: 0.1, // Minimal smoothing to preserve exact GPS accuracy
+          // Group nearby points to reduce API calls and improve performance
+          const keyPoints = [route[0]]; // Always include start
+          for (let i = 1; i < route.length - 1; i++) {
+            const prev = keyPoints[keyPoints.length - 1];
+            const curr = route[i];
+
+            // Calculate distance from last key point
+            const distance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+
+            // Add point if it's far enough away (>100m) or represents significant direction change
+            if (distance > 100) {
+              keyPoints.push(curr);
+            }
+          }
+          keyPoints.push(route[route.length - 1]); // Always include end
+
+          // Try to get road-based route for key segments
+          try {
+            const segments = [];
+            for (let i = 0; i < keyPoints.length - 1; i++) {
+              const segment = await routingService.getRoute(keyPoints[i], keyPoints[i + 1]);
+              if (segment.source === 'road-api') {
+                segments.push(...segment.coordinates);
+              } else {
+                // Fallback to straight line for this segment
+                segments.push([keyPoints[i].lat, keyPoints[i].lng], [keyPoints[i + 1].lat, keyPoints[i + 1].lng]);
+              }
+            }
+
+            if (segments.length > 0) {
+              finalCoordinates = segments;
+              routeSource = "road-enhanced";
+              routeConfidence = "high";
+            } else {
+              throw new Error("Road routing failed");
+            }
+          } catch (roadError) {
+            console.warn("Road-based routing failed, using smoothed GPS:", roadError);
+            finalCoordinates = route.map(point => [point.lat, point.lng]);
+            routeSource = "gps-smoothed";
+            routeConfidence = "medium";
+          }
+        }
+        // Strategy 2: If we have fewer GPS points, try to get full road route
+        else if (route.length >= 2) {
+          console.log("Using road-based routing for sparse GPS data");
+
+          try {
+            const roadRoute = await routingService.getRouteForPoints(route.slice(0, Math.min(route.length, 5)));
+            if (roadRoute.coordinates.length > 0 && roadRoute.source === 'road-api') {
+              finalCoordinates = roadRoute.coordinates;
+              routeSource = "road-api";
+              routeConfidence = "high";
+            } else {
+              throw new Error("Road API unavailable");
+            }
+          } catch (roadError) {
+            console.warn("Road routing API failed, using GPS points:", roadError);
+            finalCoordinates = route.map(point => [point.lat, point.lng]);
+            routeSource = "gps";
+            routeConfidence = "low";
+          }
+        }
+
+        // Determine visual styling based on route quality
+        const getRouteStyle = () => {
+          switch (routeSource) {
+            case "road-api":
+            case "road-enhanced":
+              return {
+                color: "#1e40af", // Blue for road-based routes
+                weight: 5,
+                opacity: 0.8,
+                dashArray: undefined
+              };
+            case "gps-smoothed":
+              return {
+                color: "#059669", // Green for smoothed GPS
+                weight: 4,
+                opacity: 0.7,
+                dashArray: undefined
+              };
+            default:
+              return {
+                color: "#dc2626", // Red for basic GPS
+                weight: 3,
+                opacity: 0.6,
+                dashArray: "10, 5" // Dashed line to indicate lower accuracy
+              };
+          }
+        };
+
+        const style = getRouteStyle();
+
+        // Create enhanced polyline with better styling
+        routeLayerRef.current = L.polyline(finalCoordinates, {
+          ...style,
+          smoothFactor: routeSource.includes('road') ? 0.5 : 0.2,
           lineCap: "round",
           lineJoin: "round",
         }).addTo(mapRef.current);
 
-        // Set route info for user feedback
-        setRouteInfo({
-          type: "GPS Tracking",
-          confidence:
-            routeQuality === "high"
-              ? "High Accuracy"
-              : routeQuality === "medium"
-                ? "Medium Accuracy"
-                : "Low Accuracy",
-          points: route.length,
-        });
+        // Add route shadow for better visibility
+        const shadowRoute = L.polyline(finalCoordinates, {
+          color: "#000000",
+          weight: style.weight + 2,
+          opacity: 0.3,
+          smoothFactor: style.smoothFactor,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(mapRef.current);
+
+        // Insert shadow behind main route
+        shadowRoute.bringToBack();
+
+        // Set enhanced route info
+        const getRouteInfo = () => {
+          switch (routeSource) {
+            case "road-api":
+              return { type: "Road Network", confidence: "High Accuracy", points: finalCoordinates.length };
+            case "road-enhanced":
+              return { type: "GPS + Road Intelligence", confidence: "High Accuracy", points: finalCoordinates.length };
+            case "gps-smoothed":
+              return { type: "Smoothed GPS", confidence: "Medium Accuracy", points: route.length };
+            default:
+              return { type: "GPS Tracking", confidence: "Basic Accuracy", points: route.length };
+          }
+        };
+
+        setRouteInfo(getRouteInfo());
 
         console.log(
-          `📍 Displaying actual GPS path with ${route.length} points (${routeQuality} quality)`,
+          `🗺️ Displaying ${routeSource} route with ${finalCoordinates.length} coordinates (${routeConfidence} confidence)`,
         );
 
-        // Fit map to show the actual route
-        const routeBounds = L.latLngBounds(gpsCoords);
+        // Fit map to show the route with appropriate padding
+        const routeBounds = L.latLngBounds(finalCoordinates);
         mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
+
       } catch (error) {
-        console.error("Error displaying GPS route:", error);
-        setRouteError("Failed to display GPS route");
+        console.error("Error displaying enhanced route:", error);
+        setRouteError("Failed to display route");
         setRouteInfo(null);
+
+        // Fallback: show basic GPS route
+        try {
+          const basicCoords = route.map(point => [point.lat, point.lng]);
+          routeLayerRef.current = L.polyline(basicCoords, {
+            color: "#dc2626",
+            weight: 3,
+            opacity: 0.6,
+            dashArray: "5, 5",
+            smoothFactor: 0.1,
+          }).addTo(mapRef.current!);
+
+          setRouteInfo({ type: "Basic GPS", confidence: "Limited", points: route.length });
+        } catch (fallbackError) {
+          console.error("Even fallback route failed:", fallbackError);
+        }
+      } finally {
+        setIsLoadingRoute(false);
       }
     };
 
-    displayGPSRoute();
+    // Helper function to calculate distance between two points
+    const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+      const R = 6371e3; // Earth's radius in meters
+      const φ1 = (lat1 * Math.PI) / 180;
+      const φ2 = (lat2 * Math.PI) / 180;
+      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+      const Δλ = ((lng1 - lng2) * Math.PI) / 180;
+
+      const a =
+        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    };
+
+    displayEnhancedRoute();
 
     // Add start marker
     if (trackingSession.startLocation) {
@@ -334,53 +470,53 @@ export function EmployeeMap({
       routeMarkersRef.current.push(endMarker);
     }
 
-    // Add waypoint markers for intermediate points (every 3rd point to show more detail)
-    route.forEach((point, index) => {
-      if (index > 0 && index < route.length - 1 && index % 3 === 0) {
-        // Use route quality color for waypoints too
-        const waypointColor =
-          route.length >= 10
-            ? "#22c55e"
-            : route.length >= 5
-              ? "#f59e0b"
-              : "#ef4444";
-        const waypointIcon = L.divIcon({
-          html: `
-            <div style="
-              background-color: ${waypointColor};
-              width: 10px;
-              height: 10px;
-              border-radius: 50%;
-              border: 2px solid white;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-              opacity: 0.8;
-            "></div>
-          `,
-          className: "custom-div-icon",
-          iconSize: [10, 10],
-          iconAnchor: [5, 5],
-        });
+    // Add selective waypoint markers for important GPS points
+    if (route.length > 2) {
+      // Only show waypoints for longer routes to avoid clutter
+      const waypointInterval = Math.max(1, Math.floor(route.length / 5)); // Show ~5 waypoints max
 
-        const waypointMarker = L.marker([point.lat, point.lng], {
-          icon: waypointIcon,
-        }).addTo(mapRef.current);
+      route.forEach((point, index) => {
+        if (index > 0 && index < route.length - 1 && index % waypointInterval === 0) {
+          const waypointIcon = L.divIcon({
+            html: `
+              <div style="
+                background-color: #3b82f6;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+                opacity: 0.9;
+              "></div>
+            `,
+            className: "custom-div-icon",
+            iconSize: [8, 8],
+            iconAnchor: [4, 4],
+          });
 
-        waypointMarker.bindPopup(`
-          <div style="min-width: 140px;">
-            <h4 style="margin: 0 0 8px 0; color: #22c55e;">GPS Point</h4>
-            <p style="margin: 0 0 4px 0; font-size: 12px;">
-              <strong>Time:</strong> ${new Date(point.timestamp).toLocaleTimeString()}
-            </p>
-            <p style="margin: 0; font-size: 11px; color: #666;">
-              Lat: ${point.lat.toFixed(6)}<br>
-              Lng: ${point.lng.toFixed(6)}
-            </p>
-          </div>
-        `);
+          const waypointMarker = L.marker([point.lat, point.lng], {
+            icon: waypointIcon,
+          }).addTo(mapRef.current);
 
-        routeMarkersRef.current.push(waypointMarker);
-      }
-    });
+          waypointMarker.bindPopup(`
+            <div style="min-width: 160px;">
+              <h4 style="margin: 0 0 8px 0; color: #3b82f6;">Route Point</h4>
+              <p style="margin: 0 0 4px 0; font-size: 12px;">
+                <strong>Time:</strong> ${new Date(point.timestamp).toLocaleTimeString()}
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #666;">
+                Position: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #666;">
+                Point ${index + 1} of ${route.length}
+              </p>
+            </div>
+          `);
+
+          routeMarkersRef.current.push(waypointMarker);
+        }
+      });
+    }
   }, [showRoute, trackingSession]);
 
   // Center map on selected employee
@@ -412,35 +548,44 @@ export function EmployeeMap({
         </div>
       )}
 
-      {/* Route information indicator */}
+      {/* Enhanced route information indicator */}
       {showRoute && routeInfo && (
         <div
           className={`absolute top-2 right-2 backdrop-blur-sm border rounded-md px-3 py-2 text-sm z-10 ${
             routeInfo.confidence === "High Accuracy"
-              ? "bg-success/90 border-success text-success-foreground"
+              ? "bg-blue-500/90 border-blue-500 text-white"
               : routeInfo.confidence === "Medium Accuracy"
-                ? "bg-warning/90 border-warning text-warning-foreground"
-                : "bg-destructive/90 border-destructive text-destructive-foreground"
+                ? "bg-green-500/90 border-green-500 text-white"
+                : routeInfo.confidence === "Basic Accuracy"
+                  ? "bg-orange-500/90 border-orange-500 text-white"
+                  : "bg-red-500/90 border-red-500 text-white"
           }`}
         >
           <div className="flex items-center space-x-2">
-            <span>📍 {routeInfo.type}</span>
+            <span>
+              {routeInfo.type.includes('Road') ? '🛣️' : routeInfo.type.includes('GPS + Road') ? '🗺️' : '📍'} {routeInfo.type}
+            </span>
           </div>
-          <div className="text-xs mt-1">
-            {routeInfo.confidence} • {routeInfo.points} points
+          <div className="text-xs mt-1 opacity-90">
+            {routeInfo.confidence} • {routeInfo.points} {routeInfo.points === 1 ? 'point' : 'points'}
           </div>
+          {routeInfo.type.includes('Road') && (
+            <div className="text-xs mt-1 opacity-75">
+              🎯 Road-optimized route
+            </div>
+          )}
         </div>
       )}
 
-      {/* Route error indicator */}
+      {/* Enhanced route error indicator */}
       {routeError && (
-        <div className="absolute top-12 right-2 bg-destructive/90 backdrop-blur-sm border border-destructive rounded-md px-3 py-2 text-sm text-destructive-foreground z-10">
+        <div className="absolute top-2 left-2 bg-destructive/90 backdrop-blur-sm border border-destructive rounded-md px-3 py-2 text-sm text-destructive-foreground z-10">
           <div className="flex items-center space-x-2">
-            <span>⚠️ Route Error</span>
+            <span>⚠️ Route Display Issue</span>
           </div>
           <div className="text-xs mt-1">{routeError}</div>
           <div className="text-xs mt-1 opacity-80">
-            💡 GPS tracking provides the most accurate routes
+            💡 Route will improve with more GPS points
           </div>
         </div>
       )}
