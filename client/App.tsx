@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Tracking from "./pages/Tracking";
 import TeamManagement from "./pages/TeamManagement";
 import DataManagement from "./pages/DataManagement";
+import RouteTest from "./pages/RouteTest";
 import NotFound from "./pages/NotFound";
 import { jwtDecode } from "jwt-decode";
 import { useEffect } from "react";
@@ -109,6 +110,7 @@ const App = () => {
             <Route path="/tracking/:employeeId" element={<Tracking />} />
             <Route path="/team-management" element={<TeamManagement />} />
             <Route path="/data-management" element={<DataManagement />} />
+            <Route path="/route-test" element={<RouteTest />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

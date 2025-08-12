@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,7 @@ import {
   History,
   Save,
   Edit,
+  TestTube,
 } from "lucide-react";
 import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { HttpClient } from "@/lib/httpClient";
@@ -721,10 +723,18 @@ export default function Dashboard() {
                 {getDateRangeText()}
               </p>
             </div>
-            <Button onClick={exportData} variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Export Data
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/route-test">
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Test Route Tracking
+                </Link>
+              </Button>
+              <Button onClick={exportData} variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Export Data
+              </Button>
+            </div>
           </div>
         </div>
       </header>

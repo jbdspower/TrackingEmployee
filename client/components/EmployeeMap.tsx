@@ -175,10 +175,10 @@ export function EmployeeMap({
 
     const route = trackingSession.route;
 
-    // Enhanced route display with road-based routing for better visualization
+    // Simplified and more reliable route display
     const displayEnhancedRoute = async () => {
-      if (route.length < 2) {
-        setRouteError("Not enough points for route visualization");
+      if (route.length < 1) {
+        setRouteError("No GPS points available for route visualization");
         setRouteInfo(null);
         return;
       }
@@ -191,170 +191,205 @@ export function EmployeeMap({
 
         let finalCoordinates: L.LatLngExpression[] = [];
         let routeSource = "gps";
-        let routeConfidence = "high";
+        let routeConfidence = "medium";
 
-        // Strategy 1: If we have good GPS density (many points), use GPS with road snapping
-        if (route.length >= 8) {
-          console.log("Using enhanced GPS route with road intelligence");
+        console.log(`Displaying route with ${route.length} GPS points`);
 
-          // Group nearby points to reduce API calls and improve performance
-          const keyPoints = [route[0]]; // Always include start
-          for (let i = 1; i < route.length - 1; i++) {
-            const prev = keyPoints[keyPoints.length - 1];
-            const curr = route[i];
-
-            // Calculate distance from last key point
-            const distance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng);
-
-            // Add point if it's far enough away (>100m) or represents significant direction change
-            if (distance > 100) {
-              keyPoints.push(curr);
-            }
-          }
-          keyPoints.push(route[route.length - 1]); // Always include end
-
-          // Try to get road-based route for key segments
-          try {
-            const segments = [];
-            for (let i = 0; i < keyPoints.length - 1; i++) {
-              const segment = await routingService.getRoute(keyPoints[i], keyPoints[i + 1]);
-              if (segment.source === 'road-api') {
-                segments.push(...segment.coordinates);
-              } else {
-                // Fallback to straight line for this segment
-                segments.push([keyPoints[i].lat, keyPoints[i].lng], [keyPoints[i + 1].lat, keyPoints[i + 1].lng]);
-              }
-            }
-
-            if (segments.length > 0) {
-              finalCoordinates = segments;
-              routeSource = "road-enhanced";
-              routeConfidence = "high";
-            } else {
-              throw new Error("Road routing failed");
-            }
-          } catch (roadError) {
-            console.warn("Road-based routing failed, using smoothed GPS:", roadError);
-            finalCoordinates = route.map(point => [point.lat, point.lng]);
-            routeSource = "gps-smoothed";
-            routeConfidence = "medium";
-          }
+        // For single point, just show the point
+        if (route.length === 1) {
+          finalCoordinates = [[route[0].lat, route[0].lng]];
+          routeSource = "single-point";
+          routeConfidence = "high";
         }
-        // Strategy 2: If we have fewer GPS points, try to get full road route
-        else if (route.length >= 2) {
-          console.log("Using road-based routing for sparse GPS data");
+        // For multiple points, try to enhance with road routing but don't fail if it doesn't work
+        else {
+          // Always start with GPS coordinates as fallback
+          finalCoordinates = route.map(point => [point.lat, point.lng]);
+          routeSource = "gps-points";
+          routeConfidence = route.length >= 5 ? "medium" : "basic";
 
-          try {
-            const roadRoute = await routingService.getRouteForPoints(route.slice(0, Math.min(route.length, 5)));
-            if (roadRoute.coordinates.length > 0 && roadRoute.source === 'road-api') {
-              finalCoordinates = roadRoute.coordinates;
-              routeSource = "road-api";
-              routeConfidence = "high";
-            } else {
-              throw new Error("Road API unavailable");
+          // Try to enhance with road routing only if we have reasonable number of points
+          if (route.length >= 2 && route.length <= 10) {
+            try {
+              console.log("Attempting road-based route enhancement...");
+
+              // For short routes (2-3 points), try direct routing
+              if (route.length <= 3) {
+                const roadRoute = await routingService.getRoute(route[0], route[route.length - 1]);
+                if (roadRoute.source === 'road-api' && roadRoute.coordinates.length > 0) {
+                  finalCoordinates = roadRoute.coordinates;
+                  routeSource = "road-direct";
+                  routeConfidence = "high";
+                  console.log("Successfully enhanced route with direct road routing");
+                }
+              }
+              // For longer routes, use the GPS points but try to validate total distance
+              else {
+                const routeData = await routingService.createGPSRoute(route);
+                if (routeData.coordinates.length > 0) {
+                  finalCoordinates = routeData.coordinates;
+                  routeSource = "gps-processed";
+                  routeConfidence = routeData.confidence || "medium";
+                  console.log(`Successfully processed GPS route: ${routeData.confidence} confidence`);
+                }
+              }
+            } catch (enhancementError) {
+              console.warn("Route enhancement failed, using basic GPS points:", enhancementError.message);
+              // Already have GPS coordinates as fallback
             }
-          } catch (roadError) {
-            console.warn("Road routing API failed, using GPS points:", roadError);
-            finalCoordinates = route.map(point => [point.lat, point.lng]);
-            routeSource = "gps";
-            routeConfidence = "low";
           }
         }
 
         // Determine visual styling based on route quality
         const getRouteStyle = () => {
           switch (routeSource) {
+            case "road-direct":
             case "road-api":
-            case "road-enhanced":
               return {
-                color: "#1e40af", // Blue for road-based routes
+                color: "#2563eb", // Blue for road-based routes
                 weight: 5,
                 opacity: 0.8,
                 dashArray: undefined
               };
-            case "gps-smoothed":
+            case "gps-processed":
               return {
-                color: "#059669", // Green for smoothed GPS
+                color: "#16a34a", // Green for processed GPS
                 weight: 4,
                 opacity: 0.7,
                 dashArray: undefined
               };
+            case "single-point":
+              return {
+                color: "#dc2626", // Red for single point
+                weight: 6,
+                opacity: 0.9,
+                dashArray: undefined
+              };
             default:
               return {
-                color: "#dc2626", // Red for basic GPS
+                color: "#ea580c", // Orange for basic GPS
                 weight: 3,
                 opacity: 0.6,
-                dashArray: "10, 5" // Dashed line to indicate lower accuracy
+                dashArray: "8, 4" // Dashed line to indicate lower accuracy
               };
           }
         };
 
         const style = getRouteStyle();
 
-        // Create enhanced polyline with better styling
-        routeLayerRef.current = L.polyline(finalCoordinates, {
-          ...style,
-          smoothFactor: routeSource.includes('road') ? 0.5 : 0.2,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(mapRef.current);
+        // For single point, create a circle marker instead of polyline
+        if (routeSource === "single-point" && finalCoordinates.length === 1) {
+          const point = finalCoordinates[0] as L.LatLngExpression;
+          routeLayerRef.current = L.circle(point, {
+            radius: 50, // 50 meter radius
+            color: style.color,
+            weight: style.weight,
+            opacity: style.opacity,
+            fillColor: style.color,
+            fillOpacity: 0.3,
+          }).addTo(mapRef.current);
+        }
+        // For multiple points, create polyline
+        else if (finalCoordinates.length >= 2) {
+          routeLayerRef.current = L.polyline(finalCoordinates, {
+            ...style,
+            smoothFactor: routeSource.includes('road') ? 0.5 : 0.2,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(mapRef.current);
 
-        // Add route shadow for better visibility
-        const shadowRoute = L.polyline(finalCoordinates, {
-          color: "#000000",
-          weight: style.weight + 2,
-          opacity: 0.3,
-          smoothFactor: style.smoothFactor,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(mapRef.current);
+          // Add route shadow for better visibility (only for polylines)
+          const shadowRoute = L.polyline(finalCoordinates, {
+            color: "#000000",
+            weight: style.weight + 2,
+            opacity: 0.2,
+            smoothFactor: routeSource.includes('road') ? 0.5 : 0.2,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(mapRef.current);
 
-        // Insert shadow behind main route
-        shadowRoute.bringToBack();
+          // Insert shadow behind main route
+          shadowRoute.bringToBack();
+        }
 
-        // Set enhanced route info
+        // Set route info based on what we actually displayed
         const getRouteInfo = () => {
           switch (routeSource) {
+            case "road-direct":
             case "road-api":
               return { type: "Road Network", confidence: "High Accuracy", points: finalCoordinates.length };
-            case "road-enhanced":
-              return { type: "GPS + Road Intelligence", confidence: "High Accuracy", points: finalCoordinates.length };
-            case "gps-smoothed":
-              return { type: "Smoothed GPS", confidence: "Medium Accuracy", points: route.length };
+            case "gps-processed":
+              return { type: "Enhanced GPS", confidence: routeConfidence === "high" ? "High Accuracy" : "Medium Accuracy", points: route.length };
+            case "single-point":
+              return { type: "Current Location", confidence: "High Accuracy", points: 1 };
             default:
-              return { type: "GPS Tracking", confidence: "Basic Accuracy", points: route.length };
+              return { type: "GPS Points", confidence: "Basic Accuracy", points: route.length };
           }
         };
 
         setRouteInfo(getRouteInfo());
 
         console.log(
-          `🗺️ Displaying ${routeSource} route with ${finalCoordinates.length} coordinates (${routeConfidence} confidence)`,
+          `🗺️ Displayed ${routeSource} route: ${finalCoordinates.length} coordinates, ${routeConfidence} confidence`,
         );
 
         // Fit map to show the route with appropriate padding
-        const routeBounds = L.latLngBounds(finalCoordinates);
-        mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
+        if (finalCoordinates.length > 0) {
+          if (finalCoordinates.length === 1) {
+            // For single point, center on it with reasonable zoom
+            mapRef.current.setView(finalCoordinates[0] as L.LatLngExpression, 16);
+          } else {
+            // For multiple points, fit bounds
+            const routeBounds = L.latLngBounds(finalCoordinates);
+            mapRef.current.fitBounds(routeBounds, { padding: [30, 30] });
+          }
+        }
 
       } catch (error) {
-        console.error("Error displaying enhanced route:", error);
-        setRouteError("Failed to display route");
+        console.error("Error displaying route:", error);
+        setRouteError(`Failed to display route: ${error.message}`);
         setRouteInfo(null);
 
-        // Fallback: show basic GPS route
+        // Ultimate fallback: show basic GPS points
         try {
-          const basicCoords = route.map(point => [point.lat, point.lng]);
-          routeLayerRef.current = L.polyline(basicCoords, {
-            color: "#dc2626",
-            weight: 3,
-            opacity: 0.6,
-            dashArray: "5, 5",
-            smoothFactor: 0.1,
-          }).addTo(mapRef.current!);
+          if (route.length >= 1) {
+            const basicCoords = route.map(point => [point.lat, point.lng]);
 
-          setRouteInfo({ type: "Basic GPS", confidence: "Limited", points: route.length });
+            if (basicCoords.length === 1) {
+              // Single point fallback
+              routeLayerRef.current = L.circle(basicCoords[0] as L.LatLngExpression, {
+                radius: 30,
+                color: "#dc2626",
+                weight: 2,
+                opacity: 0.7,
+                fillColor: "#dc2626",
+                fillOpacity: 0.2,
+              }).addTo(mapRef.current!);
+            } else {
+              // Multi-point fallback
+              routeLayerRef.current = L.polyline(basicCoords, {
+                color: "#dc2626",
+                weight: 3,
+                opacity: 0.6,
+                dashArray: "5, 5",
+                smoothFactor: 0.1,
+              }).addTo(mapRef.current!);
+            }
+
+            setRouteInfo({ type: "Fallback GPS", confidence: "Limited", points: route.length });
+            setRouteError(null); // Clear error since we managed to show something
+
+            // Fit map to fallback route
+            if (basicCoords.length === 1) {
+              mapRef.current!.setView(basicCoords[0] as L.LatLngExpression, 16);
+            } else {
+              const bounds = L.latLngBounds(basicCoords);
+              mapRef.current!.fitBounds(bounds, { padding: [20, 20] });
+            }
+          }
         } catch (fallbackError) {
           console.error("Even fallback route failed:", fallbackError);
+          setRouteError("Unable to display any route visualization");
         }
       } finally {
         setIsLoadingRoute(false);
