@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Tracking from "./pages/Tracking";
 import TeamManagement from "./pages/TeamManagement";
 import DataManagement from "./pages/DataManagement";
+import RouteTest from "./pages/RouteTest";
 import NotFound from "./pages/NotFound";
 import { jwtDecode } from "jwt-decode";
 import { useEffect } from "react";
