@@ -110,6 +110,7 @@ const App = () => {
             <Route path="/tracking/:employeeId" element={<Tracking />} />
             <Route path="/team-management" element={<TeamManagement />} />
             <Route path="/data-management" element={<DataManagement />} />
+            <Route path="/route-test" element={<RouteTest />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
