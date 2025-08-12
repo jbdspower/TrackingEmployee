@@ -362,8 +362,8 @@ export function LocationTracker({
             longitude,
           );
 
-          // Update if moved more than 10m or accuracy is very good
-          if (distance > 10 || (accuracy && accuracy < 15)) {
+          // Update if moved more than 5m (more sensitive) or accuracy is very good
+          if (distance > 5 || (accuracy && accuracy < 20)) {
             return true;
           }
         }
@@ -396,28 +396,31 @@ export function LocationTracker({
               longitude,
             );
 
-            // Add point if moved more than 8 meters
-            if (distance > 8) return true;
+            // Add point if moved more than 5 meters (more sensitive)
+            if (distance > 5) return true;
 
             // Add point if accuracy is significantly better
-            if (accuracy && accuracy < 10 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.7)) {
+            if (accuracy && accuracy < 15 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.8)) {
               return true;
             }
 
-            // Add point occasionally for long stationary periods (every 5 minutes)
+            // Add point occasionally for long stationary periods (every 3 minutes)
             const timeSinceLastPoint = new Date().getTime() - new Date(lastPoint.timestamp).getTime();
-            if (timeSinceLastPoint > 5 * 60 * 1000) return true;
+            if (timeSinceLastPoint > 3 * 60 * 1000) return true;
 
             return false;
           })();
 
           if (!shouldAddPoint) {
-            console.log(`Route point filtered: moved ${calculateDistance(
+            const distanceMoved = calculateDistance(
               prevRoute[prevRoute.length - 1].lat,
               prevRoute[prevRoute.length - 1].lng,
               latitude,
               longitude,
-            ).toFixed(1)}m`);
+            );
+            if (distanceMoved > 1) { // Only log if there was some movement
+              console.log(`Route point filtered: moved ${distanceMoved.toFixed(1)}m (threshold: 5m)`);
+            }
             return prevRoute;
           }
 
@@ -439,10 +442,11 @@ export function LocationTracker({
               return newDistance;
             });
 
-            console.log(`Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points`);
+            console.log(`✓ Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points, ${(newDistance/1000).toFixed(2)}km total`);
           } else {
             // Save tracking state even for first point
             saveTrackingState(true, currentSession, trackingStartTime, newRoute, totalDistance);
+            console.log(`✓ Added first route point at ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
           }
 
           return newRoute;
