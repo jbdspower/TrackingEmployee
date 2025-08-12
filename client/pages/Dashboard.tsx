@@ -723,10 +723,18 @@ export default function Dashboard() {
                 {getDateRangeText()}
               </p>
             </div>
-            <Button onClick={exportData} variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Export Data
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/route-test">
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Test Route Tracking
+                </Link>
+              </Button>
+              <Button onClick={exportData} variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Export Data
+              </Button>
+            </div>
           </div>
         </div>
       </header>
