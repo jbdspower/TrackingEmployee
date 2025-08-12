@@ -86,6 +86,67 @@ class RoutingService {
     return null;
   }
 
+  private async getRouteFromMapbox(
+    start: LocationData,
+    end: LocationData,
+  ): Promise<RouteResponse | null> {
+    try {
+      const config = getRoutingAPIConfig();
+      if (!config.mapboxKey) {
+        return null;
+      }
+
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${end.lng},${end.lat}?geometries=geojson&access_token=${config.mapboxKey}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Field-Tracking-App/1.0'
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.warn(`MapBox API failed: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+
+        if (!route.geometry || !route.geometry.coordinates || route.geometry.coordinates.length < 2) {
+          console.warn("MapBox returned invalid geometry");
+          return null;
+        }
+
+        const coordinates = route.geometry.coordinates.map(
+          (coord: [number, number]) => [coord[1], coord[0]],
+        );
+
+        return {
+          coordinates,
+          distance: route.distance || 0,
+          duration: route.duration || 0,
+          source: "road-api",
+          confidence: "high",
+        };
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.warn("MapBox routing timed out");
+      } else {
+        console.warn("MapBox routing failed:", error.message);
+      }
+    }
+    return null;
+  }
+
   private async getRouteFromOSRM(
     start: LocationData,
     end: LocationData,
