@@ -34,18 +34,17 @@ class RoutingService {
     end: LocationData,
   ): Promise<RouteResponse | null> {
     try {
-      // Get API key from environment or use public demo key
+      // Use a more reliable public demo key or environment key
       const apiKey =
         import.meta.env.VITE_OPENROUTESERVICE_API_KEY ||
-        "5b3ce3597851110001cf6248832b9ed5a5b1493aa5424ef5b14ebefb";
+        "5b3ce3597851110001cf6248a5dbf4de8a044e8e8de6ab2e";
 
       const url = `https://api.openrouteservice.org/v2/directions/driving-car`;
 
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          Accept:
-            "application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8",
+          Accept: "application/json",
           "Content-Type": "application/json",
           Authorization: apiKey,
         },
@@ -59,7 +58,9 @@ class RoutingService {
       });
 
       if (!response.ok) {
-        throw new Error(`ORS API error: ${response.status}`);
+        // Don't throw on rate limiting, just return null
+        console.warn(`ORS API failed: ${response.status} ${response.statusText}`);
+        return null;
       }
 
       const data = await response.json();
@@ -72,14 +73,14 @@ class RoutingService {
 
         return {
           coordinates,
-          distance: route.properties.segments[0].distance || 0,
-          duration: route.properties.segments[0].duration || 0,
+          distance: route.properties.segments[0]?.distance || 0,
+          duration: route.properties.segments[0]?.duration || 0,
           source: "road-api",
           confidence: "high",
         };
       }
     } catch (error) {
-      console.warn("ORS routing failed:", error);
+      console.warn("ORS routing failed:", error.message);
     }
     return null;
   }
@@ -89,19 +90,37 @@ class RoutingService {
     end: LocationData,
   ): Promise<RouteResponse | null> {
     try {
-      // Using public OSRM demo server (more reliable for basic routing)
+      // Using public OSRM demo server with timeout
       const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
 
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Field-Tracking-App/1.0'
+        }
+      });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`OSRM API error: ${response.status}`);
+        console.warn(`OSRM API failed: ${response.status} ${response.statusText}`);
+        return null;
       }
 
       const data = await response.json();
 
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
+
+        // Validate that we got proper geometry
+        if (!route.geometry || !route.geometry.coordinates || route.geometry.coordinates.length < 2) {
+          console.warn("OSRM returned invalid geometry");
+          return null;
+        }
+
         const coordinates = route.geometry.coordinates.map(
           (coord: [number, number]) => [coord[1], coord[0]],
         );
@@ -115,7 +134,11 @@ class RoutingService {
         };
       }
     } catch (error) {
-      console.warn("OSRM routing failed:", error);
+      if (error.name === 'AbortError') {
+        console.warn("OSRM routing timed out");
+      } else {
+        console.warn("OSRM routing failed:", error.message);
+      }
     }
     return null;
   }
@@ -177,34 +200,43 @@ class RoutingService {
     // Check cache first
     const cached = this.cache.get(cacheKey);
     if (cached && this.isValidCache(cached)) {
+      console.log(`Using cached route for ${this.calculateStraightLineDistance(start, end).toFixed(0)}m distance`);
       return cached.route;
     }
 
     // Calculate straight-line distance to determine if routing is worth it
     const straightLineDistance = this.calculateStraightLineDistance(start, end);
 
-    // For very short distances (<50m), don't bother with routing APIs
-    if (straightLineDistance < 50) {
+    // For very short distances (<30m), don't bother with routing APIs
+    if (straightLineDistance < 30) {
       console.log(`Short distance (${Math.round(straightLineDistance)}m), using direct line`);
       const route = this.createStraightLineRoute(start, end);
       route.confidence = "high"; // Short distances are accurate
+      this.cache.set(cacheKey, { route, timestamp: Date.now() });
       return route;
     }
 
-    // Try routing services in order of preference with better error handling
-    let route = await this.getRouteFromOSRM(start, end);
+    // For medium distances (30m-200m), try routing APIs but don't wait too long
+    let route: RouteResponse | null = null;
 
-    if (!route) {
-      route = await this.getRouteFromORS(start, end);
+    if (straightLineDistance < 5000) { // Only use APIs for routes under 5km
+      // Try OSRM first (more reliable for short routes)
+      route = await this.getRouteFromOSRM(start, end);
+
+      // Only try ORS if OSRM fails and distance is significant
+      if (!route && straightLineDistance > 100) {
+        route = await this.getRouteFromORS(start, end);
+      }
     }
 
     if (!route) {
-      console.warn(
-        `⚠️ All road routing services failed for ${Math.round(straightLineDistance)}m distance - using straight line fallback`,
-      );
+      const reason = straightLineDistance >= 5000 ? "Long distance" : "API services unavailable";
+      console.log(`${reason} - using straight line for ${Math.round(straightLineDistance)}m distance`);
       route = this.createStraightLineRoute(start, end);
-      // For longer distances, mark as low confidence
-      if (straightLineDistance > 500) {
+      // Adjust confidence based on distance
+      if (straightLineDistance < 200) {
+        route.confidence = "medium";
+      } else if (straightLineDistance > 1000) {
         route.confidence = "low";
       }
     }
@@ -296,16 +328,16 @@ class RoutingService {
       // Calculate distance and time from previous point
       const distance = this.calculateStraightLineDistance(previous, current);
 
-      // Skip points that are too close (< 5m) to reduce noise
-      if (distance < 5) {
+      // Skip points that are too close (< 3m) to reduce noise - more lenient
+      if (distance < 3) {
         continue;
       }
 
-      // Skip points that seem unrealistic (> 200m in 10 seconds = 72 km/h)
+      // Skip unrealistic movements (> 300m in 5 seconds = 216 km/h) - more lenient
       if (current.timestamp && previous.timestamp) {
         const timeDiff = (new Date(current.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000;
-        if (timeDiff > 0 && timeDiff < 10 && distance > 200) {
-          console.warn(`Skipping GPS outlier: ${Math.round(distance)}m in ${timeDiff}s`);
+        if (timeDiff > 0 && timeDiff < 5 && distance > 300) {
+          console.warn(`Skipping GPS outlier: ${Math.round(distance)}m in ${timeDiff}s (${Math.round(distance/timeDiff*3.6)}km/h)`);
           continue;
         }
       }
@@ -313,7 +345,19 @@ class RoutingService {
       cleaned.push(current);
     }
 
-    return cleaned.length >= 2 ? cleaned : points; // Fallback to original if too much filtering
+    // Always keep at least 2 points, and prefer original if cleaning removed too much
+    if (cleaned.length < 2) {
+      console.warn(`GPS cleaning removed too many points (${cleaned.length}/${points.length}), using original`);
+      return points;
+    }
+
+    if (cleaned.length < points.length * 0.5) {
+      console.warn(`GPS cleaning removed over 50% of points (${cleaned.length}/${points.length}), using original`);
+      return points;
+    }
+
+    console.log(`GPS cleaning: kept ${cleaned.length}/${points.length} points`);
+    return cleaned;
   }
 
   /**
