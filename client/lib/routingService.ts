@@ -281,13 +281,20 @@ class RoutingService {
     // For medium distances (30m-200m), try routing APIs but don't wait too long
     let route: RouteResponse | null = null;
 
-    if (straightLineDistance < 5000) { // Only use APIs for routes under 5km
-      // Try OSRM first (more reliable for short routes)
-      route = await this.getRouteFromOSRM(start, end);
+    if (straightLineDistance < 10000) { // Use APIs for routes under 10km (increased for paid APIs)
+      // Try APIs in order of preference: MapBox (paid), ORS (limited free), OSRM (public)
 
-      // Only try ORS if OSRM fails and distance is significant
-      if (!route && straightLineDistance > 100) {
+      // Try MapBox first if available (best accuracy and reliability)
+      route = await this.getRouteFromMapbox(start, end);
+
+      // Try OpenRouteService if MapBox unavailable and distance is significant
+      if (!route && straightLineDistance > 50) {
         route = await this.getRouteFromORS(start, end);
+      }
+
+      // Try OSRM as fallback for shorter routes
+      if (!route && straightLineDistance > 30) {
+        route = await this.getRouteFromOSRM(start, end);
       }
     }
 
