@@ -198,6 +198,13 @@ The application uses MongoDB Atlas (cloud database) with the following configura
 - Production server serves built SPA with API routes
 
 ## Recent Changes
+- **Oct 27, 2025**: Real-Time Location Tracking Improvements
+  - **Fixed GPS accuracy**: Set `maximumAge: 0` to never use cached location data - always get fresh GPS coordinates
+  - **Increased update frequency**: Reduced minimum update interval from 5s to 2s, and forced updates every 15s (was 30s)
+  - **Enhanced sensitivity**: Lowered movement threshold from 5m to 2m for more accurate route tracking
+  - **Background tracking**: Updated service worker to also use fresh GPS data with `maximumAge: 0`
+  - **Real-time precision**: Employees' exact locations now update in real-time based on their mobile GPS
+  
 - **Oct 25, 2025**: Initial Replit setup
   - Updated Vite config for Replit environment (port 5000, host 0.0.0.0)
   - Enabled allowedHosts for proxy compatibility

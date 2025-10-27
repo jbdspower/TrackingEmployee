@@ -126,7 +126,7 @@ function startBackgroundLocationTracking() {
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 60000, // 1 minute
+        maximumAge: 0, // Never use cached location - always get fresh GPS data for real-time tracking
         timeout: 30000, // 30 seconds
       },
     );

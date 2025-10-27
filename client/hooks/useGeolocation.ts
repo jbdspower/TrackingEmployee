@@ -26,7 +26,7 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
 
   const {
     enableHighAccuracy = true,
-    maximumAge = 300000, // 5 minutes
+    maximumAge = 0, // Never use cached location - always get fresh GPS coordinates
     timeout = 10000, // 10 seconds
     watchPosition = false,
   } = options;

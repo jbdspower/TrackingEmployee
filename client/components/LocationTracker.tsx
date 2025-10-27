@@ -154,7 +154,7 @@ export function LocationTracker({
   const { latitude, longitude, accuracy, error, loading, getCurrentPosition } =
     useGeolocation({
       enableHighAccuracy: true,
-      maximumAge: 60000, // 1 minute
+      maximumAge: 0, // Never use cached location - always get fresh GPS data
       timeout: 30000, // 30 seconds
       watchPosition: isTracking,
     });
@@ -346,11 +346,11 @@ export function LocationTracker({
         // Always update if it's the first location
         if (lastUpdateTime === 0) return true;
 
-        // Minimum 5 seconds between updates (reduced for better tracking)
-        if (timeSinceLastUpdate < 5000) return false;
+        // Minimum 2 seconds between updates for real-time tracking
+        if (timeSinceLastUpdate < 2000) return false;
 
-        // Force update every 30 seconds regardless
-        if (timeSinceLastUpdate >= 30000) return true;
+        // Force update every 15 seconds regardless for continuous real-time updates
+        if (timeSinceLastUpdate >= 15000) return true;
 
         // Check if we've moved significantly since last update
         if (routeCoordinates.length > 0) {
@@ -362,8 +362,8 @@ export function LocationTracker({
             longitude,
           );
 
-          // Update if moved more than 5m (more sensitive) or accuracy is very good
-          if (distance > 5 || (accuracy && accuracy < 20)) {
+          // Update if moved more than 2m (highly sensitive for real-time tracking) or accuracy is very good
+          if (distance > 2 || (accuracy && accuracy < 15)) {
             return true;
           }
         }
@@ -396,8 +396,8 @@ export function LocationTracker({
               longitude,
             );
 
-            // Add point if moved more than 5 meters (more sensitive)
-            if (distance > 5) return true;
+            // Add point if moved more than 2 meters (highly sensitive for real-time tracking)
+            if (distance > 2) return true;
 
             // Add point if accuracy is significantly better
             if (accuracy && accuracy < 15 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.8)) {
@@ -418,8 +418,8 @@ export function LocationTracker({
               latitude,
               longitude,
             );
-            if (distanceMoved > 1) { // Only log if there was some movement
-              console.log(`Route point filtered: moved ${distanceMoved.toFixed(1)}m (threshold: 5m)`);
+            if (distanceMoved > 0.5) { // Only log if there was some movement
+              console.log(`Route point filtered: moved ${distanceMoved.toFixed(1)}m (threshold: 2m)`);
             }
             return prevRoute;
           }
@@ -439,10 +439,9 @@ export function LocationTracker({
               const newDistance = prev + distance;
               // Save updated tracking state to localStorage
               saveTrackingState(true, currentSession, trackingStartTime, newRoute, newDistance);
+              console.log(`✓ Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points, ${(newDistance/1000).toFixed(2)}km total`);
               return newDistance;
             });
-
-            console.log(`✓ Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points, ${(newDistance/1000).toFixed(2)}km total`);
           } else {
             // Save tracking state even for first point
             saveTrackingState(true, currentSession, trackingStartTime, newRoute, totalDistance);
@@ -457,8 +456,8 @@ export function LocationTracker({
         setLastUpdateTime(now);
         onLocationUpdate?.(latitude, longitude, accuracy);
       } else {
-        const reason = timeSinceLastUpdate < 5000
-          ? `Rate limited: ${Math.ceil((5000 - timeSinceLastUpdate) / 1000)}s remaining`
+        const reason = timeSinceLastUpdate < 2000
+          ? `Rate limited: ${Math.ceil((2000 - timeSinceLastUpdate) / 1000)}s remaining`
           : 'No significant movement detected';
         console.log(reason);
       }
