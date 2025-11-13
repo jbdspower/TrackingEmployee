@@ -67,7 +67,7 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
       setError(null);
       console.log("Fetching meetings for user:", userId);
 
-      const externalApiUrl = process.env.EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
+      const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
       const baseUrl = externalApiUrl.replace("/getAllLead", "");
       const url = `${baseUrl}/getFollowUpHistory?userId=${userId}`;
 
