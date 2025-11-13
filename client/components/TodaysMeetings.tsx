@@ -42,9 +42,10 @@ export interface FollowUpMeeting {
 interface TodaysMeetingsProps {
   userId: string;
   onStartMeeting: (meeting: FollowUpMeeting) => void;
+  onMeetingsFetched?: (meetings: FollowUpMeeting[]) => void;
 }
 
-export function TodaysMeetings({ userId, onStartMeeting }: TodaysMeetingsProps) {
+export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: TodaysMeetingsProps) {
   const [meetings, setMeetings] = useState<FollowUpMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,10 @@ export function TodaysMeetings({ userId, onStartMeeting }: TodaysMeetingsProps) 
 
       console.log("Today's meetings:", todaysMeetings.length);
       setMeetings(todaysMeetings);
+      
+      if (onMeetingsFetched) {
+        onMeetingsFetched(todaysMeetings);
+      }
     } catch (error) {
       console.error("Error fetching meetings:", error);
       setError(error instanceof Error ? error.message : "Failed to fetch meetings");

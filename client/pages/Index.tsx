@@ -16,6 +16,7 @@ import {
   X,
   Calendar,
   BarChart3,
+  LogOut,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Employee, EmployeesResponse } from "@shared/api";
@@ -23,6 +24,10 @@ import { EmployeeMap } from "@/components/EmployeeMap";
 import { MeetingHistory } from "@/components/MeetingHistory";
 import { PWAInstallPrompt, usePWAInstall } from "@/components/PWAInstallPrompt";
 import { HttpClient } from "@/lib/httpClient";
+import { TodaysMeetings, FollowUpMeeting, getPendingTodaysMeetings } from "@/components/TodaysMeetings";
+import { StartMeetingModal } from "@/components/StartMeetingModal";
+import { PendingMeetingsModal } from "@/components/PendingMeetingsModal";
+import { toast } from "@/hooks/use-toast";
 
 export default function Index() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -31,9 +36,29 @@ export default function Index() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showLocationPrompt, setShowLocationPrompt] = useState(true);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
+  
+  const [todaysMeetings, setTodaysMeetings] = useState<FollowUpMeeting[]>([]);
+  const [isStartMeetingModalOpen, setIsStartMeetingModalOpen] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<FollowUpMeeting | null>(null);
+  const [isPendingMeetingsModalOpen, setIsPendingMeetingsModalOpen] = useState(false);
+  const [isStartingMeeting, setIsStartingMeeting] = useState(false);
+  
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // PWA install functionality
   const { canInstall, isInstalled } = usePWAInstall();
+
+  useEffect(() => {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setCurrentUser(user);
+      } catch (error) {
+        console.error("Failed to parse user from localStorage:", error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     fetchEmployees();
@@ -158,6 +183,113 @@ export default function Index() {
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
+  const handleStartMeetingFromSchedule = (meeting: FollowUpMeeting) => {
+    setSelectedMeeting(meeting);
+    setIsStartMeetingModalOpen(true);
+  };
+
+  const handleStartMeeting = async (meetingData: {
+    clientName: string;
+    reason: string;
+    notes: string;
+    leadId?: string;
+    leadInfo?: {
+      id: string;
+      companyName: string;
+      contactName: string;
+    };
+  }) => {
+    const firstActiveEmployee = employees.find(
+      (emp) => emp.status === "active" || emp.status === "meeting"
+    ) || employees[0];
+
+    if (!firstActiveEmployee) {
+      toast({
+        title: "Error",
+        description: "No active employee found to start meeting",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsStartingMeeting(true);
+    try {
+      const response = await HttpClient.post("/api/meetings", {
+        employeeId: firstActiveEmployee.id,
+        location: {
+          lat: firstActiveEmployee.location.lat,
+          lng: firstActiveEmployee.location.lng,
+          address: firstActiveEmployee.location.address,
+        },
+        clientName: meetingData.clientName,
+        notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
+        leadId: meetingData.leadId,
+        leadInfo: meetingData.leadInfo,
+      });
+
+      if (response.ok) {
+        await HttpClient.put(`/api/employees/${firstActiveEmployee.id}/status`, {
+          status: "meeting",
+        });
+        fetchEmployees();
+        setIsStartMeetingModalOpen(false);
+        setSelectedMeeting(null);
+        
+        toast({
+          title: "Meeting Started",
+          description: `Meeting with ${meetingData.clientName} has been started successfully`,
+        });
+      }
+    } catch (error) {
+      console.error("Error starting meeting:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start meeting. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStartingMeeting(false);
+    }
+  };
+
+  const handleLogout = () => {
+    if (!currentUser?._id) {
+      performLogout();
+      return;
+    }
+
+    const pendingMeetings = getPendingTodaysMeetings(todaysMeetings);
+    
+    if (pendingMeetings.length > 0) {
+      setIsPendingMeetingsModalOpen(true);
+    } else {
+      performLogout();
+    }
+  };
+
+  const handlePendingMeetingsSubmit = (reason: string) => {
+    console.log("Pending meetings reason:", reason);
+    console.log("Pending meetings:", getPendingTodaysMeetings(todaysMeetings));
+    
+    toast({
+      title: "Reason Recorded",
+      description: "Your reason for pending meetings has been saved.",
+    });
+    
+    setIsPendingMeetingsModalOpen(false);
+    performLogout();
+  };
+
+  const performLogout = () => {
+    localStorage.removeItem("idToken");
+    localStorage.removeItem("user");
+    toast({
+      title: "Logged Out",
+      description: "You have been logged out successfully.",
+    });
+    window.location.href = "/";
+  };
+
   const getStatusColor = (status: Employee["status"]) => {
     switch (status) {
       case "active":
@@ -249,6 +381,16 @@ export default function Index() {
                   {selectedEmployee ? "View Selected" : "Live View"}
                 </Link>
               </Button>
+              {currentUser && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -410,6 +552,17 @@ export default function Index() {
             <p className="text-muted-foreground">
               Add employees to start tracking their locations.
             </p>
+          </div>
+        )}
+
+        {/* Today's Meetings Section */}
+        {!loading && currentUser?._id && (
+          <div className="mb-8">
+            <TodaysMeetings 
+              userId={currentUser._id}
+              onStartMeeting={handleStartMeetingFromSchedule}
+              onMeetingsFetched={setTodaysMeetings}
+            />
           </div>
         )}
 
@@ -627,6 +780,31 @@ export default function Index() {
       <MeetingHistory
         isOpen={isMeetingHistoryOpen}
         onClose={() => setIsMeetingHistoryOpen(false)}
+      />
+
+      {/* Start Meeting Modal */}
+      <StartMeetingModal
+        isOpen={isStartMeetingModalOpen}
+        onClose={() => {
+          setIsStartMeetingModalOpen(false);
+          setSelectedMeeting(null);
+        }}
+        onStartMeeting={handleStartMeeting}
+        employeeName={employees[0]?.name || "Employee"}
+        location={employees[0]?.location.address || "Unknown location"}
+        isLoading={isStartingMeeting}
+        initialClientName={selectedMeeting?.customerName || ""}
+        initialCompanyName={selectedMeeting?.companyName || ""}
+        initialReason={selectedMeeting?.type || ""}
+        initialNotes={selectedMeeting?.remark || ""}
+      />
+
+      {/* Pending Meetings Modal */}
+      <PendingMeetingsModal
+        isOpen={isPendingMeetingsModalOpen}
+        onClose={() => setIsPendingMeetingsModalOpen(false)}
+        onSubmit={handlePendingMeetingsSubmit}
+        pendingMeetings={getPendingTodaysMeetings(todaysMeetings)}
       />
     </div>
   );

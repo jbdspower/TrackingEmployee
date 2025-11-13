@@ -40,6 +40,10 @@ interface StartMeetingModalProps {
   employeeName: string;
   location: string;
   isLoading?: boolean;
+  initialClientName?: string;
+  initialCompanyName?: string;
+  initialReason?: string;
+  initialNotes?: string;
 }
 
 
@@ -70,6 +74,10 @@ export function StartMeetingModal({
   employeeName,
   location,
   isLoading = false,
+  initialClientName = "",
+  initialCompanyName = "",
+  initialReason = "",
+  initialNotes = "",
 }: StartMeetingModalProps) {
   const [clientName, setClientName] = useState("");
   const [customClient, setCustomClient] = useState("");
@@ -186,8 +194,26 @@ export function StartMeetingModal({
     if (isOpen) {
       fetchCustomers();
       fetchLeads();
+      
+      if (initialClientName || initialCompanyName) {
+        setCustomClient(initialClientName || "");
+        setClientName(initialCompanyName || "custom");
+      }
+      if (initialReason) {
+        setReason(initialReason);
+      }
+      if (initialNotes) {
+        setNotes(initialNotes);
+      }
+    } else {
+      setClientName("");
+      setCustomClient("");
+      setReason("");
+      setNotes("");
+      setSelectedLead("");
+      setErrors({});
     }
-  }, [isOpen]);
+  }, [isOpen, initialClientName, initialCompanyName, initialReason, initialNotes]);
 
   // Filter leads when leads data or client selection changes
   useEffect(() => {
