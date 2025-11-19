@@ -176,5 +176,28 @@ export function createServer() {
   app.get("/api/follow-ups", getFollowUpHistory);
   app.put("/api/follow-ups/:id", updateFollowUpStatus);
 
+  // Serve static files in production
+  if (process.env.NODE_ENV === 'production') {
+    const path = require('path');
+    const distPath = path.join(__dirname, '../spa');
+    
+    console.log('📦 Serving static files from:', distPath);
+    
+    // Serve static files
+    app.use(express.static(distPath));
+    
+    // Handle React Router - serve index.html for all non-API routes
+    app.get('*', (req, res) => {
+      // Don't serve index.html for API routes
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+      }
+      
+      const indexPath = path.join(distPath, 'index.html');
+      console.log('📄 Serving index.html for:', req.path);
+      res.sendFile(indexPath);
+    });
+  }
+
   return app;
 }
