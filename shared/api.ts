@@ -84,6 +84,7 @@ export interface CustomerContact {
 
 // Enhanced meeting data with multiple customer contacts
 export interface MeetingDetails {
+  incomplete: boolean;
   customers: CustomerContact[]; // Array of customer contacts
   discussion: string; // mandatory
 

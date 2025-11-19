@@ -9,6 +9,7 @@ import { EndMeetingModal } from "@/components/EndMeetingModal";
 import { MeetingHistory } from "@/components/MeetingHistory";
 import { RouteSnapshotCapture } from "@/components/RouteSnapshotCapture";
 import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
+import { TodaysMeetings, FollowUpMeeting, getPendingTodaysMeetings } from "@/components/TodaysMeetings"; // Import the component
 import { HttpClient } from "@/lib/httpClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,6 +35,7 @@ import {
   History,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import axios from "axios";
 
 export default function Tracking() {
   const navigate = useNavigate();
@@ -41,17 +43,21 @@ export default function Tracking() {
   const { toast } = useToast();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [meetings, setMeetings] = useState<MeetingLog[]>([]);
+  const [todaysFollowUpMeetings, setTodaysFollowUpMeetings] = useState<FollowUpMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showMap, setShowMap] = useState(true);
   const [isStartMeetingModalOpen, setIsStartMeetingModalOpen] = useState(false);
   const [isStartingMeeting, setIsStartingMeeting] = useState(false);
   const [isEndMeetingModalOpen, setIsEndMeetingModalOpen] = useState(false);
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
-  const [currentTrackingSession, setCurrentTrackingSession] =
-    useState<TrackingSession | null>(null);
+  const [currentTrackingSession, setCurrentTrackingSession] = useState<TrackingSession | null>(null);
   const [isMeetingHistoryOpen, setIsMeetingHistoryOpen] = useState(false);
   const [isSnapshotCaptureOpen, setIsSnapshotCaptureOpen] = useState(false);
   const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
+  const [startedMeetingMap, setStartedMeetingMap] = useState<Record<string, string>>({});
+  const [startedFollowUpData, setStartedFollowUpData] = useState<any>(null);
+  const [followUpMeetingIds, setFollowUpMeetingIds] = useState<Set<string>>(new Set());
+  const [refreshTodaysMeetings, setRefreshTodaysMeetings] = useState<number>(0);
 
   useEffect(() => {
     if (!employeeId) {
@@ -59,13 +65,11 @@ export default function Tracking() {
       return;
     }
 
-    // Add small delay to ensure HttpClient is properly initialized
     const initializeData = async () => {
       try {
         await Promise.all([fetchEmployee(), fetchMeetings()]);
       } catch (error) {
         console.error("Failed to initialize tracking data:", error);
-        // Continue anyway - the individual functions handle their own errors
       }
     };
 
@@ -80,14 +84,12 @@ export default function Tracking() {
 
       if (response.ok) {
         try {
-          // Check if response is actually JSON
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             const data = await response.json();
             setEmployee(data);
             console.log("Employee data fetched successfully:", data);
           } else {
-            // Response is not JSON, likely an error page
             const textData = await response.text();
             console.error("Server returned non-JSON response:", textData.substring(0, 200));
             setEmployee(null);
@@ -105,7 +107,6 @@ export default function Tracking() {
     } catch (error) {
       console.error("Error fetching employee:", error);
 
-      // Retry once if it's a network error and we haven't retried yet
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
@@ -116,7 +117,6 @@ export default function Tracking() {
         return;
       }
 
-      // Don't crash the app - just log the error and continue
       setEmployee(null);
     }
   };
@@ -131,14 +131,12 @@ export default function Tracking() {
 
       if (response.ok) {
         try {
-          // Check if response is actually JSON
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             const data = await response.json();
             setMeetings(data.meetings || []);
             console.log("Meetings data fetched successfully:", data);
           } else {
-            // Response is not JSON, likely an error page
             const textData = await response.text();
             console.error("Server returned non-JSON response for meetings:", textData.substring(0, 200));
             setMeetings([]);
@@ -156,7 +154,6 @@ export default function Tracking() {
     } catch (error) {
       console.error("Error fetching meetings:", error);
 
-      // Retry once if it's a network error and we haven't retried yet
       if (
         retryCount < 1 &&
         error instanceof TypeError &&
@@ -167,26 +164,47 @@ export default function Tracking() {
         return;
       }
 
-      // Don't crash the app - just set empty array and continue
       setMeetings([]);
     } finally {
-      // Always set loading to false after the first attempt or any retry
       setLoading(false);
     }
   };
 
+  // Handle when today's meetings are fetched
+  const handleTodaysMeetingsFetched = (meetings: FollowUpMeeting[]) => {
+    console.log("Today's follow-up meetings fetched:", meetings.length);
+    setTodaysFollowUpMeetings(meetings);
+  };
+
+  // Handle starting a meeting from the Today's Meetings component
+  const handleStartMeetingFromFollowUp = (meeting: FollowUpMeeting) => {
+    console.log("Starting meeting from follow-up:", meeting);
+    
+    // Prepare meeting data for the meeting
+    const meetingData = {
+      clientName: meeting.customerName,
+      reason: `Follow-up meeting - ${meeting.type}`,
+      notes: meeting.remark || `Meeting with ${meeting.customerName} from ${meeting.companyName}`,
+      leadId: meeting.leadId,
+      leadInfo: {
+        id: meeting.leadId,
+        companyName: meeting.companyName,
+        contactName: meeting.customerName
+      }
+    };
+
+    // Start the meeting directly without showing modal
+    startMeetingFromFollowUp(meetingData, meeting._id);
+  };
+
   const handleLocationUpdate = (lat: number, lng: number, accuracy: number) => {
     console.log("Location updated:", { lat, lng, accuracy });
-    // Refresh employee data to get updated location
     fetchEmployee();
   };
 
   const openInExternalMap = (lat: number, lng: number, address: string) => {
-    // Try to open in Google Maps app first, fallback to web
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
     const appleMapUrl = `https://maps.apple.com/?q=${lat},${lng}`;
-
-    // Check if user is on iOS
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     if (isIOS) {
@@ -197,12 +215,10 @@ export default function Tracking() {
   };
 
   const handleCall = (phoneNumber: string) => {
-    // Use tel: protocol to initiate call on mobile devices
     window.location.href = `tel:${phoneNumber}`;
   };
 
   const handleEmail = (email: string, employeeName: string) => {
-    // Use mailto: protocol to open email client
     const subject = encodeURIComponent(
       `Regarding Field Operations - ${employeeName}`,
     );
@@ -213,7 +229,6 @@ export default function Tracking() {
   };
 
   const handleSendMessage = (phoneNumber: string, employeeName: string) => {
-    // Use SMS protocol for mobile messaging
     const message = encodeURIComponent(
       `Hi ${employeeName.split(" ")[0]}, checking in on your current location and status.`,
     );
@@ -228,10 +243,50 @@ export default function Tracking() {
     setIsEndMeetingModalOpen(true);
   };
 
+  const handleEndMeetingFromFollowUp = (followUpId: string, meetingId: string) => {
+    console.log("handleEndMeetingFromFollowUp called with followUpId:", followUpId, "meetingId:", meetingId);
+    
+    // Immediately mark the follow-up as complete via backend (updateFollowUp/:id)
+    (async () => {
+  try {
+    console.log("Marking follow-up as complete for:", followUpId);
+
+    const resp = await fetch(
+      `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ meetingStatus: "complete" }),
+      }
+    );
+
+    if (resp.ok) {
+      console.log("Follow-up marked complete");
+      setRefreshTodaysMeetings(prev => prev + 1);
+    } else {
+      console.warn("Failed to mark follow-up complete:", resp.status);
+    }
+  } catch (err) {
+    console.error("Error marking follow-up complete:", err);
+  }
+})();
+
+
+    // Find the follow-up meeting data to pass to the modal
+    const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+    if (followUpData) {
+      setStartedFollowUpData(followUpData);
+    }
+    
+    setActiveMeetingId(meetingId);
+    setIsEndMeetingModalOpen(true);
+  };
+
   const handleEndMeetingAttempt = () => {
     console.log("End meeting attempt. Employee status:", employee?.status, "Available meetings:", meetings);
 
-    // Find the active meeting for this employee
     const activeMeeting = meetings.find(
       (meeting) => meeting.status === "in-progress",
     );
@@ -244,101 +299,136 @@ export default function Tracking() {
     }
   };
 
-  const handleEndMeetingWithDetails = async (
-    meetingDetails: MeetingDetails,
-  ) => {
-    if (!activeMeetingId) return;
+const handleEndMeetingWithDetails = async (
+  meetingDetails: MeetingDetails,
+) => {
+  if (!activeMeetingId) return;
 
-    setIsEndingMeeting(activeMeetingId);
-    try {
-      console.log(
-        "Ending meeting with details:",
-        activeMeetingId,
+  setIsEndingMeeting(activeMeetingId);
+  try {
+    console.log(
+      "Ending meeting with details:",
+      activeMeetingId,
+      meetingDetails,
+    );
+
+    const response = await HttpClient.put(
+      `/api/meetings/${activeMeetingId}`,
+      {
+        status: "completed",
+        endTime: new Date().toISOString(),
         meetingDetails,
+      },
+    );
+
+    if (response.ok) {
+      console.log("Meeting ended successfully");
+
+      // Find the follow-up meeting that was started
+      const followUpMeetingId = Object.keys(startedMeetingMap).find(
+        key => startedMeetingMap[key] === activeMeetingId
       );
 
-      // End the meeting
-      const response = await HttpClient.put(
-        `/api/meetings/${activeMeetingId}`,
-        {
-          status: "completed",
-          endTime: new Date().toISOString(),
-          meetingDetails,
-        },
-      );
-
-      if (response.ok) {
-        console.log("Meeting ended successfully");
-
-        // Add to meeting history (always add, even without tracking session)
+      // Update follow-up meeting status to "Approved" in the backend
+      if (followUpMeetingId) {
         try {
-          // Get the current meeting data to extract lead information
-          const currentMeeting = meetings.find(m => m.id === activeMeetingId);
+          console.log("Updating follow-up status for:", followUpMeetingId);
+          
+          const followUpResponse = await fetch(
+      `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpMeetingId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ meetingStatus: "complete" }),
+      }
+    );
 
-          console.log("Attempting to add meeting to history with details:", {
+          if (followUpResponse.ok) {
+            console.log("Follow-up meeting status updated to 'complete'");
+          } else {
+            console.error("Failed to update follow-up status:", followUpResponse.status);
+          }
+        } catch (followUpError) {
+          console.error("Error updating follow-up status:", followUpError);
+        }
+      }
+
+      // Rest of your existing code for history and state updates...
+      try {
+        const currentMeeting = meetings.find(m => m.id === activeMeetingId);
+
+        console.log("Attempting to add meeting to history with details:", {
+          sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
+          employeeId,
+          meetingDetails,
+          leadId: currentMeeting?.leadId,
+          leadInfo: currentMeeting?.leadInfo,
+        });
+
+        const historyResponse = await HttpClient.post(
+          "/api/meeting-history",
+          {
             sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
             employeeId,
             meetingDetails,
             leadId: currentMeeting?.leadId,
             leadInfo: currentMeeting?.leadInfo,
-          });
+          },
+        );
 
-          const historyResponse = await HttpClient.post(
-            "/api/meeting-history",
-            {
-              sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
-              employeeId,
-              meetingDetails,
-              leadId: currentMeeting?.leadId,
-              leadInfo: currentMeeting?.leadInfo,
-            },
-          );
-
-          if (historyResponse.ok) {
-            const historyData = await historyResponse.json();
-            console.log("Meeting added to history successfully:", historyData);
-          } else {
-            const errorText = await historyResponse.text();
-            console.error("Failed to add meeting to history:", historyResponse.status, errorText);
-          }
-        } catch (historyError) {
-          console.error("Error adding meeting to history:", historyError);
+        if (historyResponse.ok) {
+          const historyData = await historyResponse.json();
+          console.log("Meeting added to history successfully:", historyData);
+        } else {
+          const errorText = await historyResponse.text();
+          console.error("Failed to add meeting to history:", historyResponse.status, errorText);
         }
-
-        // Update employee status to active
-        await HttpClient.put(`/api/employees/${employeeId}/status`, {
-          status: "active",
-        });
-
-        // Refresh data
-        await Promise.all([fetchMeetings(), fetchEmployee()]);
-      } else {
-        const errorText = await response.text();
-        console.error("Failed to end meeting:", response.status, errorText);
-        throw new Error(`Failed to end meeting: ${errorText}`);
+      } catch (historyError) {
+        console.error("Error adding meeting to history:", historyError);
       }
-    } catch (error) {
-      console.error("Error ending meeting:", error);
-      throw error; // Re-throw to be handled by modal
-    } finally {
-      setIsEndingMeeting(null);
-      setActiveMeetingId(null);
-    }
-  };
 
-  // If no employeeId, show error
-  if (!employeeId) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-4">No employee selected</p>
-          <Button asChild>
-            <Link to="/">Return to Dashboard</Link>
-          </Button>
-        </div>
-      </div>
-    );
+      // Remove from started meeting map when meeting is ended
+      setStartedMeetingMap(prev => {
+        const newMap = { ...prev };
+        // Find and remove the follow-up ID that maps to this meeting ID
+        Object.keys(newMap).forEach(key => {
+          if (newMap[key] === activeMeetingId) {
+            delete newMap[key];
+          }
+        });
+        return newMap;
+      });
+
+      // Remove from follow-up meeting IDs
+      setFollowUpMeetingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(activeMeetingId);
+        return newSet;
+      });
+
+      // Trigger refresh of Today's meetings to get updated status from API
+      setRefreshTodaysMeetings(prev => prev + 1);
+
+      await HttpClient.put(`/api/employees/${employeeId}/status`, {
+        status: "active",
+      });
+
+      await Promise.all([fetchMeetings(), fetchEmployee()]);
+    } else {
+      const errorText = await response.text();
+      console.error("Failed to end meeting:", response.status, errorText);
+      throw new Error(`Failed to end meeting: ${errorText}`);
+    }
+  } catch (error) {
+    console.error("Error ending meeting:", error);
+    throw error;
+  } finally {
+    setIsEndingMeeting(null);
+    setActiveMeetingId(null);
   }
+};
 
   const startMeeting = async (meetingData: {
     clientName: string;
@@ -370,15 +460,123 @@ export default function Tracking() {
 
       if (response.ok) {
         fetchMeetings();
-        // Update employee status to meeting
-        await HttpClient.put(`/api/employees/${employeeId}/status`, {
+        await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
         fetchEmployee();
-        setIsStartMeetingModalOpen(false);
+        setIsStartMeetingModalOpen(true);
+        
+        // Show success toast
+        toast({
+          title: "Meeting Started",
+          description: `Meeting with ${meetingData.clientName} has been started`,
+        });
       }
     } catch (error) {
       console.error("Error starting meeting:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start meeting",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStartingMeeting(false);
+    }
+  };
+
+  const startMeetingFromFollowUp = async (
+    meetingData: {
+      clientName: string;
+      reason: string;
+      notes: string;
+      leadId?: string;
+      leadInfo?: {
+        id: string;
+        companyName: string;
+        contactName: string;
+      };
+    },
+    followUpId: string
+  ) => {
+    if (!employee) return;
+
+    setIsStartingMeeting(true);
+    try {
+      const response = await HttpClient.post("/api/meetings", {
+        employeeId: employee.id,
+        location: {
+          lat: employee.location.lat,
+          lng: employee.location.lng,
+          address: employee.location.address,
+        },
+        clientName: meetingData.clientName,
+        notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
+        leadId: meetingData.leadId,
+        leadInfo: meetingData.leadInfo,
+      });
+
+      if (response.ok) {
+        const createdMeeting = await response.json();
+        
+        // Track the mapping of follow-up ID to created meeting ID
+        setStartedMeetingMap(prev => ({
+          ...prev,
+          [followUpId]: createdMeeting.id
+        }));
+
+        // Notify backend/external API that follow-up meeting has started (meeting on-going)
+        try {
+  const resp = await fetch(
+    `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        meetingStatus: "meeting on-going",
+      }),
+    }
+  );
+
+  if (resp.ok) {
+    console.log(
+      "Updated follow-up meetingStatus to 'meeting on-going' for:",
+      followUpId
+    );
+  } else {
+    console.warn("Failed to update follow-up meetingStatus:", resp.status);
+  }
+} catch (err) {
+  console.error(
+    "Failed to update follow-up meetingStatus to meeting on-going:",
+    err
+  );
+}
+
+
+        // Track this meeting as coming from a follow-up
+        setFollowUpMeetingIds(prev => new Set([...prev, createdMeeting.id]));
+
+        fetchMeetings();
+        await axios.put(`/api/employees/${employeeId}/status`, {
+          status: "meeting",
+        });
+        fetchEmployee();
+        
+        // Show success toast - don't open Start modal
+        toast({
+          title: "Meeting Started",
+          description: `Meeting with ${meetingData.clientName} has been started`,
+        });
+      }
+    } catch (error) {
+      console.error("Error starting meeting:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start meeting",
+        variant: "destructive",
+      });
     } finally {
       setIsStartingMeeting(false);
     }
@@ -402,7 +600,6 @@ export default function Tracking() {
       shouldCreateSnapshot: employee && session.status === "completed"
     });
 
-    // Automatically create route snapshot when tracking stops
     if (employee && session.status === "completed") {
       try {
         console.log("Auto-creating route snapshot for completed tracking session");
@@ -417,29 +614,23 @@ export default function Tracking() {
     }
   };
 
-  // Auto-create route snapshot when tracking stops
   const autoCreateRouteSnapshot = async (session: TrackingSession) => {
     if (!employee) return;
 
-    // Calculate map bounds from route data
     const calculateMapBounds = (): MapBounds => {
       const allPoints = [];
 
-      // Add tracking route points
       if (session.route) {
         allPoints.push(...session.route);
       }
 
-      // Add meeting locations
       meetings.forEach(meeting => {
         allPoints.push(meeting.location);
       });
 
-      // Add current employee location
       allPoints.push(employee.location);
 
       if (allPoints.length === 0) {
-        // Default bounds if no points
         return {
           north: employee.location.lat + 0.01,
           south: employee.location.lat - 0.01,
@@ -451,7 +642,7 @@ export default function Tracking() {
       const lats = allPoints.map(p => p.lat);
       const lngs = allPoints.map(p => p.lng);
 
-      const margin = 0.005; // Add small margin around bounds
+      const margin = 0.005;
 
       return {
         north: Math.max(...lats) + margin,
@@ -461,7 +652,6 @@ export default function Tracking() {
       };
     };
 
-    // Convert meetings to snapshot format
     const getMeetingSnapshots = (): MeetingSnapshot[] => {
       return meetings.map(meeting => ({
         id: meeting.id,
@@ -473,7 +663,6 @@ export default function Tracking() {
       }));
     };
 
-    // Generate auto-title
     const now = new Date();
     const dateStr = now.toLocaleDateString();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -502,7 +691,6 @@ export default function Tracking() {
         const snapshot = await response.json();
         console.log("Auto-created route snapshot:", snapshot);
 
-        // Show success toast notification
         toast({
           title: "Route Auto-Captured",
           description: `${snapshot.title} saved successfully`,
@@ -512,7 +700,6 @@ export default function Tracking() {
       }
     } catch (error) {
       console.error("Error auto-creating route snapshot:", error);
-      // Show error toast but don't be too intrusive
       toast({
         title: "Auto-capture Failed",
         description: "Use 'Manual Capture' button to save route",
@@ -585,40 +772,40 @@ export default function Tracking() {
                 </Link>
               </Button>
               <div>
-              <h1 className="text-2xl font-bold text-foreground">
-                {employee.name}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Real-time Tracking
-              </p>
+                <h1 className="text-2xl font-bold text-foreground">
+                  {employee.name}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Real-time Tracking
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSnapshotCaptureOpen(true)}
-              className="text-primary"
-            >
-              <Camera className="h-4 w-4 mr-1" />
-              Manual Capture
-            </Button>
-            <Badge
-              variant="secondary"
-              className={`${getStatusColor(employee.status)}`}
-            >
-              {getStatusText(employee.status)}
-            </Badge>
-          </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSnapshotCaptureOpen(true)}
+                className="text-primary"
+              >
+                <Camera className="h-4 w-4 mr-1" />
+                Manual Capture
+              </Button>
+              <Badge
+                variant="secondary"
+                className={`${getStatusColor(employee.status)}`}
+              >
+                {getStatusText(employee.status)}
+              </Badge>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Content */}
       <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column */}
-          <div className="space-y-6">
+          <div className="lg:col-span-2 space-y-6">
             {/* Employee Info */}
             <Card>
               <CardHeader>
@@ -848,19 +1035,6 @@ export default function Tracking() {
                 )}
               </CardContent>
             </Card>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Location Tracker */}
-            <LocationTracker
-              employeeId={employee.id}
-              employeeName={employee.name}
-              onLocationUpdate={handleLocationUpdate}
-              trackingEnabled={employee.status === "active"}
-              onTrackingSessionStart={handleTrackingSessionStart}
-              onTrackingSessionEnd={handleTrackingSessionEnd}
-            />
 
             {/* Recent Meetings */}
             <Card>
@@ -868,7 +1042,7 @@ export default function Tracking() {
                 <CardTitle className="flex items-center justify-between">
                   <span>Recent Meetings</span>
                   <div className="flex items-center space-x-2">
-                    <Badge variant="secondary">{meetings.length}</Badge>
+                    <Badge variant="secondary">{meetings.filter(m => !followUpMeetingIds.has(m.id)).length}</Badge>
                     <Button
                       variant="outline"
                       size="sm"
@@ -881,13 +1055,13 @@ export default function Tracking() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {meetings.length === 0 ? (
+                {meetings.filter(m => !followUpMeetingIds.has(m.id)).length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">
                     No recent meetings
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {meetings.map((meeting) => (
+                    {meetings.filter(m => !followUpMeetingIds.has(m.id)).map((meeting) => (
                       <div
                         key={meeting.id}
                         className={`border rounded-lg p-3 space-y-2 ${
@@ -990,6 +1164,30 @@ export default function Tracking() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* Location Tracker */}
+            <LocationTracker
+              employeeId={employee.id}
+              employeeName={employee.name}
+              onLocationUpdate={handleLocationUpdate}
+              trackingEnabled={employee.status === "active"}
+              onTrackingSessionStart={handleTrackingSessionStart}
+              onTrackingSessionEnd={handleTrackingSessionEnd}
+              todaysMeetings={todaysFollowUpMeetings}
+            />
+
+            {/* Today's Meetings Component */}
+            <TodaysMeetings
+              userId={employeeId}
+              onStartMeeting={handleStartMeetingFromFollowUp}
+              startedMeetingMap={startedMeetingMap}
+              onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
+              onMeetingsFetched={handleTodaysMeetingsFetched}
+              refreshTrigger={refreshTodaysMeetings}
+            />
+          </div>
         </div>
       </div>
 
@@ -1012,11 +1210,13 @@ export default function Tracking() {
           onClose={() => {
             setIsEndMeetingModalOpen(false);
             setActiveMeetingId(null);
+            setStartedFollowUpData(null);
           }}
           onEndMeeting={handleEndMeetingWithDetails}
           employeeName={employee.name}
           isLoading={isEndingMeeting !== null}
           currentMeeting={activeMeetingId ? meetings.find(m => m.id === activeMeetingId) : null}
+          followUpMeetingData={startedFollowUpData}
         />
       )}
 
@@ -1037,7 +1237,6 @@ export default function Tracking() {
           onClose={() => setIsSnapshotCaptureOpen(false)}
           onSnapshotCreated={(snapshot) => {
             console.log("Snapshot created:", snapshot);
-            // Optionally refresh or show success message
           }}
         />
       )}

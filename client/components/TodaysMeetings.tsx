@@ -13,6 +13,7 @@ import {
   Building2,
   User,
   AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 import { HttpClient } from "@/lib/httpClient";
 import { format, isToday, parseISO } from "date-fns";
@@ -20,6 +21,7 @@ import { format, isToday, parseISO } from "date-fns";
 export interface FollowUpMeeting {
   _id: string;
   status: "Pending" | "Approved" | "Rejected";
+  meetingStatus: "Not Started" | "In Progress" | "Completed" | "complete" | "Pending";
   date: string;
   followupDate: string | null;
   leadId: string;
@@ -42,13 +44,24 @@ export interface FollowUpMeeting {
 interface TodaysMeetingsProps {
   userId: string;
   onStartMeeting: (meeting: FollowUpMeeting) => void;
+  startedMeetingMap?: Record<string, string>;
+  onEndMeetingFromFollowUp?: (followUpId: string, meetingId: string) => void;
   onMeetingsFetched?: (meetings: FollowUpMeeting[]) => void;
+  refreshTrigger?: number;
 }
 
-export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: TodaysMeetingsProps) {
+export function TodaysMeetings({
+  userId,
+  onStartMeeting,
+  startedMeetingMap,
+  onEndMeetingFromFollowUp,
+  onMeetingsFetched,
+  refreshTrigger,
+}: TodaysMeetingsProps) {
   const [meetings, setMeetings] = useState<FollowUpMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [endingMeetingId, setEndingMeetingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTodaysMeetings();
@@ -56,11 +69,18 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
     return () => clearInterval(interval);
   }, [userId]);
 
+  // Refresh when refreshTrigger changes
+  useEffect(() => {
+    if (refreshTrigger !== undefined) {
+      fetchTodaysMeetings();
+    }
+  }, [refreshTrigger]);
+
   const fetchTodaysMeetings = async () => {
     if (!userId) {
       setError("User ID is required");
       setLoading(false);
-      return;
+      return
     }
 
     try {
@@ -71,6 +91,7 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
       const baseUrl = externalApiUrl.replace("/getAllLead", "");
       const url = `${baseUrl}/getFollowUpHistory?userId=${userId}`;
 
+      
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -80,24 +101,25 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
       const data: FollowUpMeeting[] = await response.json();
       console.log("All meetings fetched:", data.length);
 
-      const todaysMeetings = data.filter((meeting) => {
+      // Filter only approved meetings that are for today
+      const approvedTodaysMeetings = data.filter((meeting) => {
         const meetingDate = meeting.followupDate || meeting.date;
         if (!meetingDate) return false;
 
         try {
           const date = parseISO(meetingDate);
-          return isToday(date);
+          return isToday(date) && meeting.status === "Approved";
         } catch (error) {
           console.warn("Invalid date format for meeting:", meeting._id);
           return false;
         }
       });
 
-      console.log("Today's meetings:", todaysMeetings.length);
-      setMeetings(todaysMeetings);
-      
+      console.log("Today's approved meetings:", approvedTodaysMeetings.length);
+      setMeetings(approvedTodaysMeetings);
+
       if (onMeetingsFetched) {
-        onMeetingsFetched(todaysMeetings);
+        onMeetingsFetched(approvedTodaysMeetings);
       }
     } catch (error) {
       console.error("Error fetching meetings:", error);
@@ -133,12 +155,19 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
     }
   };
 
+  // Helper function to check if meeting is complete
+  const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
+    return meeting.meetingStatus === "complete" || 
+           meeting.meetingStatus === "Completed" ||
+           meeting.meetingStatus === "COMPLETED";
+  };
+
   if (loading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Today's Meetings</span>
+            <span>Today's Approved Meetings</span>
             <Badge variant="secondary">
               <Loader2 className="h-3 w-3 animate-spin mr-1" />
               Loading...
@@ -148,7 +177,7 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
         <CardContent>
           <div className="text-center py-8">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mt-2">Fetching today's meetings...</p>
+            <p className="text-sm text-muted-foreground mt-2">Fetching today's approved meetings...</p>
           </div>
         </CardContent>
       </Card>
@@ -160,7 +189,7 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Today's Meetings</span>
+            <span>Today's Approved Meetings</span>
             <Badge variant="destructive">Error</Badge>
           </CardTitle>
         </CardHeader>
@@ -186,7 +215,7 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          <span>Today's Meetings</span>
+          <span>Today's Approved Meetings</span>
           <Badge variant="secondary">
             {meetings.length} {meetings.length === 1 ? "meeting" : "meetings"}
           </Badge>
@@ -196,8 +225,8 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
         {meetings.length === 0 ? (
           <div className="text-center py-8 px-4">
             <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-            <h4 className="font-medium mb-1">No meetings scheduled for today</h4>
-            <p className="text-sm text-muted-foreground">You're all caught up!</p>
+            <h4 className="font-medium mb-1">No approved meetings for today</h4>
+            <p className="text-sm text-muted-foreground">Only approved meetings are shown here.</p>
           </div>
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
@@ -225,22 +254,23 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
                     </div>
 
                     <div className="space-y-1">
+
+                      {meeting.companyName && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Building2 className="h-3 w-3" />
+                          <span className="font-medium">{meeting.companyName}</span>
+                        </div>
+                      )}
+
                       {meeting.customerName && (
                         <div className="flex items-center gap-2 text-sm">
                           <User className="h-3 w-3 text-muted-foreground" />
-                          <span className="font-medium">{meeting.customerName}</span>
+                          <span className="text-muted-foreground">{meeting.customerName}</span>
                           {meeting.customerDesignation && (
                             <span className="text-muted-foreground">
                               • {meeting.customerDesignation}
                             </span>
                           )}
-                        </div>
-                      )}
-
-                      {meeting.companyName && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Building2 className="h-3 w-3" />
-                          {meeting.companyName}
                         </div>
                       )}
 
@@ -267,14 +297,40 @@ export function TodaysMeetings({ userId, onStartMeeting, onMeetingsFetched }: To
                     </div>
                   </div>
 
-                  <Button
-                    size="sm"
-                    onClick={() => onStartMeeting(meeting)}
-                    className="flex-shrink-0"
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Start Meeting
-                  </Button>
+                  {/* Updated button logic */}
+                  {isMeetingComplete(meeting) ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled
+                      className="flex-shrink-0"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Complete
+                    </Button>
+                  ) : startedMeetingMap && startedMeetingMap[meeting._id] ? (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() =>
+                        onEndMeetingFromFollowUp &&
+                        onEndMeetingFromFollowUp(meeting._id, startedMeetingMap[meeting._id])
+                      }
+                      className="flex-shrink-0"
+                    >
+                      <Clock className="h-4 w-4 mr-2" />
+                      End Meeting
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => onStartMeeting(meeting)}
+                      className="flex-shrink-0"
+                    >
+                      <PlayCircle className="h-4 w-4 mr-2" />
+                      Start Meeting
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}

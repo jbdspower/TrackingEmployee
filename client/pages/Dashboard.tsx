@@ -372,33 +372,95 @@ export default function Dashboard() {
     employeeId: string,
     employeeName: string,
   ) => {
+    console.log(`📊 Fetching details for employee: ${employeeId} (${employeeName})`);
     setSelectedEmployee(employeeId);
     setLoadingDetails(true);
     try {
       // Fetch detailed employee data
-      const response = await HttpClient.get(
-        `/api/analytics/employee-details/${employeeId}?${new URLSearchParams({
-          dateRange: filters.dateRange,
-          ...(filters.startDate && { startDate: filters.startDate }),
-          ...(filters.endDate && { endDate: filters.endDate }),
-        })}`,
-      );
+      const detailsUrl = `/api/analytics/employee-details/${employeeId}?${new URLSearchParams({
+        dateRange: filters.dateRange,
+        ...(filters.startDate && { startDate: filters.startDate }),
+        ...(filters.endDate && { endDate: filters.endDate }),
+      })}`;
+      
+      console.log(`🔍 Fetching employee details from: ${detailsUrl}`);
+      const response = await HttpClient.get(detailsUrl);
 
       if (response.ok) {
         const data = await response.json();
-        setEmployeeDayRecords(data.dayRecords || []);
-        setEmployeeMeetingRecords(data.meetingRecords || []);
+        console.log(`✅ Employee details received:`, {
+          dayRecords: data.dayRecords?.length || 0,
+          meetingRecords: data.meetingRecords?.length || 0
+        });
+        
+        const dayRecords = data.dayRecords || [];
+        const meetingRecords = data.meetingRecords || [];
+        
+        // Fetch attendance data and merge with day records
+        try {
+          const attendanceParams = new URLSearchParams({ employeeId });
+          if (filters.startDate) attendanceParams.append("startDate", filters.startDate);
+          if (filters.endDate) attendanceParams.append("endDate", filters.endDate);
+          
+          const attendanceUrl = `/api/analytics/attendance?${attendanceParams}`;
+          console.log(`📋 Fetching attendance from: ${attendanceUrl}`);
+          
+          const attendanceResponse = await HttpClient.get(attendanceUrl);
+          console.log(`📋 Attendance response status: ${attendanceResponse.status}`);
+          
+          if (attendanceResponse.ok) {
+            const attendanceData = await attendanceResponse.json();
+            console.log(`✅ Attendance data received:`, attendanceData);
+            
+            if (attendanceData.success && attendanceData.data) {
+              console.log(`📋 Processing ${attendanceData.data.length} attendance records`);
+              const attendanceMap = new Map(
+                attendanceData.data.map((att: any) => [att.date, att])
+              );
+              
+              let mergedCount = 0;
+              dayRecords.forEach((record: EmployeeDayRecord) => {
+                const attendance = attendanceMap.get(record.date) as {
+                  attendanceStatus: string;
+                  attendanceReason: string;
+                } | undefined;
+                if (attendance) {
+                  record.attendanceStatus = attendance.attendanceStatus;
+                  record.attendanceReason = attendance.attendanceReason;
+                  mergedCount++;
+                  console.log(`✅ Merged attendance for ${record.date}:`, {
+                    status: attendance.attendanceStatus,
+                    reason: attendance.attendanceReason
+                  });
+                }
+              });
+              console.log(`✅ Merged ${mergedCount} attendance records with day records`);
+            } else {
+              console.log(`⚠️ No attendance data in response`);
+            }
+          } else {
+            console.warn(`⚠️ Attendance API returned status: ${attendanceResponse.status}`);
+          }
+        } catch (attendanceError) {
+          console.error("❌ Failed to fetch attendance data:", attendanceError);
+          // Continue without attendance data
+        }
+        
+        console.log(`📊 Setting state with ${dayRecords.length} day records and ${meetingRecords.length} meeting records`);
+        setEmployeeDayRecords(dayRecords);
+        setEmployeeMeetingRecords(meetingRecords);
       } else {
-        console.error("Failed to fetch employee details");
+        console.error(`❌ Failed to fetch employee details - Status: ${response.status}`);
         setEmployeeDayRecords([]);
         setEmployeeMeetingRecords([]);
       }
     } catch (error) {
-      console.error("Error fetching employee details:", error);
+      console.error("❌ Error fetching employee details:", error);
       setEmployeeDayRecords([]);
       setEmployeeMeetingRecords([]);
     } finally {
       setLoadingDetails(false);
+      console.log(`✅ Employee details loading complete`);
     }
   };
 
@@ -631,6 +693,8 @@ export default function Dashboard() {
     const editData = attendanceEdits[date];
     if (!editData || !selectedEmployee) return;
 
+    console.log(`💾 Saving attendance for ${date}:`, editData);
+
     setAttendanceEdits((prev) => ({
       ...prev,
       [date]: {
@@ -648,7 +712,10 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        // Update the day record
+        const result = await response.json();
+        console.log(`✅ Attendance saved successfully:`, result);
+        
+        // Update the day record immediately in state
         setEmployeeDayRecords((prev) =>
           prev.map((record) =>
             record.date === date
@@ -664,13 +731,15 @@ export default function Dashboard() {
         // Clear the editing state
         handleCancelAttendanceEdit(date);
 
-        console.log("Attendance saved successfully");
+        console.log(`✅ Attendance updated in UI for ${date}`);
       } else {
-        console.error("Failed to save attendance");
+        console.error(`❌ Failed to save attendance - Status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Error response:`, errorText);
         alert("Failed to save attendance. Please try again.");
       }
     } catch (error) {
-      console.error("Error saving attendance:", error);
+      console.error("❌ Error saving attendance:", error);
       alert("Error saving attendance. Please try again.");
     } finally {
       setAttendanceEdits((prev) => ({

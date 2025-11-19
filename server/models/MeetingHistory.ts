@@ -11,6 +11,9 @@ interface MeetingDetails {
     customerDepartment?: string;
   }>;
   discussion: string;
+  // Incomplete meeting tracking
+  incomplete?: boolean;
+  incompleteReason?: string;
   // Legacy fields
   customerName?: string;
   customerEmployeeName?: string;
@@ -50,6 +53,9 @@ const CustomerContactSchema = new Schema({
 const MeetingDetailsSchema = new Schema({
   customers: [CustomerContactSchema],
   discussion: { type: String, required: true },
+  // Incomplete meeting tracking
+  incomplete: { type: Boolean, default: false, index: true },
+  incompleteReason: { type: String },
   // Legacy fields
   customerName: { type: String },
   customerEmployeeName: { type: String },

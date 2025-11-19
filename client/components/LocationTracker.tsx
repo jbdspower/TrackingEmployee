@@ -6,6 +6,17 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { HttpClient } from "@/lib/httpClient";
 import { TrackingSession, LocationData } from "@shared/api";
 import { routingService } from "@/lib/routingService";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   MapPin,
   Navigation,
@@ -18,6 +29,7 @@ import {
   Ruler,
   Shield,
 } from "lucide-react";
+import { Loader } from "lucide-react";
 
 interface LocationTrackerProps {
   employeeId: string;
@@ -26,6 +38,8 @@ interface LocationTrackerProps {
   trackingEnabled?: boolean;
   onTrackingSessionStart?: (session: TrackingSession) => void;
   onTrackingSessionEnd?: (session: TrackingSession) => void;
+  // Today's follow-up meetings for this employee
+  todaysMeetings?: Array<any>;
 }
 
 export function LocationTracker({
@@ -35,7 +49,13 @@ export function LocationTracker({
   trackingEnabled = false,
   onTrackingSessionStart,
   onTrackingSessionEnd,
+  todaysMeetings = [],
 }: LocationTrackerProps) {
+  const { toast } = useToast();
+  const [isRemarkModalOpen, setIsRemarkModalOpen] = useState(false);
+  const [remarkText, setRemarkText] = useState("");
+  const [isSubmittingRemark, setIsSubmittingRemark] = useState(false);
+  const [incompleteMeetings, setIncompleteMeetings] = useState<Array<any>>([]);
   // Initialize tracking state from localStorage if available
   const getInitialTrackingState = () => {
     try {
@@ -603,6 +623,41 @@ export function LocationTracker({
     setTrackingEndTime(now);
     setIsTracking(false);
 
+    // Check for incomplete meetings before proceeding
+    try {
+      const incomplete = (todaysMeetings || []).filter((meeting: any) => {
+        const meetingStatus = meeting.meetingStatus?.toLowerCase();
+        return meetingStatus !== "complete" && 
+               meetingStatus !== "completed" && 
+               meetingStatus !== "approved";
+      });
+
+      if (incomplete && incomplete.length > 0) {
+        console.log("Incomplete meetings detected:", incomplete);
+        setIncompleteMeetings(incomplete);
+        setIsRemarkModalOpen(true);
+        
+        // Restore tracking state since user hasn't confirmed logout yet
+        setIsTracking(true);
+        setTrackingEndTime(null);
+        
+        toast({
+          title: "Incomplete Meetings",
+          description: `You have ${incomplete.length} incomplete meeting(s). Please provide a reason before logging out.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("Error checking for incomplete meetings:", err);
+    }
+
+    // No incomplete meetings — proceed with normal stop
+    await performStopTracking(now);
+  };
+
+  const performStopTracking = async (now: Date) => {
+
     // Release wake lock
     if (wakeLock) {
       try {
@@ -701,6 +756,66 @@ export function LocationTracker({
       // Clear tracking state even if no session
       clearTrackingState();
     }
+  };
+
+  const handleSubmitRemark = async () => {
+    if (!remarkText.trim()) {
+      toast({
+        title: "Error",
+        description: "Please provide a reason before logging out.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingRemark(true);
+    try {
+      console.log("Saving incomplete meeting remarks for employee:", employeeId);
+      console.log("Incomplete meetings:", incompleteMeetings);
+
+      // POST to /api/incomplete-meeting-remarks
+      const response = await HttpClient.post("/api/incomplete-meeting-remarks", {
+        employeeId,
+        reason: remarkText,
+        pendingMeetings: incompleteMeetings,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`Failed to save remark: ${response.status} ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("Incomplete meeting remarks saved:", result);
+
+      toast({
+        title: "Remark Saved",
+        description: "Your reason has been recorded. Logging out...",
+      });
+      setIsTracking(false);
+
+      // Close modal and proceed with stop
+      setIsRemarkModalOpen(false);
+      setRemarkText("");
+      
+      const now = new Date();
+      await performStopTracking(now);
+    } catch (error) {
+      console.error("Error saving remark:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save remark",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingRemark(false);
+    }
+  };
+
+  const handleRemarkModalClose = () => {
+    setIsRemarkModalOpen(false);
+    setRemarkText("");
+    setIncompleteMeetings([]);
   };
 
   const getAccuracyColor = (acc: number | null) => {
@@ -1029,6 +1144,85 @@ export function LocationTracker({
             )}
           </div>
         )}
+
+        {/* Incomplete Meetings Remark Modal */}
+        <Dialog open={isRemarkModalOpen} onOpenChange={handleRemarkModalClose}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-warning" />
+                Incomplete Meetings
+              </DialogTitle>
+              <DialogDescription>
+                You have {incompleteMeetings.length} incomplete meeting(s) today. 
+                Please provide a reason why these meetings are not completed before logging out.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* List incomplete meetings */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Incomplete Meetings:</Label>
+                <div className="bg-muted/50 rounded-lg p-3 space-y-2 max-h-[150px] overflow-y-auto">
+                  {incompleteMeetings.map((meeting: any) => (
+                    <div
+                      key={meeting._id}
+                      className="flex items-start gap-2 text-sm"
+                    >
+                      <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-medium">{meeting.customerName || "Unnamed"}</span>
+                        {meeting.companyName && (
+                          <span className="text-muted-foreground">
+                            {" "}- {meeting.companyName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reason textarea */}
+              <div className="space-y-2">
+                <Label htmlFor="remark">
+                  Reason for Incomplete Meetings <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="remark"
+                  placeholder="E.g., Client rescheduled, waiting for confirmation, technical issues, etc..."
+                  value={remarkText}
+                  onChange={(e) => setRemarkText(e.target.value)}
+                  rows={4}
+                  disabled={isSubmittingRemark}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={handleRemarkModalClose}
+                disabled={isSubmittingRemark}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitRemark}
+                disabled={isSubmittingRemark}
+              >
+                {isSubmittingRemark ? (
+                  <>
+                    <Loader className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Submit & Logout"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

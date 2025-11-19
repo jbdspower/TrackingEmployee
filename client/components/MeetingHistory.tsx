@@ -26,6 +26,7 @@ import {
   FileText,
   Filter,
   Target,
+  AlertCircle,
 } from "lucide-react";
 
 interface MeetingHistoryEntry {
@@ -61,6 +62,7 @@ export function MeetingHistory({
   onClose,
 }: MeetingHistoryProps) {
   const [meetings, setMeetings] = useState<MeetingHistoryEntry[]>([]);
+  const [incompleteMeetings, setIncompleteMeetings] = useState<MeetingHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -69,12 +71,16 @@ export function MeetingHistory({
   const [selectedMeeting, setSelectedMeeting] =
     useState<MeetingHistoryEntry | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"all" | "incomplete">("all");
 
   const itemsPerPage = 10;
 
   useEffect(() => {
     if (isOpen) {
       fetchMeetingHistory();
+      if (employeeId) {
+        fetchIncompleteMeetingRemarks();
+      }
     }
   }, [isOpen, employeeId, currentPage]);
 
@@ -123,6 +129,33 @@ export function MeetingHistory({
       setTotalPages(1);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchIncompleteMeetingRemarks = async () => {
+    try {
+      if (!employeeId) return;
+
+      console.log("Fetching incomplete meeting remarks for employee:", employeeId);
+      const response = await HttpClient.get(
+        `/api/incomplete-meeting-remarks?employeeId=${employeeId}`,
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Incomplete meeting remarks data received:", data);
+        setIncompleteMeetings(data.meetings || []);
+      } else {
+        console.error(
+          "Failed to fetch incomplete meeting remarks:",
+          response.status,
+          response.statusText
+        );
+        setIncompleteMeetings([]);
+      }
+    } catch (error) {
+      console.error("Error fetching incomplete meeting remarks:", error);
+      setIncompleteMeetings([]);
     }
   };
 
@@ -177,55 +210,86 @@ export function MeetingHistory({
             <DialogTitle className="flex items-center space-x-2">
               <FileText className="h-5 w-5 text-primary" />
               <span>Meeting History</span>
-              {total > 0 && (
+              {activeTab === "all" && total > 0 && (
                 <Badge variant="secondary" className="ml-2">
                   {total} meetings
                 </Badge>
               )}
+              {activeTab === "incomplete" && incompleteMeetings.length > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  {incompleteMeetings.length} incomplete
+                </Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
-              View completed meetings with customer details and discussion
-              notes.
+              {activeTab === "all"
+                ? "View completed meetings with customer details and discussion notes."
+                : "View incomplete meeting remarks from your logout sessions."}
             </DialogDescription>
           </DialogHeader>
 
+          {/* Tabs */}
+          <div className="flex space-x-2 border-b">
+            <Button
+              variant={activeTab === "all" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("all")}
+              className="px-4"
+            >
+              All Meetings ({total})
+            </Button>
+            <Button
+              variant={activeTab === "incomplete" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("incomplete")}
+              className="px-4"
+            >
+              Incomplete Remarks ({incompleteMeetings.length})
+            </Button>
+          </div>
+
           <div className="flex-1 overflow-hidden flex flex-col space-y-4">
-            {/* Search and Filter */}
-            <div className="flex items-center space-x-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search meetings by customer, discussion..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+            {/* Search and Filter - only show for "all" tab */}
+            {activeTab === "all" && (
+              <div className="flex items-center space-x-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search meetings by customer, discussion..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Button variant="outline" size="sm">
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filter
+                </Button>
               </div>
-              <Button variant="outline" size="sm">
-                <Filter className="h-4 w-4 mr-2" />
-                Filter
-              </Button>
-            </div>
+            )}
 
             {/* Meeting List */}
             <div className="flex-1 overflow-y-auto">
-              {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" />
-                </div>
-              ) : filteredMeetings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchTerm
-                    ? "No meetings found matching your search."
-                    : "No meeting history available."}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredMeetings.map((meeting) => (
-                    <Card
-                      key={meeting.id}
-                      className="border-l-4 border-l-primary"
-                    >
+              {activeTab === "all" ? (
+                <>
+                  {loading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : filteredMeetings.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      {searchTerm
+                        ? "No meetings found matching your search."
+                        : "No meeting history available."}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredMeetings.map((meeting) => (
+                        <Card
+                          key={meeting.id}
+                          className="border-l-4 border-l-primary cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => handleViewDetails(meeting)}
+                        >
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1 space-y-2">
@@ -358,10 +422,80 @@ export function MeetingHistory({
                   ))}
                 </div>
               )}
+                </>
+              ) : (
+                // Incomplete Remarks Tab
+                <>
+                  {incompleteMeetings.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No incomplete meeting remarks available.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {incompleteMeetings.map((remark) => (
+                        <Card
+                          key={remark.id}
+                          className="border-l-4 border-l-destructive cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => handleViewDetails(remark)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <Calendar className="h-4 w-4 text-destructive" />
+                                  <span className="text-sm font-medium text-destructive">
+                                    {formatDate(remark.timestamp)}
+                                  </span>
+                                </div>
+
+                                {/* Display customers from incomplete meeting */}
+                                {remark.meetingDetails.customers && remark.meetingDetails.customers.length > 0 && (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center space-x-2">
+                                      <Building className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm font-medium">
+                                        {remark.meetingDetails.customers[0].customerName}
+                                      </span>
+                                    </div>
+                                    {remark.meetingDetails.customers[0].customerEmployeeName && (
+                                      <div className="text-sm text-muted-foreground ml-6">
+                                        Contact: {remark.meetingDetails.customers[0].customerEmployeeName}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Display reason */}
+                                <div className="flex items-start space-x-2">
+                                  <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-muted-foreground font-medium">Reason:</p>
+                                    <p className="text-sm line-clamp-2">
+                                      {(remark.meetingDetails as any).incompleteReason || remark.meetingDetails.discussion}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewDetails(remark)}
+                              >
+                                View
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
+            {/* Pagination - only for all meetings tab */}
+            {activeTab === "all" && totalPages > 1 && (
               <div className="flex items-center justify-between border-t pt-4">
                 <div className="text-sm text-muted-foreground">
                   Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}

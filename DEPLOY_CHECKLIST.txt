@@ -1,0 +1,123 @@
+╔══════════════════════════════════════════════════════════════╗
+║         HOSTINGER DEPLOYMENT CHECKLIST                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+📋 PRE-DEPLOYMENT (On Your Computer)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 1. Switch to production environment
+    Command: .\switch-environment.ps1 prod
+
+[ ] 2. Verify .env file has production settings
+    Check: API_BASE_URL=https://tracking.jbdspower.in
+
+[ ] 3. Build the project
+    Command: npm run build
+
+[ ] 4. Test build locally (optional but recommended)
+    Command: npm start
+    Open: http://localhost:5000
+
+[ ] 5. Verify dist/ folder was created
+    Check: dist/spa/ and dist/server/ exist
+
+
+📤 UPLOAD TO HOSTINGER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Upload these files/folders via FTP or File Manager:
+
+[ ] 6. dist/ folder (entire folder)
+[ ] 7. server/ folder (entire folder)
+[ ] 8. shared/ folder (entire folder)
+[ ] 9. package.json
+[ ] 10. package-lock.json
+[ ] 11. .env (production version)
+
+
+⚙️ CONFIGURE ON HOSTINGER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Via SSH or Hostinger Panel:
+
+[ ] 12. Install dependencies
+    Command: npm install --production
+
+[ ] 13. Setup Node.js application in Hostinger panel
+    - Application Root: /domains/tracking.jbdspower.in
+    - Startup File: dist/server/index.js
+    - Node Version: 18.x or higher
+
+[ ] 14. Set environment variables (if using panel)
+    - NODE_ENV=production
+    - PORT=5000
+    - MONGODB_URI=your_connection_string
+
+[ ] 15. Start the application
+    Via panel: Click "Start"
+    Via SSH: pm2 start dist/server/index.js --name tracking-app
+
+
+🔒 SSL & DOMAIN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 16. Install SSL certificate (if not already)
+[ ] 17. Enable "Force HTTPS"
+[ ] 18. Verify domain points to correct directory
+
+
+✅ VERIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 19. Test API endpoint
+    URL: https://tracking.jbdspower.in/api/ping
+    Expected: {"message":"Hello from Express server v2!","status":"ok"}
+
+[ ] 20. Open website in browser
+    URL: https://tracking.jbdspower.in
+
+[ ] 21. Test login functionality
+
+[ ] 22. Test Analytics Dashboard
+
+[ ] 23. Test attendance save/retrieve
+
+[ ] 24. Check browser console for errors (F12)
+
+[ ] 25. Verify all features work
+
+
+📊 POST-DEPLOYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 26. Monitor application logs
+    Command: pm2 logs tracking-app
+
+[ ] 27. Check application status
+    Command: pm2 status
+
+[ ] 28. Save PM2 configuration (for auto-restart)
+    Command: pm2 save
+
+[ ] 29. Setup PM2 startup script
+    Command: pm2 startup
+
+
+═══════════════════════════════════════════════════════════════
+
+QUICK COMMANDS:
+
+Local Build:
+  .\switch-environment.ps1 prod
+  npm run build
+
+Server Start:
+  npm install --production
+  pm2 start dist/server/index.js --name tracking-app
+  pm2 save
+
+Server Restart:
+  pm2 restart tracking-app
+
+View Logs:
+  pm2 logs tracking-app
+
+═══════════════════════════════════════════════════════════════
+
+LIVE URL: https://tracking.jbdspower.in
+
+═══════════════════════════════════════════════════════════════

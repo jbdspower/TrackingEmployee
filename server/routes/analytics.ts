@@ -764,3 +764,77 @@ export const getMeetingTrends: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch trends" });
   }
 };
+
+export const getAttendance: RequestHandler = async (req, res) => {
+  try {
+    const { employeeId, startDate, endDate, date } = req.query;
+
+    console.log(`Fetching attendance records:`, {
+      employeeId,
+      startDate,
+      endDate,
+      date
+    });
+
+    // Build query filter
+    const filter: any = {};
+
+    if (employeeId) {
+      filter.employeeId = employeeId;
+    }
+
+    if (date) {
+      // Single date query
+      filter.date = date;
+    } else if (startDate && endDate) {
+      // Date range query
+      filter.date = {
+        $gte: startDate,
+        $lte: endDate
+      };
+    }
+
+    try {
+      // Fetch from MongoDB
+      const attendanceRecords = await Attendance.find(filter)
+        .sort({ date: -1 })
+        .lean();
+
+      console.log(`Found ${attendanceRecords.length} attendance records`);
+
+      // Format the response
+      const formattedRecords = attendanceRecords.map(record => ({
+        id: record._id.toString(),
+        employeeId: record.employeeId,
+        date: record.date,
+        attendanceStatus: record.attendanceStatus,
+        attendanceReason: record.attendanceReason || "",
+        savedAt: record.updatedAt || record.createdAt
+      }));
+
+      res.json({
+        success: true,
+        count: formattedRecords.length,
+        data: formattedRecords
+      });
+
+    } catch (dbError) {
+      console.warn("MongoDB query failed:", dbError);
+      
+      // Fallback response
+      res.json({
+        success: true,
+        count: 0,
+        data: [],
+        message: "No attendance records found (database unavailable)"
+      });
+    }
+
+  } catch (error) {
+    console.error("Error fetching attendance:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch attendance records" 
+    });
+  }
+};

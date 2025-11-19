@@ -29,12 +29,15 @@ import {
   deleteTrackingSession,
   getMeetingHistory,
   addMeetingToHistory,
+  saveIncompleteMeetingRemark,
+  getIncompleteMeetingRemark,
 } from "./routes/tracking";
 import {
   getEmployeeAnalytics,
   getEmployeeDetails,
   getLeadHistory,
   saveAttendance,
+  getAttendance,
   getMeetingTrends,
 } from "./routes/analytics";
 import {
@@ -52,6 +55,7 @@ import {
   deleteRouteSnapshot,
   getEmployeeSnapshots,
 } from "./routes/route-snapshots";
+import { updateFollowUpStatus, getFollowUpHistory } from "./routes/follow-ups";
 
 export function createServer() {
   const app = express();
@@ -92,6 +96,16 @@ export function createServer() {
   });
 
   app.get("/api/demo", handleDemo);
+  
+  // Test endpoint for attendance
+  app.get("/api/test-attendance", (_req, res) => {
+    console.log("Test attendance endpoint hit");
+    res.json({
+      message: "Attendance route is working!",
+      timestamp: new Date().toISOString(),
+      status: "ok"
+    });
+  });
 
   // Employee routes
   app.get("/api/employees", getEmployees);
@@ -122,12 +136,25 @@ export function createServer() {
   // Meeting history routes
   app.get("/api/meeting-history", getMeetingHistory);
   app.post("/api/meeting-history", addMeetingToHistory);
+  app.post("/api/incomplete-meeting-remarks", saveIncompleteMeetingRemark);
+  // Expose both paths for backward compatibility and ease-of-use from the client
+  app.get("/api/get-incomplete-meeting-remarks", getIncompleteMeetingRemark);
+  // Preferred/clean path the frontend should call to fetch incomplete meeting remarks by employeeId
+  app.get("/api/incomplete-meeting-remarks", getIncompleteMeetingRemark);
 
   // Analytics routes
   app.get("/api/analytics/employees", getEmployeeAnalytics);
   app.get("/api/analytics/employee-details/:employeeId", getEmployeeDetails);
   app.get("/api/analytics/lead-history/:leadId", getLeadHistory);
   app.post("/api/analytics/save-attendance", saveAttendance);
+  app.get("/api/analytics/attendance", (req, res, next) => {
+    console.log("🎯 Attendance route hit!", {
+      query: req.query,
+      url: req.url,
+      method: req.method
+    });
+    getAttendance(req, res, next);
+  });
   app.get("/api/analytics/trends", getMeetingTrends);
 
   // Data synchronization routes
@@ -144,6 +171,10 @@ export function createServer() {
   app.put("/api/route-snapshots/:id", updateRouteSnapshot);
   app.delete("/api/route-snapshots/:id", deleteRouteSnapshot);
   app.get("/api/employees/:employeeId/snapshots", getEmployeeSnapshots);
+
+  // Follow-up meeting routes
+  app.get("/api/follow-ups", getFollowUpHistory);
+  app.put("/api/follow-ups/:id", updateFollowUpStatus);
 
   return app;
 }

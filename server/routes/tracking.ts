@@ -639,6 +639,154 @@ export const addMeetingToHistory: RequestHandler = async (req, res) => {
   }
 };
 
+// Save incomplete meeting remarks (called on logout with pending meetings)
+export const saveIncompleteMeetingRemark: RequestHandler = async (req, res) => {
+  try {
+    const { employeeId, reason, pendingMeetings } = req.body;
+
+    if (!employeeId || !reason || !pendingMeetings || pendingMeetings.length === 0) {
+      return res.status(400).json({
+        error: "Employee ID, reason, and at least one pending meeting are required",
+      });
+    }
+
+    console.log("=== SAVING INCOMPLETE MEETING REMARKS ===");
+    console.log("Employee ID:", employeeId, "Type:", typeof employeeId);
+    console.log("Reason:", reason);
+    console.log("Pending meetings count:", pendingMeetings.length);
+
+    // Save a history entry for each incomplete meeting
+    const savedEntries = await Promise.all(
+      pendingMeetings.map(async (meeting: any, idx: number) => {
+        const meetingDetails = {
+          discussion: reason,
+          incomplete: true,
+          incompleteReason: reason,
+          customers: [
+            {
+              customerName: meeting.customerName || "",
+              customerEmployeeName: meeting.customerName || "",
+              customerEmail: meeting.customerEmail || "",
+              customerMobile: meeting.customerMobile || "",
+              customerDesignation: meeting.customerDesignation || "",
+              customerDepartment: "",
+            },
+          ],
+        };
+
+        const historyData = {
+          sessionId: `logout_incomplete_${Date.now()}_${idx}`,
+          employeeId: String(employeeId), // Ensure it's a string
+          meetingDetails,
+          timestamp: new Date().toISOString(),
+          leadId: meeting.leadId,
+          leadInfo: {
+            id: meeting.leadId,
+            companyName: meeting.companyName,
+          },
+        };
+
+        console.log(`Processing meeting ${idx + 1}:`, {
+          employeeId: historyData.employeeId,
+          meetingName: meeting.customerName,
+          leadId: meeting.leadId,
+        });
+
+        // Try to save to MongoDB first
+        try {
+          const newEntry = new MeetingHistory(historyData);
+          const saved = await newEntry.save();
+          console.log("✓ Incomplete meeting remark saved to MongoDB:", saved._id);
+          console.log("  - Saved employeeId:", saved.employeeId);
+          console.log("  - Saved incomplete flag:", saved.meetingDetails?.incomplete);
+          return {
+            success: true,
+            meetingId: meeting._id,
+            historyId: saved._id,
+          };
+        } catch (dbError) {
+          console.warn("MongoDB save failed for incomplete meeting remark:", dbError);
+          // Fallback: save to in-memory
+          meetingHistory.push({
+            id: `history_${String(historyIdCounter++).padStart(3, "0")}`,
+            ...historyData,
+          });
+          console.log("✓ Incomplete meeting remark saved to in-memory storage");
+          return { success: true, meetingId: meeting._id };
+        }
+      }),
+    );
+
+    console.log("=== SAVED INCOMPLETE MEETING REMARKS ===");
+    console.log("Total entries saved:", savedEntries.length);
+
+    res.status(201).json({
+      success: true,
+      reason,
+      meetingsProcessed: savedEntries.length,
+      entries: savedEntries,
+    });
+  } catch (error) {
+    console.error("Error saving incomplete meeting remarks:", error);
+    res.status(500).json({ error: "Failed to save incomplete meeting remarks" });
+  }
+};
+
+
+export const getIncompleteMeetingRemark: RequestHandler = async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+
+    if (!employeeId) {
+      return res.status(400).json({
+        error: "Employee ID is required",
+      });
+    }
+
+    console.log("Fetching incomplete meeting remarks for employee:", employeeId);
+    console.log("Query filter - employeeId type:", typeof employeeId, "value:", employeeId);
+
+    // Try to fetch from MongoDB first
+    try {
+      // Build query - ensure employeeId is a string for comparison
+      const query = {
+        employeeId: String(employeeId),
+        "meetingDetails.incomplete": true,
+      };
+      
+      console.log("MongoDB query:", JSON.stringify(query, null, 2));
+
+      const incompleteMeetings = await MeetingHistory.find(query).lean();
+
+      console.log(`Found ${incompleteMeetings.length} incomplete meeting remarks in MongoDB`);
+      
+      // Debug: Show all incomplete meetings regardless of employeeId
+      const allIncomplete = await MeetingHistory.find({
+        "meetingDetails.incomplete": true,
+      }).lean();
+      console.log(`Total incomplete meetings in DB (all employees): ${allIncomplete.length}`);
+      
+      res.json({ meetings: incompleteMeetings });
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB query failed, falling back to in-memory storage:", dbError);
+    }
+
+    // Fallback to in-memory storage
+    const incompleteMeetings = meetingHistory.filter(
+      (history) =>
+        String(history.employeeId) === String(employeeId) &&
+        history.meetingDetails.incomplete,
+    );
+
+    console.log(`Found ${incompleteMeetings.length} incomplete meeting remarks in memory`);
+    res.json({ meetings: incompleteMeetings });
+  } catch (error) {
+    console.error("Error fetching incomplete meeting remarks:", error);
+    res.status(500).json({ error: "Failed to fetch incomplete meeting remarks" });
+  }
+};
+
 // Helper function to calculate distance between two points using Haversine formula
 function calculateDistance(
   lat1: number,

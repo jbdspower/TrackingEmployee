@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,16 @@ interface EndMeetingModalProps {
     clientName?: string;
     id: string;
   } | null;
+  followUpMeetingData?: {
+    _id: string;
+    customerName: string;
+    customerEmail: string;
+    customerMobile: string;
+    customerDesignation: string;
+    companyName: string;
+    remark: string;
+    type: string;
+  } | null;
 }
 
 export function EndMeetingModal({
@@ -45,6 +55,7 @@ export function EndMeetingModal({
   employeeName,
   isLoading = false,
   currentMeeting = null,
+  followUpMeetingData = null,
 }: EndMeetingModalProps) {
   const [formData, setFormData] = useState<MeetingDetails>({
     customers: [],
@@ -73,6 +84,36 @@ export function EndMeetingModal({
 
   // Ref for customer employee selector
   const customerSelectorRef = useRef<CustomerEmployeeSelectorRef>(null);
+
+  // Prefill form with follow-up meeting data when modal opens
+  useEffect(() => {
+    if (isOpen && followUpMeetingData) {
+      console.log("Prefilling form with follow-up meeting data:", followUpMeetingData);
+      
+      // Create customer contact from follow-up data
+      const customerContact: CustomerContact = {
+        customerName: followUpMeetingData.companyName,
+        customerEmployeeName: followUpMeetingData.customerName,
+        customerEmail: followUpMeetingData.customerEmail,
+        customerMobile: followUpMeetingData.customerMobile,
+        customerDesignation: followUpMeetingData.customerDesignation,
+        customerDepartment: "",
+      };
+
+      setSelectedCustomers([customerContact]);
+      setFormData(prev => ({
+        ...prev,
+        customers: [customerContact],
+        customerName: followUpMeetingData.companyName,
+        customerEmployeeName: followUpMeetingData.customerName,
+        customerEmail: followUpMeetingData.customerEmail,
+        customerMobile: followUpMeetingData.customerMobile,
+        customerDesignation: followUpMeetingData.customerDesignation,
+        customerDepartment: "",
+        discussion: followUpMeetingData.remark ? `Follow-up: ${followUpMeetingData.type} - ${followUpMeetingData.remark}` : `Follow-up: ${followUpMeetingData.type}`,
+      }));
+    }
+  }, [isOpen, followUpMeetingData]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
