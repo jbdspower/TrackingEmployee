@@ -110,7 +110,7 @@ export function EndMeetingModal({
         customerMobile: followUpMeetingData.customerMobile,
         customerDesignation: followUpMeetingData.customerDesignation,
         customerDepartment: "",
-        discussion: followUpMeetingData.remark ? `Follow-up: ${followUpMeetingData.type} - ${followUpMeetingData.remark}` : `Follow-up: ${followUpMeetingData.type}`,
+        // discussion: followUpMeetingData.remark ? `Follow-up: ${followUpMeetingData.type} - ${followUpMeetingData.remark}` : `Follow-up: ${followUpMeetingData.type}`,
       }));
     }
   }, [isOpen, followUpMeetingData]);

@@ -644,24 +644,27 @@ export const saveIncompleteMeetingRemark: RequestHandler = async (req, res) => {
   try {
     const { employeeId, reason, pendingMeetings } = req.body;
 
-    if (!employeeId || !reason || !pendingMeetings || pendingMeetings.length === 0) {
+    if (!employeeId || !pendingMeetings || pendingMeetings.length === 0) {
       return res.status(400).json({
-        error: "Employee ID, reason, and at least one pending meeting are required",
+        error: "Employee ID and at least one pending meeting are required",
       });
     }
 
     console.log("=== SAVING INCOMPLETE MEETING REMARKS ===");
     console.log("Employee ID:", employeeId, "Type:", typeof employeeId);
-    console.log("Reason:", reason);
+    console.log("General reason:", reason);
     console.log("Pending meetings count:", pendingMeetings.length);
 
-    // Save a history entry for each incomplete meeting
+    // Save a history entry for each incomplete meeting with its individual reason
     const savedEntries = await Promise.all(
       pendingMeetings.map(async (meeting: any, idx: number) => {
+        // Use individual meeting reason if provided, otherwise fall back to general reason
+        const meetingReason = meeting.incompleteReason || reason || "Meeting not completed";
+        
         const meetingDetails = {
-          discussion: reason,
+          discussion: meetingReason,
           incomplete: true,
-          incompleteReason: reason,
+          incompleteReason: meetingReason,
           customers: [
             {
               customerName: meeting.customerName || "",
@@ -688,8 +691,10 @@ export const saveIncompleteMeetingRemark: RequestHandler = async (req, res) => {
 
         console.log(`Processing meeting ${idx + 1}:`, {
           employeeId: historyData.employeeId,
-          meetingName: meeting.customerName,
+          companyName: meeting.companyName,
+          customerName: meeting.customerName,
           leadId: meeting.leadId,
+          reason: meetingReason,
         });
 
         // Try to save to MongoDB first
@@ -697,12 +702,16 @@ export const saveIncompleteMeetingRemark: RequestHandler = async (req, res) => {
           const newEntry = new MeetingHistory(historyData);
           const saved = await newEntry.save();
           console.log("✓ Incomplete meeting remark saved to MongoDB:", saved._id);
+          console.log("  - Company:", meeting.companyName);
           console.log("  - Saved employeeId:", saved.employeeId);
           console.log("  - Saved incomplete flag:", saved.meetingDetails?.incomplete);
+          console.log("  - Reason:", meetingReason);
           return {
             success: true,
             meetingId: meeting._id,
             historyId: saved._id,
+            companyName: meeting.companyName,
+            reason: meetingReason,
           };
         } catch (dbError) {
           console.warn("MongoDB save failed for incomplete meeting remark:", dbError);
@@ -712,13 +721,21 @@ export const saveIncompleteMeetingRemark: RequestHandler = async (req, res) => {
             ...historyData,
           });
           console.log("✓ Incomplete meeting remark saved to in-memory storage");
-          return { success: true, meetingId: meeting._id };
+          return { 
+            success: true, 
+            meetingId: meeting._id,
+            companyName: meeting.companyName,
+            reason: meetingReason,
+          };
         }
       }),
     );
 
     console.log("=== SAVED INCOMPLETE MEETING REMARKS ===");
     console.log("Total entries saved:", savedEntries.length);
+    savedEntries.forEach((entry, idx) => {
+      console.log(`  ${idx + 1}. ${entry.companyName}: ${entry.reason}`);
+    });
 
     res.status(201).json({
       success: true,

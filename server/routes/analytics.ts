@@ -550,6 +550,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
               .map((customer) => customer.customerEmployeeName)
               .join(", ")
           : meeting.meetingDetails?.customerEmployeeName || "Unknown",
+      meetingStatus: meeting.status || "completed", // Include meeting status
+      incomplete: meeting.meetingDetails?.incomplete || false, // Include incomplete flag
+      incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
     }));
 
     const finalResult = {

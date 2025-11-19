@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Clock,
-  MapPin,
   Phone,
   Mail,
   Calendar,
@@ -15,13 +14,23 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
-import { HttpClient } from "@/lib/httpClient";
-import { format, isToday, parseISO } from "date-fns";
+import { isToday, parseISO } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 export interface FollowUpMeeting {
   _id: string;
   status: "Pending" | "Approved" | "Rejected";
-  meetingStatus: "Not Started" | "In Progress" | "Completed" | "complete" | "Pending";
+  meetingStatus:
+    | "Not Started"
+    | "In Progress"
+    | "Completed"
+    | "complete"
+    | "COMPLETED"
+    | "Pending"
+    | "Incomplete"
+    | "IN_PROGRESS"
+    | "Started"
+    | "meeting on-going";
   date: string;
   followupDate: string | null;
   leadId: string;
@@ -48,6 +57,7 @@ interface TodaysMeetingsProps {
   onEndMeetingFromFollowUp?: (followUpId: string, meetingId: string) => void;
   onMeetingsFetched?: (meetings: FollowUpMeeting[]) => void;
   refreshTrigger?: number;
+  hasActiveMeeting?: boolean; // indicates if there's an active meeting anywhere
 }
 
 export function TodaysMeetings({
@@ -57,16 +67,33 @@ export function TodaysMeetings({
   onEndMeetingFromFollowUp,
   onMeetingsFetched,
   refreshTrigger,
+  hasActiveMeeting = false,
 }: TodaysMeetingsProps) {
   const [meetings, setMeetings] = useState<FollowUpMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [endingMeetingId, setEndingMeetingId] = useState<string | null>(null);
+
+  // 🔹 Local state to keep currently active follow-up ID (for today's list)
+  const [localActiveFollowUpId, setLocalActiveFollowUpId] = useState<string | null>(null);
+
+  const { toast } = useToast();
+
+  // Keep localActiveFollowUpId in sync with startedMeetingMap / hasActiveMeeting
+  useEffect(() => {
+    if (startedMeetingMap && Object.keys(startedMeetingMap).length > 0) {
+      const [firstActiveId] = Object.keys(startedMeetingMap);
+      setLocalActiveFollowUpId(firstActiveId || null);
+    } else if (!hasActiveMeeting) {
+      // If parent says there is no active meeting anywhere, clear local state
+      setLocalActiveFollowUpId(null);
+    }
+  }, [startedMeetingMap, hasActiveMeeting]);
 
   useEffect(() => {
     fetchTodaysMeetings();
     const interval = setInterval(fetchTodaysMeetings, 60000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // Refresh when refreshTrigger changes
@@ -74,24 +101,26 @@ export function TodaysMeetings({
     if (refreshTrigger !== undefined) {
       fetchTodaysMeetings();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
 
   const fetchTodaysMeetings = async () => {
     if (!userId) {
       setError("User ID is required");
       setLoading(false);
-      return
+      return;
     }
 
     try {
       setError(null);
       console.log("Fetching meetings for user:", userId);
 
-      const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
+      const externalApiUrl =
+        import.meta.env.VITE_EXTERNAL_LEAD_API ||
+        "https://jbdspower.in/LeafNetServer/api";
       const baseUrl = externalApiUrl.replace("/getAllLead", "");
       const url = `${baseUrl}/getFollowUpHistory?userId=${userId}`;
 
-      
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -123,10 +152,62 @@ export function TodaysMeetings({
       }
     } catch (error) {
       console.error("Error fetching meetings:", error);
-      setError(error instanceof Error ? error.message : "Failed to fetch meetings");
+      setError(
+        error instanceof Error ? error.message : "Failed to fetch meetings"
+      );
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper: completed?
+  const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
+    return (
+      meeting.meetingStatus === "complete" ||
+      meeting.meetingStatus === "Completed" ||
+      meeting.meetingStatus === "COMPLETED"
+    );
+  };
+
+  // Helper: active / in progress from backend
+  const isMeetingActiveFromStatus = (meeting: FollowUpMeeting): boolean => {
+    return (
+      meeting.meetingStatus === "In Progress" ||
+      meeting.meetingStatus === "IN_PROGRESS" ||
+      meeting.meetingStatus === "Started"
+    );
+  };
+
+  // Is there ANY active meeting (local or global)?
+  const anyActiveMeeting =
+    hasActiveMeeting ||
+    !!localActiveFollowUpId ||
+    (startedMeetingMap && Object.keys(startedMeetingMap).length > 0) ||
+    meetings.some((m) => isMeetingActiveFromStatus(m));
+
+  const handleStartMeetingClick = (meeting: FollowUpMeeting) => {
+    console.log(
+      "🎯 Today's Meeting: Attempting to start meeting:",
+      meeting.companyName
+    );
+    console.log("🔒 Has active meeting?", hasActiveMeeting);
+    console.log("🧷 Local active followUpId:", localActiveFollowUpId);
+
+    if (anyActiveMeeting) {
+      console.log("❌ BLOCKED: Cannot start - active meeting exists");
+      toast({
+        title: "Cannot Start Meeting",
+        description:
+          "You already have an active meeting. Please complete it before starting a new one.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log("✅ No active meeting, starting and marking as local active...");
+    // Optimistically mark this follow-up as active locally
+    setLocalActiveFollowUpId(meeting._id);
+    onStartMeeting(meeting);
   };
 
   const getStatusColor = (status: string) => {
@@ -155,13 +236,6 @@ export function TodaysMeetings({
     }
   };
 
-  // Helper function to check if meeting is complete
-  const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
-    return meeting.meetingStatus === "complete" || 
-           meeting.meetingStatus === "Completed" ||
-           meeting.meetingStatus === "COMPLETED";
-  };
-
   if (loading) {
     return (
       <Card>
@@ -177,7 +251,9 @@ export function TodaysMeetings({
         <CardContent>
           <div className="text-center py-8">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mt-2">Fetching today's approved meetings...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Fetching today's approved meetings...
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -226,114 +302,162 @@ export function TodaysMeetings({
           <div className="text-center py-8 px-4">
             <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
             <h4 className="font-medium mb-1">No approved meetings for today</h4>
-            <p className="text-sm text-muted-foreground">Only approved meetings are shown here.</p>
+            <p className="text-sm text-muted-foreground">
+              Only approved meetings are shown here.
+            </p>
           </div>
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
-            {meetings.map((meeting) => (
-              <div
-                key={meeting._id}
-                className="p-4 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="flex items-center gap-1">
-                        {getMeetingTypeIcon(meeting.type)}
-                        <span className="font-medium">{meeting.type}</span>
+            {meetings.map((meeting) => {
+              const isActiveForThisRow =
+                isMeetingActiveFromStatus(meeting) ||
+                localActiveFollowUpId === meeting._id ||
+                (startedMeetingMap &&
+                  !!startedMeetingMap[meeting._id]);
+
+              return (
+                <div
+                  key={meeting._id}
+                  className="p-4 hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          {getMeetingTypeIcon(meeting.type)}
+                          <span className="font-medium">{meeting.type}</span>
+                        </div>
+                        <Badge
+                          className={getStatusColor(meeting.status)}
+                          variant="secondary"
+                        >
+                          {meeting.status}
+                        </Badge>
+                        {meeting.meetingTime && (
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {meeting.meetingTime}
+                          </div>
+                        )}
                       </div>
-                      <Badge className={getStatusColor(meeting.status)} variant="secondary">
-                        {meeting.status}
-                      </Badge>
-                      {meeting.meetingTime && (
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {meeting.meetingTime}
-                        </div>
-                      )}
-                    </div>
 
-                    <div className="space-y-1">
-
-                      {meeting.companyName && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Building2 className="h-3 w-3" />
-                          <span className="font-medium">{meeting.companyName}</span>
-                        </div>
-                      )}
-
-                      {meeting.customerName && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <User className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-muted-foreground">{meeting.customerName}</span>
-                          {meeting.customerDesignation && (
-                            <span className="text-muted-foreground">
-                              • {meeting.customerDesignation}
+                      <div className="space-y-1">
+                        {meeting.companyName && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="h-3 w-3" />
+                            <span className="font-medium">
+                              {meeting.companyName}
                             </span>
-                          )}
-                        </div>
-                      )}
+                          </div>
+                        )}
 
-                      {meeting.customerMobile && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Phone className="h-3 w-3" />
-                          {meeting.customerMobile}
-                        </div>
-                      )}
+                        {meeting.customerName && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-muted-foreground">
+                              {meeting.customerName}
+                            </span>
+                            {meeting.customerDesignation && (
+                              <span className="text-muted-foreground">
+                                • {meeting.customerDesignation}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                      {meeting.customerEmail && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Mail className="h-3 w-3" />
-                          {meeting.customerEmail}
-                        </div>
-                      )}
+                        {meeting.customerMobile && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            {meeting.customerMobile}
+                          </div>
+                        )}
 
-                      {meeting.remark && (
-                        <div className="text-sm text-muted-foreground mt-2 p-2 bg-muted/50 rounded">
-                          <span className="font-medium">Note: </span>
-                          {meeting.remark}
-                        </div>
-                      )}
+                        {meeting.customerEmail && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Mail className="h-3 w-3" />
+                            {meeting.customerEmail}
+                          </div>
+                        )}
+
+                        {meeting.remark && (
+                          <div className="text-sm text-muted-foreground mt-2 p-2 bg-muted/50 rounded">
+                            <span className="font-medium">Note: </span>
+                            {meeting.remark}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Updated button logic */}
-                  {isMeetingComplete(meeting) ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled
-                      className="flex-shrink-0"
-                    >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Complete
-                    </Button>
-                  ) : startedMeetingMap && startedMeetingMap[meeting._id] ? (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() =>
-                        onEndMeetingFromFollowUp &&
-                        onEndMeetingFromFollowUp(meeting._id, startedMeetingMap[meeting._id])
-                      }
-                      className="flex-shrink-0"
-                    >
-                      <Clock className="h-4 w-4 mr-2" />
-                      End Meeting
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => onStartMeeting(meeting)}
-                      className="flex-shrink-0"
-                    >
-                      <PlayCircle className="h-4 w-4 mr-2" />
-                      Start Meeting
-                    </Button>
-                  )}
+                    {/* ✅ Button logic with Incomplete status */}
+                    {meeting.meetingStatus === "Incomplete" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        className="flex-shrink-0 border-orange-500 text-orange-600"
+                      >
+                        <AlertCircle className="h-4 w-4 mr-2" />
+                        Incomplete
+                      </Button>
+                    ) : isMeetingComplete(meeting) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        className="flex-shrink-0"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Complete
+                      </Button>
+                    ) : isActiveForThisRow ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          // tell parent to end meeting
+                          if (
+                            onEndMeetingFromFollowUp &&
+                            startedMeetingMap &&
+                            startedMeetingMap[meeting._id]
+                          ) {
+                            onEndMeetingFromFollowUp(
+                              meeting._id,
+                              startedMeetingMap[meeting._id]
+                            );
+                          }
+                          // clear local state
+                          setLocalActiveFollowUpId(null);
+                        }}
+                        className="flex-shrink-0"
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        End Meeting
+                      </Button>
+                    ) : anyActiveMeeting ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        className="flex-shrink-0 opacity-50 cursor-not-allowed"
+                        title="Complete your current meeting first"
+                      >
+                        <PlayCircle className="h-4 w-4 mr-2" />
+                        Meeting Active
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => handleStartMeetingClick(meeting)}
+                        className="flex-shrink-0"
+                      >
+                        <PlayCircle className="h-4 w-4 mr-2" />
+                        Start Meeting
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

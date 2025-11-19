@@ -56,6 +56,9 @@ export function LocationTracker({
   const [remarkText, setRemarkText] = useState("");
   const [isSubmittingRemark, setIsSubmittingRemark] = useState(false);
   const [incompleteMeetings, setIncompleteMeetings] = useState<Array<any>>([]);
+  const [meetingRemarks, setMeetingRemarks] = useState<Record<string, string>>({});
+
+
   // Initialize tracking state from localStorage if available
   const getInitialTrackingState = () => {
     try {
@@ -63,12 +66,18 @@ export function LocationTracker({
       if (savedState) {
         const parsed = JSON.parse(savedState);
         console.log("🔄 Restored tracking state from localStorage:", parsed);
-        return parsed.isTracking || false;
+
+        // Only restore if explicitly set to true, otherwise default to false
+        if (parsed.isTracking === true) {
+          return true;
+        }
       }
     } catch (error) {
       console.warn("Error reading tracking state from localStorage:", error);
     }
-    return trackingEnabled;
+    // Default to false (not tracking) - user needs to explicitly start tracking
+    // This ensures the button shows "LogIn" by default
+    return false;
   };
 
   const [isTracking, setIsTracking] = useState(getInitialTrackingState);
@@ -459,7 +468,7 @@ export function LocationTracker({
               const newDistance = prev + distance;
               // Save updated tracking state to localStorage
               saveTrackingState(true, currentSession, trackingStartTime, newRoute, newDistance);
-              console.log(`✓ Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points, ${(newDistance/1000).toFixed(2)}km total`);
+              console.log(`✓ Added route point: ${distance.toFixed(1)}m from last, ${newRoute.length} total points, ${(newDistance / 1000).toFixed(2)}km total`);
               return newDistance;
             });
           } else {
@@ -627,20 +636,28 @@ export function LocationTracker({
     try {
       const incomplete = (todaysMeetings || []).filter((meeting: any) => {
         const meetingStatus = meeting.meetingStatus?.toLowerCase();
-        return meetingStatus !== "complete" && 
-               meetingStatus !== "completed" && 
-               meetingStatus !== "approved";
+        return meetingStatus !== "complete" &&
+          meetingStatus !== "completed" &&
+          meetingStatus !== "approved";
       });
 
       if (incomplete && incomplete.length > 0) {
         console.log("Incomplete meetings detected:", incomplete);
         setIncompleteMeetings(incomplete);
+
+        // 🔹 Initialize empty remark for each meeting
+        const initialRemarks: Record<string, string> = {};
+        incomplete.forEach((meeting: any) => {
+          initialRemarks[meeting._id] = "";
+        });
+        setMeetingRemarks(initialRemarks);
+
         setIsRemarkModalOpen(true);
-        
+
         // Restore tracking state since user hasn't confirmed logout yet
         setIsTracking(true);
         setTrackingEndTime(null);
-        
+
         toast({
           title: "Incomplete Meetings",
           description: `You have ${incomplete.length} incomplete meeting(s). Please provide a reason before logging out.`,
@@ -648,6 +665,7 @@ export function LocationTracker({
         });
         return;
       }
+
     } catch (err) {
       console.warn("Error checking for incomplete meetings:", err);
     }
@@ -759,10 +777,15 @@ export function LocationTracker({
   };
 
   const handleSubmitRemark = async () => {
-    if (!remarkText.trim()) {
+    // ✅ Validate: every incomplete meeting must have a reason
+    const missingReason = incompleteMeetings.some(
+      (meeting: any) => !meetingRemarks[meeting._id] || !meetingRemarks[meeting._id].trim()
+    );
+
+    if (missingReason) {
       toast({
         title: "Error",
-        description: "Please provide a reason before logging out.",
+        description: "Please provide a reason for each incomplete meeting.",
         variant: "destructive",
       });
       return;
@@ -772,12 +795,54 @@ export function LocationTracker({
     try {
       console.log("Saving incomplete meeting remarks for employee:", employeeId);
       console.log("Incomplete meetings:", incompleteMeetings);
+      console.log("Meeting remarks:", meetingRemarks);
 
-      // POST to /api/incomplete-meeting-remarks
+      // First, update each meeting status to "Incomplete" in the external API
+      const updatePromises = incompleteMeetings.map(async (meeting: any) => {
+        try {
+          const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
+          const baseUrl = externalApiUrl.replace("/getAllLead", "");
+          
+          const response = await fetch(`${baseUrl}/updateFollowUp/${meeting._id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              meetingStatus: "Incomplete",
+            }),
+          });
+
+          if (response.ok) {
+            console.log(`✓ Updated meeting ${meeting.companyName} to Incomplete status`);
+          } else {
+            console.warn(`Failed to update meeting ${meeting.companyName} status:`, response.status);
+          }
+        } catch (error) {
+          console.error(`Error updating meeting ${meeting.companyName}:`, error);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
+      // Build payload matching the API expectation
+      const pendingMeetingsPayload = incompleteMeetings.map((meeting: any) => ({
+        _id: meeting._id,
+        leadId: meeting.leadId,
+        companyName: meeting.companyName,
+        customerName: meeting.customerName,
+        customerEmail: meeting.customerEmail || "",
+        customerMobile: meeting.customerMobile || "",
+        customerDesignation: meeting.customerDesignation || "",
+        meetingTime: meeting.meetingTime || "",
+        incompleteReason: meetingRemarks[meeting._id],
+      }));
+
+      // Call API with correct payload structure
       const response = await HttpClient.post("/api/incomplete-meeting-remarks", {
         employeeId,
-        reason: remarkText,
-        pendingMeetings: incompleteMeetings,
+        reason: "Multiple incomplete meetings",
+        pendingMeetings: pendingMeetingsPayload,
       });
 
       if (!response.ok) {
@@ -789,15 +854,16 @@ export function LocationTracker({
       console.log("Incomplete meeting remarks saved:", result);
 
       toast({
-        title: "Remark Saved",
-        description: "Your reason has been recorded. Logging out...",
+        title: "Meetings Marked Incomplete",
+        description: `${incompleteMeetings.length} meeting(s) marked as incomplete with reasons.`,
       });
+
       setIsTracking(false);
 
       // Close modal and proceed with stop
       setIsRemarkModalOpen(false);
-      setRemarkText("");
-      
+      setMeetingRemarks({});
+      setIncompleteMeetings([]);
       const now = new Date();
       await performStopTracking(now);
     } catch (error) {
@@ -811,6 +877,7 @@ export function LocationTracker({
       setIsSubmittingRemark(false);
     }
   };
+
 
   const handleRemarkModalClose = () => {
     setIsRemarkModalOpen(false);
@@ -1146,57 +1213,73 @@ export function LocationTracker({
         )}
 
         {/* Incomplete Meetings Remark Modal */}
+        {/* Incomplete Meetings Remark Modal */}
         <Dialog open={isRemarkModalOpen} onOpenChange={handleRemarkModalClose}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-warning" />
                 Incomplete Meetings
               </DialogTitle>
               <DialogDescription>
-                You have {incompleteMeetings.length} incomplete meeting(s) today. 
-                Please provide a reason why these meetings are not completed before logging out.
+                You have {incompleteMeetings.length} incomplete meeting(s) today.
+                Please provide a reason for each company before logging out.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
-              {/* List incomplete meetings */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Incomplete Meetings:</Label>
-                <div className="bg-muted/50 rounded-lg p-3 space-y-2 max-h-[150px] overflow-y-auto">
-                  {incompleteMeetings.map((meeting: any) => (
-                    <div
-                      key={meeting._id}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
-                      <div>
-                        <span className="font-medium">{meeting.customerName || "Unnamed"}</span>
-                        {meeting.companyName && (
-                          <span className="text-muted-foreground">
-                            {" "}- {meeting.companyName}
-                          </span>
+            <div className="space-y-4 py-4 max-h-[380px] overflow-y-auto">
+              {incompleteMeetings.map((meeting: any) => (
+                <div
+                  key={meeting._id}
+                  className="border border-muted-foreground/10 rounded-lg p-3 bg-muted/40 space-y-2"
+                >
+                  {/* Meeting / company info */}
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-sm font-semibold">
+                        {meeting.companyName || "No Company Name"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {meeting.customerName && <>Contact: {meeting.customerName}</>}
+                        {meeting.meetingTime && (
+                          <>
+                            {" "}
+                            • Time: {meeting.meetingTime}
+                          </>
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              {/* Reason textarea */}
-              <div className="space-y-2">
-                <Label htmlFor="remark">
-                  Reason for Incomplete Meetings <span className="text-destructive">*</span>
-                </Label>
-                <Textarea
-                  id="remark"
-                  placeholder="E.g., Client rescheduled, waiting for confirmation, technical issues, etc..."
-                  value={remarkText}
-                  onChange={(e) => setRemarkText(e.target.value)}
-                  rows={4}
-                  disabled={isSubmittingRemark}
-                />
-              </div>
+                  {/* Reason input for THIS meeting */}
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor={`reason-${meeting._id}`}>
+                      Reason for not completing this meeting
+                      <span className="text-destructive"> *</span>
+                    </Label>
+                    <Textarea
+                      id={`reason-${meeting._id}`}
+                      placeholder="E.g., client postponed, decision maker not available, visit rescheduled, etc..."
+                      value={meetingRemarks[meeting._id] || ""}
+                      onChange={(e) =>
+                        setMeetingRemarks((prev) => ({
+                          ...prev,
+                          [meeting._id]: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      disabled={isSubmittingRemark}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {incompleteMeetings.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No incomplete meetings found.
+                </p>
+              )}
             </div>
 
             <DialogFooter>
@@ -1207,10 +1290,7 @@ export function LocationTracker({
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleSubmitRemark}
-                disabled={isSubmittingRemark}
-              >
+              <Button onClick={handleSubmitRemark} disabled={isSubmittingRemark}>
                 {isSubmittingRemark ? (
                   <>
                     <Loader className="h-4 w-4 mr-2 animate-spin" />
@@ -1223,6 +1303,7 @@ export function LocationTracker({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
       </CardContent>
     </Card>
   );

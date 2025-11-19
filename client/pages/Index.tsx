@@ -183,7 +183,31 @@ export default function Index() {
     window.location.href = `sms:${phoneNumber}?body=${message}`;
   };
 
-  const handleStartMeetingFromSchedule = (meeting: FollowUpMeeting) => {
+  const handleStartMeetingFromSchedule = async (meeting: FollowUpMeeting) => {
+    // Check if there's already an active meeting for the current user
+    if (currentUser?._id) {
+      try {
+        const response = await HttpClient.get(
+          `/api/meetings?employeeId=${currentUser._id}&status=in-progress&limit=1`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.meetings && data.meetings.length > 0) {
+            toast({
+              title: "Cannot Start Meeting",
+              description: "You already have an active meeting. Please complete it before starting a new one.",
+              variant: "destructive",
+            });
+            console.log("Blocked: Active meeting exists:", data.meetings[0].id);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Error checking for active meetings:", error);
+      }
+    }
+    
     setSelectedMeeting(meeting);
     setIsStartMeetingModalOpen(true);
   };
@@ -239,6 +263,14 @@ export default function Index() {
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started successfully`,
         });
+      } else {
+        // Handle error response
+        const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
+        toast({
+          title: "Cannot Start Meeting",
+          description: errorData.error || "Failed to start meeting",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Error starting meeting:", error);
@@ -258,23 +290,96 @@ export default function Index() {
       return;
     }
 
-    const pendingMeetings = getPendingTodaysMeetings(todaysMeetings);
+    // Get today's meetings that are NOT completed (Approved but not started or not finished)
+    const incompleteTodaysMeetings = todaysMeetings.filter(meeting => {
+      const isComplete = 
+        meeting.meetingStatus === "complete" ||
+        meeting.meetingStatus === "Completed" ||
+        meeting.meetingStatus === "COMPLETED";
+      return !isComplete; // Return meetings that are NOT complete
+    });
     
-    if (pendingMeetings.length > 0) {
+    console.log("Incomplete today's meetings on logout:", incompleteTodaysMeetings);
+    
+    if (incompleteTodaysMeetings.length > 0) {
       setIsPendingMeetingsModalOpen(true);
     } else {
       performLogout();
     }
   };
 
-  const handlePendingMeetingsSubmit = (reason: string) => {
-    console.log("Pending meetings reason:", reason);
-    console.log("Pending meetings:", getPendingTodaysMeetings(todaysMeetings));
+  const handlePendingMeetingsSubmit = async (
+    meetingsWithReasons: Array<{ meeting: FollowUpMeeting; reason: string }>
+  ) => {
+    console.log("Submitting incomplete meetings with reasons:", meetingsWithReasons);
     
-    toast({
-      title: "Reason Recorded",
-      description: "Your reason for pending meetings has been saved.",
-    });
+    try {
+      // First, update each meeting status to "Incomplete" in the external API
+      const updatePromises = meetingsWithReasons.map(async ({ meeting, reason }) => {
+        try {
+          const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
+          const baseUrl = externalApiUrl.replace("/getAllLead", "");
+          
+          const response = await fetch(`${baseUrl}/updateFollowUp/${meeting._id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              meetingStatus: "Incomplete",
+            }),
+          });
+
+          if (response.ok) {
+            console.log(`✓ Updated meeting ${meeting.companyName} to Incomplete status`);
+          } else {
+            console.warn(`Failed to update meeting ${meeting.companyName} status:`, response.status);
+          }
+        } catch (error) {
+          console.error(`Error updating meeting ${meeting.companyName}:`, error);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
+      // Save incomplete meeting remarks to our API
+      const response = await HttpClient.post("/api/incomplete-meeting-remarks", {
+        employeeId: currentUser._id,
+        reason: "Multiple incomplete meetings",
+        pendingMeetings: meetingsWithReasons.map(({ meeting, reason }) => ({
+          _id: meeting._id,
+          leadId: meeting.leadId,
+          companyName: meeting.companyName,
+          customerName: meeting.customerName,
+          customerEmail: meeting.customerEmail,
+          customerMobile: meeting.customerMobile,
+          customerDesignation: meeting.customerDesignation,
+          meetingTime: meeting.meetingTime,
+          incompleteReason: reason,
+        })),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Meetings Marked Incomplete",
+          description: `${meetingsWithReasons.length} meeting(s) marked as incomplete with reasons.`,
+        });
+      } else {
+        console.error("Failed to save incomplete meeting remarks");
+        toast({
+          title: "Warning",
+          description: "Failed to save some meeting reasons, but meetings are marked incomplete.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error saving incomplete meeting remarks:", error);
+      toast({
+        title: "Warning",
+        description: "Failed to save meeting reasons, but you can still logout.",
+        variant: "destructive",
+      });
+    }
     
     setIsPendingMeetingsModalOpen(false);
     performLogout();
@@ -799,12 +904,18 @@ export default function Index() {
         initialNotes={selectedMeeting?.remark || ""}
       />
 
-      {/* Pending Meetings Modal */}
+      {/* Incomplete Today's Meetings Modal */}
       <PendingMeetingsModal
         isOpen={isPendingMeetingsModalOpen}
         onClose={() => setIsPendingMeetingsModalOpen(false)}
         onSubmit={handlePendingMeetingsSubmit}
-        pendingMeetings={getPendingTodaysMeetings(todaysMeetings)}
+        pendingMeetings={todaysMeetings.filter(meeting => {
+          const isComplete = 
+            meeting.meetingStatus === "complete" ||
+            meeting.meetingStatus === "Completed" ||
+            meeting.meetingStatus === "COMPLETED";
+          return !isComplete;
+        })}
       />
     </div>
   );

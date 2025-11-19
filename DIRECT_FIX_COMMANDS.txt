@@ -1,0 +1,117 @@
+╔══════════════════════════════════════════════════════════════╗
+║     DIRECT FIX COMMANDS - Copy and Paste These               ║
+╚══════════════════════════════════════════════════════════════╝
+
+PROBLEM IDENTIFIED:
+1. ❌ vite not found - dependencies not installed
+2. ❌ Port 5000 not responding - app not running
+3. ❌ Scripts not on server - need to pull from git
+
+═══════════════════════════════════════════════════════════════
+
+SOLUTION - Run these commands ONE BY ONE:
+
+# 1. Check current directory
+pwd
+
+# 2. Install dependencies (THIS IS THE MAIN ISSUE!)
+npm install
+
+# 3. Build the project
+npm run build
+
+# 4. Check if build succeeded
+ls -la dist/spa/
+ls -la dist/server/
+
+# 5. Create .env file if missing
+if [ ! -f .env ]; then
+    cat > .env << 'EOF'
+NODE_ENV=production
+API_BASE_URL=https://tracking.jbdspower.in
+PORT=5000
+MONGODB_URI=mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/
+DB_NAME=employee-tracking
+EXTERNAL_USER_API=https://jbdspower.in/LeafNetServer/api/user
+EXTERNAL_CUSTOMER_API=https://jbdspower.in/LeafNetServer/api/customer
+EXTERNAL_LEAD_API=https://jbdspower.in/LeafNetServer/api/getAllLead
+ENABLE_LOGGING=false
+DEBUG_MODE=false
+EOF
+fi
+
+# 6. Verify .env
+cat .env
+
+# 7. Stop all PM2 processes
+pm2 stop all
+pm2 delete all
+
+# 8. Set environment
+export NODE_ENV=production
+
+# 9. Start the application
+pm2 start npm --name "trackingApp" -- start
+
+# 10. Save PM2 configuration
+pm2 save
+
+# 11. Check status
+pm2 status
+
+# 12. View logs
+pm2 logs trackingApp --lines 50
+
+# 13. Test API
+curl http://localhost:5000/api/ping
+
+═══════════════════════════════════════════════════════════════
+
+IF npm install FAILS:
+
+# Clear npm cache
+npm cache clean --force
+
+# Remove node_modules
+rm -rf node_modules
+
+# Remove package-lock.json
+rm -f package-lock.json
+
+# Install again
+npm install
+
+═══════════════════════════════════════════════════════════════
+
+EXPECTED OUTPUT:
+
+After "npm run build":
+✅ dist/spa/index.html created
+✅ dist/server/node-build.mjs created
+
+After "pm2 status":
+✅ trackingApp shows "online" status
+
+After "curl http://localhost:5000/api/ping":
+✅ {"message":"Hello from Express server v2!","status":"ok"}
+
+═══════════════════════════════════════════════════════════════
+
+IF STILL NOT WORKING:
+
+Check PM2 logs for specific error:
+pm2 logs trackingApp --lines 100
+
+Common errors and fixes:
+
+1. "Cannot find module 'express'"
+   → Run: npm install
+
+2. "EADDRINUSE: port 5000 already in use"
+   → Run: lsof -i :5000
+   → Then: kill -9 <PID>
+
+3. "Permission denied"
+   → Run: chmod -R 755 dist/
+
+═══════════════════════════════════════════════════════════════

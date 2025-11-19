@@ -59,6 +59,15 @@ export default function Tracking() {
   const [followUpMeetingIds, setFollowUpMeetingIds] = useState<Set<string>>(new Set());
   const [refreshTodaysMeetings, setRefreshTodaysMeetings] = useState<number>(0);
 
+  // Track meetings state changes for debugging
+  useEffect(() => {
+    console.log("🔄 Meetings state changed:", {
+      count: meetings.length,
+      meetings: meetings.map(m => ({ id: m.id, status: m.status, client: m.clientName })),
+      hasActive: meetings.some(m => m.status === "in-progress" || m.status === "started")
+    });
+  }, [meetings]);
+
   useEffect(() => {
     if (!employeeId) {
       navigate("/");
@@ -178,7 +187,28 @@ export default function Tracking() {
 
   // Handle starting a meeting from the Today's Meetings component
   const handleStartMeetingFromFollowUp = (meeting: FollowUpMeeting) => {
-    console.log("Starting meeting from follow-up:", meeting);
+    console.log("🚀 Attempting to start meeting from follow-up:", meeting.companyName);
+    console.log("📋 Current meetings:", meetings.map(m => ({ id: m.id, status: m.status, client: m.clientName })));
+    console.log("📊 Total meetings:", meetings.length);
+    
+    // Check if there's already an active meeting
+    const activeMeeting = meetings.find(
+      (m) => m.status === "in-progress" || m.status === "started"
+    );
+
+    console.log("🔍 Active meeting check result:", activeMeeting ? `Found: ${activeMeeting.id}` : "None");
+
+    if (activeMeeting) {
+      console.log("❌ BLOCKED: Active meeting exists:", activeMeeting.id);
+      toast({
+        title: "Cannot Start Meeting",
+        description: "You already have an active meeting. Please complete it before starting a new one.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    console.log("✅ No active meeting found, proceeding to start...");
     
     // Prepare meeting data for the meeting
     const meetingData = {
@@ -246,34 +276,6 @@ export default function Tracking() {
   const handleEndMeetingFromFollowUp = (followUpId: string, meetingId: string) => {
     console.log("handleEndMeetingFromFollowUp called with followUpId:", followUpId, "meetingId:", meetingId);
     
-    // Immediately mark the follow-up as complete via backend (updateFollowUp/:id)
-    (async () => {
-  try {
-    console.log("Marking follow-up as complete for:", followUpId);
-
-    const resp = await fetch(
-      `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ meetingStatus: "complete" }),
-      }
-    );
-
-    if (resp.ok) {
-      console.log("Follow-up marked complete");
-      setRefreshTodaysMeetings(prev => prev + 1);
-    } else {
-      console.warn("Failed to mark follow-up complete:", resp.status);
-    }
-  } catch (err) {
-    console.error("Error marking follow-up complete:", err);
-  }
-})();
-
-
     // Find the follow-up meeting data to pass to the modal
     const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
     if (followUpData) {
@@ -459,17 +461,40 @@ const handleEndMeetingWithDetails = async (
       });
 
       if (response.ok) {
-        fetchMeetings();
+        const createdMeeting = await response.json();
+        
+        console.log("✅ Meeting created successfully:", createdMeeting.id);
+        
+        // IMMEDIATELY add the meeting to the local state to prevent race conditions
+        setMeetings(prev => {
+          console.log("📝 Adding meeting to state:", createdMeeting.id);
+          return [...prev, createdMeeting];
+        });
+        
+        // DON'T fetch meetings immediately - it will overwrite our state
+        // Instead, fetch after a delay to allow the server to update
+        setTimeout(() => {
+          console.log("🔄 Fetching meetings after delay to sync with server...");
+          fetchMeetings();
+        }, 1000);
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
         fetchEmployee();
-        setIsStartMeetingModalOpen(true);
+        setIsStartMeetingModalOpen(false);
         
         // Show success toast
         toast({
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started`,
+        });
+      } else {
+        // Handle error response
+        const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
+        toast({
+          title: "Cannot Start Meeting",
+          description: errorData.error || "Failed to start meeting",
+          variant: "destructive",
         });
       }
     } catch (error) {
@@ -518,6 +543,14 @@ const handleEndMeetingWithDetails = async (
       if (response.ok) {
         const createdMeeting = await response.json();
         
+        console.log("✅ Meeting created successfully:", createdMeeting.id);
+        
+        // IMMEDIATELY add the meeting to the local state to prevent race conditions
+        setMeetings(prev => {
+          console.log("📝 Adding meeting to state:", createdMeeting.id);
+          return [...prev, createdMeeting];
+        });
+        
         // Track the mapping of follow-up ID to created meeting ID
         setStartedMeetingMap(prev => ({
           ...prev,
@@ -558,7 +591,12 @@ const handleEndMeetingWithDetails = async (
         // Track this meeting as coming from a follow-up
         setFollowUpMeetingIds(prev => new Set([...prev, createdMeeting.id]));
 
-        fetchMeetings();
+        // DON'T fetch meetings immediately - it will overwrite our state
+        // Instead, fetch after a delay to allow the server to update
+        setTimeout(() => {
+          console.log("🔄 Fetching meetings after delay to sync with server...");
+          fetchMeetings();
+        }, 1000);
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
@@ -568,6 +606,14 @@ const handleEndMeetingWithDetails = async (
         toast({
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started`,
+        });
+      } else {
+        // Handle error response
+        const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
+        toast({
+          title: "Cannot Start Meeting",
+          description: errorData.error || "Failed to start meeting",
+          variant: "destructive",
         });
       }
     } catch (error) {
@@ -583,6 +629,21 @@ const handleEndMeetingWithDetails = async (
   };
 
   const openStartMeetingModal = () => {
+    // Check if there's already an active meeting
+    const activeMeeting = meetings.find(
+      (m) => m.status === "in-progress" || m.status === "started"
+    );
+
+    if (activeMeeting) {
+      toast({
+        title: "Cannot Start Meeting",
+        description: "You already have an active meeting. Please complete it before starting a new one.",
+        variant: "destructive",
+      });
+      console.log("Blocked: Active meeting exists:", activeMeeting.id);
+      return;
+    }
+
     setIsStartMeetingModalOpen(true);
   };
 
@@ -758,6 +819,12 @@ const handleEndMeetingWithDetails = async (
     );
   }
 
+  // Check if current user is super admin or specific employee
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+  const isSuperAdmin = currentUser?.role === "super_admin";
+  const isSpecialEmployee = currentUser?._id === "67daa55d9c4abb36045d5bfe";
+  const showBackButton = isSuperAdmin || isSpecialEmployee;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -765,12 +832,14 @@ const handleEndMeetingWithDetails = async (
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Dashboard
-                </Link>
-              </Button>
+              {showBackButton && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/">
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Dashboard
+                  </Link>
+                </Button>
+              )}
               <div>
                 <h1 className="text-2xl font-bold text-foreground">
                   {employee.name}
@@ -1186,6 +1255,7 @@ const handleEndMeetingWithDetails = async (
               onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
               onMeetingsFetched={handleTodaysMeetingsFetched}
               refreshTrigger={refreshTodaysMeetings}
+              hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
             />
           </div>
         </div>
