@@ -501,6 +501,8 @@ export function LocationTracker({
     calculateDistance,
   ]);
 
+  console.log("testing location");
+  
   const updateLocationOnServer = async (
     lat: number,
     lng: number,
