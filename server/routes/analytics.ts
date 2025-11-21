@@ -491,7 +491,32 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
     console.log(`Filtered to ${employeeMeetings.length} meetings in date range for employee ${employeeId}`);
 
-    // Group by date for day records
+    // 🔹 NEW: Get tracking sessions for attendance (login/logout)
+    let trackingSessions: any[] = [];
+    try {
+      const { TrackingSession } = await import("../models");
+      const mongoSessions = await TrackingSession.find({ 
+        employeeId,
+        startTime: { $gte: start.toISOString(), $lte: end.toISOString() }
+      }).lean();
+      
+      trackingSessions = mongoSessions.map(session => ({
+        id: session.id,
+        employeeId: session.employeeId,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        startLocation: session.startLocation,
+        endLocation: session.endLocation,
+        status: session.status,
+        duration: session.duration,
+      }));
+      
+      console.log(`Found ${trackingSessions.length} tracking sessions for employee ${employeeId}`);
+    } catch (dbError) {
+      console.warn("Failed to fetch tracking sessions:", dbError);
+    }
+
+    // Group meetings by date
     const dateGroups = employeeMeetings.reduce(
       (groups, meeting) => {
         const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
@@ -502,8 +527,28 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       {} as Record<string, any[]>,
     );
 
-    // Generate day records
-    const dayRecords = Object.entries(dateGroups).map(([date, meetings]) => {
+    // Group tracking sessions by date
+    const sessionDateGroups = trackingSessions.reduce(
+      (groups, session) => {
+        const date = format(new Date(session.startTime), "yyyy-MM-dd");
+        if (!groups[date]) groups[date] = [];
+        groups[date].push(session);
+        return groups;
+      },
+      {} as Record<string, any[]>,
+    );
+
+    // Get all unique dates from both meetings and sessions
+    const allDates = new Set([
+      ...Object.keys(dateGroups),
+      ...Object.keys(sessionDateGroups)
+    ]);
+
+    // Generate day records combining meetings and tracking sessions
+    const dayRecords = Array.from(allDates).map((date) => {
+      const meetings = dateGroups[date] || [];
+      const sessions = sessionDateGroups[date] || [];
+      
       const totalMeetings = meetings.length;
       const totalMeetingHours = meetings.reduce((total, meeting) => {
         return (
@@ -511,23 +556,43 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         );
       }, 0);
 
-      console.log(`Day record for ${date}: ${totalMeetings} meetings, ${totalMeetingHours.toFixed(2)} hours`);
-
+      // Use tracking session for login/logout times if available, otherwise use meetings
+      const firstSession = sessions[0];
+      const lastSession = sessions[sessions.length - 1];
+      const firstMeeting = meetings[0];
       const lastMeeting = meetings[meetings.length - 1];
+
+      // Determine start location and time (prefer tracking session)
+      const startLocationTime = firstSession?.startTime || firstMeeting?.startTime || "";
+      const startLocationAddress = firstSession?.startLocation?.address || firstMeeting?.location?.address || "";
+
+      // Determine end location and time (prefer tracking session)
+      const outLocationTime = lastSession?.endTime || lastMeeting?.endTime || "";
+      const outLocationAddress = lastSession?.endTime && lastSession?.endLocation?.address
+        ? lastSession.endLocation.address
+        : (lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address
+          ? lastMeeting.location.endLocation.address
+          : "");
+
+      // Calculate total duty hours from tracking session if available
+      let totalDutyHours = 8; // Default
+      if (firstSession && lastSession?.endTime) {
+        const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1000 * 60 * 60);
+        totalDutyHours = Math.max(0, sessionDuration);
+      }
+
+      console.log(`Day record for ${date}: ${totalMeetings} meetings, ${totalMeetingHours.toFixed(2)} meeting hours, ${sessions.length} tracking sessions`);
       
       return {
         date,
         totalMeetings,
-        startLocationTime: meetings[0]?.startTime || "",
-        startLocationAddress: meetings[0]?.location?.address || "",
-        outLocationTime: lastMeeting?.endTime || "",
-        // 🔹 FIX: Only show end location if meeting has ended
-        outLocationAddress: lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address 
-          ? lastMeeting.location.endLocation.address 
-          : "",
-        totalDutyHours: 8, // Placeholder - would calculate from tracking data
+        startLocationTime,
+        startLocationAddress,
+        outLocationTime,
+        outLocationAddress,
+        totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
         meetingTime: totalMeetingHours,
-        travelAndLunchTime: Math.max(0, 8 - totalMeetingHours), // Simplified calculation
+        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours)
       };
     });
 

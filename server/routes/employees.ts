@@ -94,40 +94,42 @@ async function getAddressFromCoordinates(
 
   // Return cached address if available and not expired
   if (cached && cached.expires > Date.now()) {
+    console.log(`✅ Using cached address for ${lat}, ${lng}: ${cached.address}`);
     return cached.address;
   }
 
-  // Return fallback immediately and try geocoding in background
-  setTimeout(async () => {
-    try {
-      const response = await axios.get(NOMINATIM_URL, {
-        params: {
-          format: "json",
-          lat,
-          lon: lng,
-          zoom: 18,
-          addressdetails: 1,
-        },
-        headers: {
-          "User-Agent": "YourAppName/1.0 (your@email.com)",
-        },
-        timeout: 3000, // Reduced timeout
-      });
+  // 🔹 FIX: Wait for geocoding instead of returning fallback immediately
+  try {
+    console.log(`🗺️ Fetching address for coordinates: ${lat}, ${lng}`);
+    const response = await axios.get(NOMINATIM_URL, {
+      params: {
+        format: "json",
+        lat,
+        lon: lng,
+        zoom: 18,
+        addressdetails: 1,
+      },
+      headers: {
+        "User-Agent": "EmployeeTrackingApp/1.0",
+      },
+      timeout: 5000, // 5 second timeout
+    });
 
-      const address = response.data?.display_name || fallbackAddress;
+    const address = response.data?.display_name || fallbackAddress;
+    console.log(`✅ Address resolved: ${address}`);
 
-      // Cache the result for future use
-      geocodeCache.set(cacheKey, {
-        address,
-        expires: Date.now() + GEOCACHE_TTL,
-      });
-    } catch (error) {
-      // Silent background failure - don't block the main flow
-      console.warn("Background geocoding failed for", lat, lng);
-    }
-  }, 0);
+    // Cache the result for future use
+    geocodeCache.set(cacheKey, {
+      address,
+      expires: Date.now() + GEOCACHE_TTL,
+    });
 
-  return fallbackAddress;
+    return address;
+  } catch (error) {
+    console.warn(`⚠️ Geocoding failed for ${lat}, ${lng}, using coordinates:`, error.message);
+    // Return fallback if geocoding fails
+    return fallbackAddress;
+  }
 }
 
 async function getEmployeeLatestLocation(employeeId: string) {

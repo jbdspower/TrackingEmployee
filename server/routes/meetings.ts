@@ -12,14 +12,32 @@ import { Meeting, IMeeting } from "../models";
 const geocodeCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 // Helper function for reverse geocoding
+// Rate limiting for Nominatim API (max 1 request per second)
+let lastGeocodingTime = 0;
+const GEOCODING_DELAY = 1000; // 1 second
+
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
   
   const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   const cachedAddress = geocodeCache.get<string>(cacheKey);
-  if (cachedAddress) return cachedAddress;
+  if (cachedAddress) {
+    console.log(`✅ Using cached address for ${lat}, ${lng}: ${cachedAddress}`);
+    return cachedAddress;
+  }
 
   try {
+    // Rate limiting: wait if needed
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastGeocodingTime;
+    if (timeSinceLastRequest < GEOCODING_DELAY) {
+      const waitTime = GEOCODING_DELAY - timeSinceLastRequest;
+      console.log(`⏳ Rate limiting: waiting ${waitTime}ms before geocoding`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    lastGeocodingTime = Date.now();
+
+    console.log(`🗺️ Fetching address for coordinates: ${lat}, ${lng}`);
     const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
       params: {
         format: 'json',
@@ -29,16 +47,17 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
         addressdetails: 1
       },
       headers: {
-        'User-Agent': 'FieldTracker/1.0 (contact@yourdomain.com)'
+        'User-Agent': 'EmployeeTrackingApp/1.0'
       },
       timeout: 5000
     });
 
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    console.log(`✅ Address resolved: ${address}`);
     geocodeCache.set(cacheKey, address);
     return address;
   } catch (error) {
-    console.error('Reverse geocoding failed:', error);
+    console.error(`⚠️ Reverse geocoding failed for ${lat}, ${lng}:`, error.message);
     return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   }
 }
@@ -264,6 +283,9 @@ export const updateMeeting: RequestHandler = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
+    console.log(`📍 End location in request:`, updates.endLocation);
+
     // Handle meeting completion
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = new Date().toISOString();
@@ -276,7 +298,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
     // 🔹 CRITICAL FIX: Capture end location when meeting is completed
     if (updates.status === "completed" && updates.endLocation) {
-      console.log("📍 Capturing end location for meeting:", updates.endLocation);
+      console.log("📍 Capturing end location for meeting:", JSON.stringify(updates.endLocation, null, 2));
       // Store end location in the location.endLocation field
       updates["location.endLocation"] = {
         lat: updates.endLocation.lat,
@@ -284,8 +306,11 @@ export const updateMeeting: RequestHandler = async (req, res) => {
         address: updates.endLocation.address || `${updates.endLocation.lat.toFixed(6)}, ${updates.endLocation.lng.toFixed(6)}`,
         timestamp: updates.endLocation.timestamp || new Date().toISOString(),
       };
+      console.log("✅ End location formatted:", JSON.stringify(updates["location.endLocation"], null, 2));
       // Remove the top-level endLocation field as it's now nested
       delete updates.endLocation;
+    } else if (updates.status === "completed") {
+      console.warn("⚠️ Meeting completed but no endLocation provided in request!");
     }
 
     // Try MongoDB first
