@@ -438,17 +438,30 @@ export function TodaysMeetings({
                         size="sm"
                         variant="destructive"
                         onClick={() => {
-                          // tell parent to end meeting
-                          if (
-                            onEndMeetingFromFollowUp &&
-                            startedMeetingMap &&
-                            startedMeetingMap[meeting._id]
-                          ) {
-                            onEndMeetingFromFollowUp(
-                              meeting._id,
-                              startedMeetingMap[meeting._id]
-                            );
+                          console.log("🔴 End Meeting clicked for:", meeting._id);
+                          console.log("🗺️ startedMeetingMap:", startedMeetingMap);
+                          
+                          // Get the meeting ID from the map
+                          const meetingId = startedMeetingMap?.[meeting._id];
+                          
+                          if (onEndMeetingFromFollowUp && meetingId) {
+                            console.log("✅ Calling onEndMeetingFromFollowUp with:", meeting._id, meetingId);
+                            onEndMeetingFromFollowUp(meeting._id, meetingId);
+                          } else {
+                            console.warn("⚠️ Cannot end meeting - missing handler or meetingId:", {
+                              hasHandler: !!onEndMeetingFromFollowUp,
+                              meetingId,
+                              followUpId: meeting._id
+                            });
+                            
+                            // If we don't have the meetingId in the map, we still need to open the modal
+                            // The parent should handle finding the active meeting
+                            if (onEndMeetingFromFollowUp) {
+                              // Pass empty string as meetingId - parent will need to find it
+                              onEndMeetingFromFollowUp(meeting._id, "");
+                            }
                           }
+                          
                           // clear local state
                           setLocalActiveFollowUpId(null);
                         }}

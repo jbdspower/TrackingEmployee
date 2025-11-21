@@ -319,7 +319,22 @@ export default function Tracking() {
       setStartedFollowUpData(followUpData);
     }
     
-    setActiveMeetingId(meetingId);
+    // If meetingId is empty or not provided, try to find the active meeting
+    let finalMeetingId = meetingId;
+    if (!finalMeetingId || finalMeetingId === "") {
+      console.log("⚠️ No meetingId provided, searching for active meeting...");
+      const activeMeeting = meetings.find(
+        (m) => m.status === "in-progress" || m.status === "started"
+      );
+      if (activeMeeting) {
+        finalMeetingId = activeMeeting.id;
+        console.log("✅ Found active meeting:", finalMeetingId);
+      } else {
+        console.error("❌ No active meeting found!");
+      }
+    }
+    
+    setActiveMeetingId(finalMeetingId);
     setIsEndMeetingModalOpen(true);
   };
 
