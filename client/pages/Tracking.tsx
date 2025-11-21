@@ -314,12 +314,68 @@ const handleEndMeetingWithDetails = async (
       meetingDetails,
     );
 
+    // 🔹 CRITICAL FIX: Get fresh location before ending meeting
+    let endLocation = null;
+    try {
+      console.log("📍 Fetching fresh location for meeting end...");
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error("Geolocation not supported"));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000,
+          }
+        );
+      });
+
+      let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      
+      // Get human-readable address from coordinates
+      try {
+        console.log("🗺️ Fetching address for meeting end location...");
+        const addressResponse = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+          {
+            headers: {
+              'User-Agent': 'EmployeeTrackingApp/1.0'
+            }
+          }
+        );
+        
+        if (addressResponse.ok) {
+          const addressData = await addressResponse.json();
+          address = addressData.display_name || address;
+          console.log("✅ Meeting end address resolved:", address);
+        }
+      } catch (addressError) {
+        console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+      }
+
+      endLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        address: address,
+        timestamp: new Date().toISOString(),
+      };
+      console.log("✅ Fresh end location obtained:", endLocation);
+    } catch (locationError) {
+      console.warn("⚠️ Failed to get fresh location for meeting end:", locationError);
+      // Continue without end location - better to save the meeting than fail completely
+    }
+
     const response = await HttpClient.put(
       `/api/meetings/${activeMeetingId}`,
       {
         status: "completed",
         endTime: new Date().toISOString(),
         meetingDetails,
+        endLocation, // Include end location
       },
     );
 

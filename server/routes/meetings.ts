@@ -274,6 +274,20 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       return res.status(400).json({ error: "Discussion details are required" });
     }
 
+    // 🔹 CRITICAL FIX: Capture end location when meeting is completed
+    if (updates.status === "completed" && updates.endLocation) {
+      console.log("📍 Capturing end location for meeting:", updates.endLocation);
+      // Store end location in the location.endLocation field
+      updates["location.endLocation"] = {
+        lat: updates.endLocation.lat,
+        lng: updates.endLocation.lng,
+        address: updates.endLocation.address || `${updates.endLocation.lat.toFixed(6)}, ${updates.endLocation.lng.toFixed(6)}`,
+        timestamp: updates.endLocation.timestamp || new Date().toISOString(),
+      };
+      // Remove the top-level endLocation field as it's now nested
+      delete updates.endLocation;
+    }
+
     // Try MongoDB first
     try {
       const updatedMeeting = await Meeting.findByIdAndUpdate(
@@ -286,8 +300,12 @@ export const updateMeeting: RequestHandler = async (req, res) => {
         return res.status(404).json({ error: "Meeting not found in database" });
       }
 
-      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       console.log("Meeting updated in MongoDB:", updatedMeeting._id);
+      if (updatedMeeting.location?.endLocation) {
+        console.log("✅ End location saved:", updatedMeeting.location.endLocation);
+      }
+      
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       res.json(meetingLog);
       return;
     } catch (dbError) {

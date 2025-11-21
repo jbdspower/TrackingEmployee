@@ -584,8 +584,48 @@ export function LocationTracker({
       console.warn("Wake lock failed:", error);
     }
 
-    // Get initial position
-    getCurrentPosition();
+    // Get initial position with fresh location
+    let startLat = latitude || 0;
+    let startLng = longitude || 0;
+    let startAddress = "Getting location...";
+
+    try {
+      console.log("📍 Fetching fresh location for start position...");
+      const freshPosition = await getCurrentPosition();
+      
+      if (freshPosition && freshPosition.coords) {
+        startLat = freshPosition.coords.latitude;
+        startLng = freshPosition.coords.longitude;
+        console.log("✅ Fresh start location obtained:", { lat: startLat, lng: startLng });
+
+        // Get human-readable address from coordinates
+        try {
+          console.log("🗺️ Fetching address for start location...");
+          const addressResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${startLat}&lon=${startLng}&zoom=18&addressdetails=1`,
+            {
+              headers: {
+                'User-Agent': 'EmployeeTrackingApp/1.0'
+              }
+            }
+          );
+          
+          if (addressResponse.ok) {
+            const addressData = await addressResponse.json();
+            startAddress = addressData.display_name || `${startLat.toFixed(6)}, ${startLng.toFixed(6)}`;
+            console.log("✅ Start address resolved:", startAddress);
+          } else {
+            startAddress = `${startLat.toFixed(6)}, ${startLng.toFixed(6)}`;
+          }
+        } catch (addressError) {
+          console.warn("⚠️ Failed to get start address, using coordinates:", addressError);
+          startAddress = `${startLat.toFixed(6)}, ${startLng.toFixed(6)}`;
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ Failed to get fresh start location:", error);
+      startAddress = startLat && startLng ? `${startLat.toFixed(6)}, ${startLng.toFixed(6)}` : "Getting location...";
+    }
 
     // Start background tracking if PWA capabilities are available
     if (serviceWorkerReady && backgroundTrackingSupported) {
@@ -596,15 +636,12 @@ export function LocationTracker({
       });
     }
 
-    // Create tracking session immediately, even if coordinates aren't ready yet
+    // Create tracking session with resolved address
     const sessionId = `session_${employeeId}_${now.getTime()}`;
     const startLocation = {
-      lat: latitude || 0,
-      lng: longitude || 0,
-      address:
-        latitude && longitude
-          ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-          : "Getting location...",
+      lat: startLat,
+      lng: startLng,
+      address: startAddress,
       timestamp: now.toISOString(),
     };
 
@@ -618,7 +655,7 @@ export function LocationTracker({
       status: "active",
     };
 
-    console.log("Starting tracking session:", session);
+    console.log("Starting tracking session with address:", session);
     setCurrentSession(session);
 
     // Save tracking state to localStorage
@@ -675,6 +712,62 @@ export function LocationTracker({
   };
 
   const performStopTracking = async (now: Date) => {
+    console.log("🛑 Starting performStopTracking - fetching fresh location...");
+
+    // 🔹 CRITICAL FIX: Get fresh location before stopping tracking
+    let endLat = latitude;
+    let endLng = longitude;
+    let endAccuracy = accuracy;
+    let endAddress = latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Location unavailable";
+    
+    try {
+      console.log("📍 Requesting fresh GPS location for end position...");
+      const freshPosition = await getCurrentPosition();
+      
+      // Use the freshly fetched location if available
+      if (freshPosition && freshPosition.coords) {
+        endLat = freshPosition.coords.latitude;
+        endLng = freshPosition.coords.longitude;
+        endAccuracy = freshPosition.coords.accuracy;
+        console.log("✅ Fresh end location obtained:", { 
+          lat: endLat, 
+          lng: endLng, 
+          accuracy: endAccuracy 
+        });
+        
+        // Get human-readable address from coordinates
+        try {
+          console.log("🗺️ Fetching address for end location...");
+          const addressResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${endLat}&lon=${endLng}&zoom=18&addressdetails=1`,
+            {
+              headers: {
+                'User-Agent': 'EmployeeTrackingApp/1.0'
+              }
+            }
+          );
+          
+          if (addressResponse.ok) {
+            const addressData = await addressResponse.json();
+            endAddress = addressData.display_name || `${endLat.toFixed(6)}, ${endLng.toFixed(6)}`;
+            console.log("✅ End address resolved:", endAddress);
+          }
+        } catch (addressError) {
+          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+          endAddress = `${endLat.toFixed(6)}, ${endLng.toFixed(6)}`;
+        }
+        
+        // Update the location on server with fresh coordinates
+        await updateLocationOnServer(endLat, endLng, endAccuracy);
+      } else {
+        console.warn("⚠️ Fresh location not available, using last known location:", {
+          lat: endLat,
+          lng: endLng
+        });
+      }
+    } catch (error) {
+      console.warn("⚠️ Failed to get fresh location, using last known:", error);
+    }
 
     // Release wake lock
     if (wakeLock) {
@@ -702,9 +795,9 @@ export function LocationTracker({
 
     console.log("Stopping tracking - Debug info:", {
       hasCurrentSession: !!currentSession,
-      hasCoordinates: !!(latitude && longitude),
-      latitude,
-      longitude,
+      hasCoordinates: !!(endLat && endLng),
+      endLat,
+      endLng,
       routePointsCount: routeCoordinates.length,
       totalDistance,
       elapsedTime,
@@ -713,12 +806,9 @@ export function LocationTracker({
     // Update current session - create session even if coordinates aren't perfect
     if (currentSession) {
       const endLocation = {
-        lat: latitude || currentSession.startLocation.lat,
-        lng: longitude || currentSession.startLocation.lng,
-        address:
-          latitude && longitude
-            ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            : "Location unavailable",
+        lat: endLat || currentSession.startLocation.lat,
+        lng: endLng || currentSession.startLocation.lng,
+        address: endAddress,
         timestamp: now.toISOString(),
       };
 
