@@ -664,6 +664,8 @@ export function LocationTracker({
     onTrackingSessionStart?.(session);
   };
 
+  console.log("testing ");
+  
   const handleStopTracking = async () => {
     const now = new Date();
     setTrackingEndTime(now);
