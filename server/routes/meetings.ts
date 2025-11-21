@@ -217,7 +217,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 
 export const createMeeting: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, location, clientName, notes, leadId, leadInfo } = req.body;
+    const { employeeId, location, clientName, notes, leadId, leadInfo, externalMeetingStatus } = req.body;
 
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
@@ -239,6 +239,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
       status: "in-progress" as const,
       leadId: leadId || undefined,
       leadInfo: leadInfo || undefined,
+      externalMeetingStatus: externalMeetingStatus || undefined, // 🔹 NEW: Store external meeting status
     };
 
     // Try MongoDB first

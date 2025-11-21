@@ -594,6 +594,7 @@ const handleEndMeetingWithDetails = async (
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
+        externalMeetingStatus: "meeting on-going", // Initial status from external API
       });
 
       if (response.ok) {

@@ -622,7 +622,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
               .map((customer) => customer.customerEmployeeName)
               .join(", ")
           : meeting.meetingDetails?.customerEmployeeName || "Unknown",
-      meetingStatus: meeting.status || "completed", // Include meeting status
+      meetingStatus: meeting.status || "completed", // Internal meeting status
+      externalMeetingStatus: meeting.externalMeetingStatus || "", // 🔹 NEW: Status from external follow-up API
       incomplete: meeting.meetingDetails?.incomplete || false, // Include incomplete flag
       incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
     }));
