@@ -1,4 +1,5 @@
 import { RequestHandler } from "express";
+import axios from "axios";
 import {
   TrackingSession as TrackingSessionType,
   TrackingSessionResponse,
@@ -8,6 +9,63 @@ import {
 } from "@shared/api";
 import { MeetingHistory, TrackingSession as TrackingSessionModel } from "../models";
 import type { IMeetingHistory, ITrackingSession } from "../models";
+
+// Rate limiting for Nominatim API (max 1 request per second)
+let lastGeocodingTime = 0;
+const GEOCODING_DELAY = 1000; // 1 second
+const geocodeCache = new Map<string, { address: string; expires: number }>();
+const GEOCACHE_TTL = 3600000; // 1 hour
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  if (lat === 0 && lng === 0) return "Location not available";
+  
+  const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const cached = geocodeCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    console.log(`✅ Using cached address for ${lat}, ${lng}: ${cached.address}`);
+    return cached.address;
+  }
+
+  try {
+    // Rate limiting: wait if needed
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastGeocodingTime;
+    if (timeSinceLastRequest < GEOCODING_DELAY) {
+      const waitTime = GEOCODING_DELAY - timeSinceLastRequest;
+      console.log(`⏳ Rate limiting: waiting ${waitTime}ms before geocoding`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    lastGeocodingTime = Date.now();
+
+    console.log(`🗺️ Fetching address for coordinates: ${lat}, ${lng}`);
+    const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+      params: {
+        format: 'json',
+        lat,
+        lon: lng,
+        zoom: 18,
+        addressdetails: 1
+      },
+      headers: {
+        'User-Agent': 'EmployeeTrackingApp/1.0'
+      },
+      timeout: 5000
+    });
+
+    const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    console.log(`✅ Address resolved: ${address}`);
+    
+    geocodeCache.set(cacheKey, {
+      address,
+      expires: Date.now() + GEOCACHE_TTL
+    });
+    
+    return address;
+  } catch (error) {
+    console.error(`⚠️ Reverse geocoding failed for ${lat}, ${lng}:`, error.message);
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+}
 
 // In-memory storage for demo purposes
 let trackingSessions: TrackingSessionType[] = [];
@@ -133,15 +191,29 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
 
     console.log("📍 Creating tracking session:", { id, employeeId, startTime });
 
+    // 🔹 Resolve start location address if not already resolved
+    let resolvedStartLocation = { ...startLocation };
+    if (startLocation.lat && startLocation.lng) {
+      try {
+        console.log("🗺️ Resolving start location address...");
+        const address = await reverseGeocode(startLocation.lat, startLocation.lng);
+        resolvedStartLocation.address = address;
+        console.log("✅ Start location address resolved:", address);
+      } catch (error) {
+        console.warn("⚠️ Failed to resolve start location address:", error);
+        // Keep the address as-is
+      }
+    }
+
     const sessionData = {
       id: id || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
       employeeId,
       startTime: startTime || new Date().toISOString(),
       startLocation: {
-        ...startLocation,
-        timestamp: startLocation.timestamp || new Date().toISOString(),
+        ...resolvedStartLocation,
+        timestamp: resolvedStartLocation.timestamp || new Date().toISOString(),
       },
-      route: route || [startLocation],
+      route: route || [resolvedStartLocation],
       totalDistance: totalDistance || 0,
       status: status || "active" as const,
     };
@@ -182,6 +254,19 @@ export const updateTrackingSession: RequestHandler = async (req, res) => {
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = new Date().toISOString();
       // Duration calculation will be done in the database or after fetch
+    }
+
+    // 🔹 CRITICAL FIX: Resolve end location address if coordinates provided
+    if (updates.endLocation && updates.endLocation.lat && updates.endLocation.lng) {
+      try {
+        console.log("🗺️ Resolving end location address...");
+        const address = await reverseGeocode(updates.endLocation.lat, updates.endLocation.lng);
+        updates.endLocation.address = address;
+        console.log("✅ End location address resolved:", address);
+      } catch (error) {
+        console.warn("⚠️ Failed to resolve end location address:", error);
+        // Keep the address as-is (might be coordinates)
+      }
     }
 
     // Try to update in MongoDB first

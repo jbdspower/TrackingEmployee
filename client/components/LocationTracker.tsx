@@ -742,12 +742,17 @@ export function LocationTracker({
         // Get human-readable address from coordinates
         try {
           console.log("🗺️ Fetching address for end location...");
+          
+          // Add a small delay to respect rate limiting (1 req/sec)
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           const addressResponse = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${endLat}&lon=${endLng}&zoom=18&addressdetails=1`,
             {
               headers: {
                 'User-Agent': 'EmployeeTrackingApp/1.0'
-              }
+              },
+              signal: AbortSignal.timeout(5000) // 5 second timeout
             }
           );
           
@@ -755,6 +760,9 @@ export function LocationTracker({
             const addressData = await addressResponse.json();
             endAddress = addressData.display_name || `${endLat.toFixed(6)}, ${endLng.toFixed(6)}`;
             console.log("✅ End address resolved:", endAddress);
+          } else {
+            console.warn("⚠️ Address API returned error:", addressResponse.status);
+            endAddress = `${endLat.toFixed(6)}, ${endLng.toFixed(6)}`;
           }
         } catch (addressError) {
           console.warn("⚠️ Failed to get address, using coordinates:", addressError);
