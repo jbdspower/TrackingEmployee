@@ -513,14 +513,18 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       console.log(`Day record for ${date}: ${totalMeetings} meetings, ${totalMeetingHours.toFixed(2)} hours`);
 
+      const lastMeeting = meetings[meetings.length - 1];
+      
       return {
         date,
         totalMeetings,
         startLocationTime: meetings[0]?.startTime || "",
         startLocationAddress: meetings[0]?.location?.address || "",
-        outLocationTime: meetings[meetings.length - 1]?.endTime || "",
-        outLocationAddress:
-          meetings[meetings.length - 1]?.location?.address || "",
+        outLocationTime: lastMeeting?.endTime || "",
+        // 🔹 FIX: Only show end location if meeting has ended
+        outLocationAddress: lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address 
+          ? lastMeeting.location.endLocation.address 
+          : "",
         totalDutyHours: 8, // Placeholder - would calculate from tracking data
         meetingTime: totalMeetingHours,
         travelAndLunchTime: Math.max(0, 8 - totalMeetingHours), // Simplified calculation
@@ -538,7 +542,10 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       meetingOutTime: meeting.endTime
         ? format(new Date(meeting.endTime), "HH:mm")
         : "",
-      meetingOutLocation: meeting.location?.address || "",
+      // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
+      meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
+        ? meeting.location.endLocation.address
+        : "",
       totalStayTime: calculateMeetingDuration(
         meeting.startTime,
         meeting.endTime,
