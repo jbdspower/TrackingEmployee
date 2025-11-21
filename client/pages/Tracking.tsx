@@ -703,14 +703,58 @@ const handleEndMeetingWithDetails = async (
     setIsStartMeetingModalOpen(true);
   };
 
-  const handleTrackingSessionStart = (session: TrackingSession) => {
+  const handleTrackingSessionStart = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
-    console.log("Tracking session started:", session);
+    console.log("📍 Tracking session started:", session);
+    
+    // 🔹 Save tracking session to server
+    try {
+      const response = await HttpClient.post("/api/tracking-sessions", {
+        id: session.id,
+        employeeId: session.employeeId,
+        startTime: session.startTime,
+        startLocation: session.startLocation,
+        route: session.route || [],
+        totalDistance: session.totalDistance || 0,
+        status: session.status,
+      });
+
+      if (response.ok) {
+        const savedSession = await response.json();
+        console.log("✅ Tracking session saved to server:", savedSession);
+      } else {
+        console.error("❌ Failed to save tracking session:", response.status);
+      }
+    } catch (error) {
+      console.error("❌ Error saving tracking session:", error);
+    }
   };
 
   const handleTrackingSessionEnd = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
-    console.log("Tracking session ended:", session);
+    console.log("📍 Tracking session ended:", session);
+    
+    // 🔹 Update tracking session on server with end data
+    try {
+      const response = await HttpClient.put(`/api/tracking-sessions/${session.id}`, {
+        endTime: session.endTime,
+        endLocation: session.endLocation,
+        route: session.route || [],
+        totalDistance: session.totalDistance || 0,
+        duration: session.duration,
+        status: session.status,
+      });
+
+      if (response.ok) {
+        const updatedSession = await response.json();
+        console.log("✅ Tracking session updated on server:", updatedSession);
+      } else {
+        console.error("❌ Failed to update tracking session:", response.status);
+      }
+    } catch (error) {
+      console.error("❌ Error updating tracking session:", error);
+    }
+
     console.log("Auto-snapshot conditions:", {
       hasEmployee: !!employee,
       sessionStatus: session.status,

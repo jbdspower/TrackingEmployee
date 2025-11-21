@@ -1,15 +1,16 @@
 import { RequestHandler } from "express";
 import {
-  TrackingSession,
+  TrackingSession as TrackingSessionType,
   TrackingSessionResponse,
   LocationData,
   MeetingDetails,
   MeetingHistoryResponse,
 } from "@shared/api";
-import { MeetingHistory, IMeetingHistory, TrackingSession, ITrackingSession } from "../models";
+import { MeetingHistory, TrackingSession as TrackingSessionModel } from "../models";
+import type { IMeetingHistory, ITrackingSession } from "../models";
 
 // In-memory storage for demo purposes
-let trackingSessions: TrackingSession[] = [];
+let trackingSessions: TrackingSessionType[] = [];
 let sessionIdCounter = 1;
 
 // In-memory storage for meeting history with customer details
@@ -19,6 +20,8 @@ let meetingHistory: Array<{
   employeeId: string;
   meetingDetails: MeetingDetails;
   timestamp: string;
+  leadId?: string;
+  leadInfo?: any;
 }> = [];
 let historyIdCounter = 1;
 
@@ -51,13 +54,13 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
 
     // Try to fetch from MongoDB first
     try {
-      const mongoSessions = await TrackingSession.find(query)
+      const mongoSessions = await TrackingSessionModel.find(query)
         .sort({ startTime: -1 })
         .limit(parseInt(limit as string))
         .lean();
 
       const response: TrackingSessionResponse = {
-        sessions: mongoSessions,
+        sessions: mongoSessions as any as TrackingSessionType[],
         total: mongoSessions.length,
       };
 
@@ -120,7 +123,7 @@ export const getTrackingSessions: RequestHandler = async (req, res) => {
 
 export const createTrackingSession: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, startLocation } = req.body;
+    const { id, employeeId, startTime, startLocation, route, totalDistance, status } = req.body;
 
     if (!employeeId || !startLocation) {
       return res.status(400).json({
@@ -128,22 +131,24 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
       });
     }
 
+    console.log("📍 Creating tracking session:", { id, employeeId, startTime });
+
     const sessionData = {
-      id: `session_${String(sessionIdCounter++).padStart(3, "0")}`,
+      id: id || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
       employeeId,
-      startTime: new Date().toISOString(),
+      startTime: startTime || new Date().toISOString(),
       startLocation: {
         ...startLocation,
-        timestamp: new Date().toISOString(),
+        timestamp: startLocation.timestamp || new Date().toISOString(),
       },
-      route: [startLocation],
-      totalDistance: 0,
-      status: "active" as const,
+      route: route || [startLocation],
+      totalDistance: totalDistance || 0,
+      status: status || "active" as const,
     };
 
     // Try to save to MongoDB first
     try {
-      const newSession = new TrackingSession(sessionData);
+      const newSession = new TrackingSessionModel(sessionData);
       const savedSession = await newSession.save();
 
       console.log("Tracking session saved to MongoDB:", savedSession.id);
@@ -170,6 +175,9 @@ export const updateTrackingSession: RequestHandler = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    console.log("📍 Updating tracking session:", id);
+    console.log("📍 Updates:", JSON.stringify(updates, null, 2));
+
     // If ending the session, set end time and calculate duration
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = new Date().toISOString();
@@ -178,13 +186,14 @@ export const updateTrackingSession: RequestHandler = async (req, res) => {
 
     // Try to update in MongoDB first
     try {
-      const updatedSession = await TrackingSession.findOneAndUpdate(
+      const updatedSession = await TrackingSessionModel.findOneAndUpdate(
         { id },
         { $set: updates },
         { new: true, runValidators: true }
       );
 
       if (!updatedSession) {
+        console.warn("⚠️ Tracking session not found in database:", id);
         return res.status(404).json({ error: "Tracking session not found in database" });
       }
 
@@ -194,15 +203,19 @@ export const updateTrackingSession: RequestHandler = async (req, res) => {
         const endTime = new Date(updatedSession.endTime).getTime();
         const duration = Math.floor((endTime - startTime) / 1000);
 
-        await TrackingSession.findOneAndUpdate(
+        await TrackingSessionModel.findOneAndUpdate(
           { id },
           { $set: { duration } },
           { new: true }
         );
         updatedSession.duration = duration;
+        console.log("✅ Duration calculated:", duration, "seconds");
       }
 
-      console.log("Tracking session updated in MongoDB:", updatedSession.id);
+      console.log("✅ Tracking session updated in MongoDB:", updatedSession.id);
+      if (updatedSession.endLocation) {
+        console.log("✅ End location saved:", updatedSession.endLocation);
+      }
       res.json(updatedSession);
       return;
     } catch (dbError) {
@@ -254,7 +267,7 @@ export const addLocationToRoute: RequestHandler = async (req, res) => {
 
     // Try to update in MongoDB first
     try {
-      const session = await TrackingSession.findOne({ id });
+      const session = await TrackingSessionModel.findOne({ id });
       if (!session) {
         return res.status(404).json({ error: "Tracking session not found in database" });
       }
@@ -322,7 +335,7 @@ export const getTrackingSession: RequestHandler = async (req, res) => {
 
     // Try to fetch from MongoDB first
     try {
-      const session = await TrackingSession.findOne({ id });
+      const session = await TrackingSessionModel.findOne({ id });
       if (session) {
         console.log("Tracking session found in MongoDB:", session.id);
         res.json(session);
