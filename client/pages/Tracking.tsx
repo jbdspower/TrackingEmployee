@@ -55,6 +55,11 @@ export default function Tracking() {
   const [isSnapshotCaptureOpen, setIsSnapshotCaptureOpen] = useState(false);
   const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
   const [startedMeetingMap, setStartedMeetingMap] = useState<Record<string, string>>({});
+
+  // Debug: Log startedMeetingMap changes
+  useEffect(() => {
+    console.log("🗺️ startedMeetingMap updated:", startedMeetingMap);
+  }, [startedMeetingMap]);
   const [startedFollowUpData, setStartedFollowUpData] = useState<any>(null);
   const [followUpMeetingIds, setFollowUpMeetingIds] = useState<Set<string>>(new Set());
   const [refreshTodaysMeetings, setRefreshTodaysMeetings] = useState<number>(0);
@@ -143,8 +148,40 @@ export default function Tracking() {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             const data = await response.json();
-            setMeetings(data.meetings || []);
+            const fetchedMeetings = data.meetings || [];
+            setMeetings(fetchedMeetings);
             console.log("Meetings data fetched successfully:", data);
+
+            // 🔹 CRITICAL FIX: Restore startedMeetingMap from active meetings
+            // This ensures the UI shows "End Meeting" button after page refresh
+            const activeMeeting = fetchedMeetings.find(
+              (m: MeetingLog) => m.status === "in-progress" || m.status === "started"
+            );
+
+            if (activeMeeting) {
+              console.log("🔄 Found active meeting after refresh:", activeMeeting.id);
+              
+              // Check if this meeting has a leadId (was started from follow-up)
+              if (activeMeeting.leadId) {
+                console.log("🔄 Restoring startedMeetingMap for follow-up meeting:", activeMeeting.leadId);
+                
+                // Restore the mapping between follow-up ID and meeting ID
+                setStartedMeetingMap(prev => ({
+                  ...prev,
+                  [activeMeeting.leadId]: activeMeeting.id
+                }));
+                
+                // Also set the active meeting ID
+                setActiveMeetingId(activeMeeting.id);
+              } else {
+                console.log("🔄 Active meeting found but no leadId, setting activeMeetingId only");
+                setActiveMeetingId(activeMeeting.id);
+              }
+            } else {
+              console.log("✅ No active meetings found");
+              setStartedMeetingMap({});
+              setActiveMeetingId(null);
+            }
           } else {
             const textData = await response.text();
             console.error("Server returned non-JSON response for meetings:", textData.substring(0, 200));

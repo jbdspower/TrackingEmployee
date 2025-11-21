@@ -145,6 +145,29 @@ export function TodaysMeetings({
       });
 
       console.log("Today's approved meetings:", approvedTodaysMeetings.length);
+      
+      // 🔹 Log all meeting statuses for debugging
+      approvedTodaysMeetings.forEach(m => {
+        console.log(`📋 Meeting ${m.companyName}: status="${m.meetingStatus}"`);
+      });
+      
+      // 🔹 Check if any of these meetings are currently active (In Progress)
+      const activeMeetingsFromAPI = approvedTodaysMeetings.filter(m => 
+        isMeetingActiveFromStatus(m)
+      );
+      
+      if (activeMeetingsFromAPI.length > 0) {
+        console.log("🔄 Found active meetings from API after refresh:", activeMeetingsFromAPI.map(m => ({
+          id: m._id,
+          company: m.companyName,
+          status: m.meetingStatus
+        })));
+        // Set the first active meeting as the local active one
+        setLocalActiveFollowUpId(activeMeetingsFromAPI[0]._id);
+      } else {
+        console.log("⚠️ No active meetings found in API. Checking startedMeetingMap...");
+      }
+      
       setMeetings(approvedTodaysMeetings);
 
       if (onMeetingsFetched) {
@@ -174,7 +197,8 @@ export function TodaysMeetings({
     return (
       meeting.meetingStatus === "In Progress" ||
       meeting.meetingStatus === "IN_PROGRESS" ||
-      meeting.meetingStatus === "Started"
+      meeting.meetingStatus === "Started" ||
+      meeting.meetingStatus === "meeting on-going" // 🔹 CRITICAL: This is the status set when meeting starts
     );
   };
 
