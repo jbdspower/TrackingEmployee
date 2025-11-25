@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
 import Database from "./config/database";
 import { handleDemo } from "./routes/demo";
 import {
@@ -56,6 +57,11 @@ import {
   getEmployeeSnapshots,
 } from "./routes/route-snapshots";
 import { updateFollowUpStatus, getFollowUpHistory } from "./routes/follow-ups";
+import { fileURLToPath } from "url";
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export function createServer() {
   const app = express();
@@ -178,7 +184,6 @@ export function createServer() {
 
   // Serve static files in production
   if (process.env.NODE_ENV === 'production') {
-    const path = require('path');
     const distPath = path.join(__dirname, '../spa');
     
     console.log('📦 Serving static files from:', distPath);
