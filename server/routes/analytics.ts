@@ -20,7 +20,6 @@ const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
 
 async function fetchExternalUsers(): Promise<ExternalUser[]> {
   try {
-    console.log("Fetching users from external API:", EXTERNAL_API_URL);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
