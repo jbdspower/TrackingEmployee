@@ -183,6 +183,9 @@ export function TodaysMeetings({
     }
   };
 
+  console.log("Todays meeting");
+  
+
   // Helper: completed?
   const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
     return (
