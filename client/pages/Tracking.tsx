@@ -61,6 +61,8 @@ export default function Tracking() {
     console.log("🗺️ startedMeetingMap updated:", startedMeetingMap);
   }, [startedMeetingMap]);
   const [startedFollowUpData, setStartedFollowUpData] = useState<any>(null);
+  // Store follow-up data by meeting ID for easy retrieval
+  const [followUpDataMap, setFollowUpDataMap] = useState<Record<string, any>>({});
   const [followUpMeetingIds, setFollowUpMeetingIds] = useState<Set<string>>(new Set());
   const [refreshTodaysMeetings, setRefreshTodaysMeetings] = useState<number>(0);
 
@@ -161,20 +163,20 @@ export default function Tracking() {
             if (activeMeeting) {
               console.log("🔄 Found active meeting after refresh:", activeMeeting.id);
               
-              // Check if this meeting has a leadId (was started from follow-up)
-              if (activeMeeting.leadId) {
-                console.log("🔄 Restoring startedMeetingMap for follow-up meeting:", activeMeeting.leadId);
+              // Check if this meeting has a followUpId (was started from follow-up)
+              if (activeMeeting.followUpId) {
+                console.log("🔄 Restoring startedMeetingMap for follow-up meeting:", activeMeeting.followUpId);
                 
                 // Restore the mapping between follow-up ID and meeting ID
                 setStartedMeetingMap(prev => ({
                   ...prev,
-                  [activeMeeting.leadId]: activeMeeting.id
+                  [activeMeeting.followUpId!]: activeMeeting.id
                 }));
                 
                 // Also set the active meeting ID
                 setActiveMeetingId(activeMeeting.id);
               } else {
-                console.log("🔄 Active meeting found but no leadId, setting activeMeetingId only");
+                console.log("🔄 Active meeting found but no followUpId, setting activeMeetingId only");
                 setActiveMeetingId(activeMeeting.id);
               }
             } else {
@@ -311,27 +313,59 @@ export default function Tracking() {
   };
 
   const handleEndMeetingFromFollowUp = (followUpId: string, meetingId: string) => {
-    console.log("handleEndMeetingFromFollowUp called with followUpId:", followUpId, "meetingId:", meetingId);
-    
-    // Find the follow-up meeting data to pass to the modal
-    const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
-    if (followUpData) {
-      setStartedFollowUpData(followUpData);
-    }
+    console.log("🔴 handleEndMeetingFromFollowUp called with:", { followUpId, meetingId });
+    console.log("📊 Current meetings:", meetings.map(m => ({ id: m.id, status: m.status, client: m.clientName })));
+    console.log("🗺️ startedMeetingMap:", startedMeetingMap);
+    console.log("📋 followUpDataMap:", Object.keys(followUpDataMap));
     
     // If meetingId is empty or not provided, try to find the active meeting
     let finalMeetingId = meetingId;
     if (!finalMeetingId || finalMeetingId === "") {
       console.log("⚠️ No meetingId provided, searching for active meeting...");
+      console.log("Available meetings:", meetings);
+      
       const activeMeeting = meetings.find(
         (m) => m.status === "in-progress" || m.status === "started"
       );
+      
       if (activeMeeting) {
         finalMeetingId = activeMeeting.id;
-        console.log("✅ Found active meeting:", finalMeetingId);
+        console.log("✅ Found active meeting by status:", finalMeetingId);
       } else {
-        console.error("❌ No active meeting found!");
+        // Try to find by followUpId in startedMeetingMap
+        if (followUpId && startedMeetingMap[followUpId]) {
+          finalMeetingId = startedMeetingMap[followUpId];
+          console.log("✅ Found meeting ID from startedMeetingMap:", finalMeetingId);
+        } else {
+          console.error("❌ No active meeting found!");
+          console.error("Available meeting statuses:", meetings.map(m => m.status));
+          toast({
+            title: "Error",
+            description: "Cannot find active meeting. Please try refreshing the page.",
+            variant: "destructive",
+          });
+          return; // Don't open modal if we can't find the meeting
+        }
       }
+    }
+    
+    console.log("🎯 Final meeting ID:", finalMeetingId);
+    
+    // Try to get follow-up data from our stored map first (by meeting ID)
+    let followUpData = followUpDataMap[finalMeetingId];
+    console.log("📋 Follow-up data from map:", !!followUpData);
+    
+    // If not found in map, try to find it in todaysFollowUpMeetings by followUpId
+    if (!followUpData && followUpId) {
+      followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+      console.log("📋 Found follow-up data from todaysFollowUpMeetings:", !!followUpData);
+    }
+    
+    if (followUpData) {
+      console.log("✅ Setting follow-up data for modal:", followUpData);
+      setStartedFollowUpData(followUpData);
+    } else {
+      console.warn("⚠️ No follow-up data found for meeting:", finalMeetingId);
     }
     
     setActiveMeetingId(finalMeetingId);
@@ -356,7 +390,22 @@ export default function Tracking() {
 const handleEndMeetingWithDetails = async (
   meetingDetails: MeetingDetails,
 ) => {
-  if (!activeMeetingId) return;
+  console.log("🔴 handleEndMeetingWithDetails called with:", {
+    activeMeetingId,
+    meetingDetails,
+    hasCustomers: meetingDetails.customers?.length > 0,
+    hasDiscussion: !!meetingDetails.discussion
+  });
+  
+  if (!activeMeetingId) {
+    console.error("❌ Cannot end meeting: No activeMeetingId set!");
+    toast({
+      title: "Error",
+      description: "No active meeting ID found. Please try again.",
+      variant: "destructive",
+    });
+    return;
+  }
 
   setIsEndingMeeting(activeMeetingId);
   try {
@@ -511,6 +560,13 @@ const handleEndMeetingWithDetails = async (
         return newMap;
       });
 
+      // Remove from follow-up data map
+      setFollowUpDataMap(prev => {
+        const newMap = { ...prev };
+        delete newMap[activeMeetingId];
+        return newMap;
+      });
+
       // Remove from follow-up meeting IDs
       setFollowUpMeetingIds(prev => {
         const newSet = new Set(prev);
@@ -579,12 +635,12 @@ const handleEndMeetingWithDetails = async (
           return [...prev, createdMeeting];
         });
         
-        // DON'T fetch meetings immediately - it will overwrite our state
-        // Instead, fetch after a delay to allow the server to update
-        setTimeout(() => {
-          console.log("🔄 Fetching meetings after delay to sync with server...");
-          fetchMeetings();
-        }, 1000);
+        // DON'T fetch meetings after starting - it will replace the state and lose the meeting
+        // The meeting is already added to state above, no need to fetch
+        // setTimeout(() => {
+        //   console.log("🔄 Fetching meetings after delay to sync with server...");
+        //   fetchMeetings();
+        // }, 1000);
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
@@ -635,6 +691,10 @@ const handleEndMeetingWithDetails = async (
 
     setIsStartingMeeting(true);
     try {
+      // Find and store the full follow-up data before starting the meeting
+      const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+      console.log("📋 Storing follow-up data for meeting:", followUpData);
+      
       const response = await HttpClient.post("/api/meetings", {
         employeeId: employee.id,
         location: {
@@ -646,6 +706,7 @@ const handleEndMeetingWithDetails = async (
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
+        followUpId: followUpId, // 🔹 Store the follow-up meeting ID
         externalMeetingStatus: "meeting on-going", // Initial status from external API
       });
 
@@ -665,6 +726,15 @@ const handleEndMeetingWithDetails = async (
           ...prev,
           [followUpId]: createdMeeting.id
         }));
+        
+        // Store the follow-up data mapped by meeting ID for later retrieval
+        if (followUpData) {
+          setFollowUpDataMap(prev => ({
+            ...prev,
+            [createdMeeting.id]: followUpData
+          }));
+          console.log("✅ Stored follow-up data for meeting ID:", createdMeeting.id);
+        }
 
         // Notify backend/external API that follow-up meeting has started (meeting on-going)
         try {
@@ -700,12 +770,12 @@ const handleEndMeetingWithDetails = async (
         // Track this meeting as coming from a follow-up
         setFollowUpMeetingIds(prev => new Set([...prev, createdMeeting.id]));
 
-        // DON'T fetch meetings immediately - it will overwrite our state
-        // Instead, fetch after a delay to allow the server to update
-        setTimeout(() => {
-          console.log("🔄 Fetching meetings after delay to sync with server...");
-          fetchMeetings();
-        }, 1000);
+        // DON'T fetch meetings after starting - it will replace the state and lose the meeting
+        // The meeting is already added to state above, no need to fetch
+        // setTimeout(() => {
+        //   console.log("🔄 Fetching meetings after delay to sync with server...");
+        //   fetchMeetings();
+        // }, 1000);
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });

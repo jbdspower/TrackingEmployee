@@ -155,6 +155,10 @@ const MeetingSchema = new Schema({
     index: true
   },
   leadInfo: LeadInfoSchema$1,
+  followUpId: {
+    type: String,
+    index: true
+  },
   meetingDetails: MeetingDetailsSchema$1,
   externalMeetingStatus: {
     type: String
@@ -903,6 +907,8 @@ async function convertMeetingToMeetingLog(meeting) {
     trackingSessionId: meeting.trackingSessionId,
     leadId: meeting.leadId,
     leadInfo: meeting.leadInfo,
+    followUpId: meeting.followUpId,
+    // 🔹 Include follow-up ID
     meetingDetails: meeting.meetingDetails
   };
 }
@@ -1000,7 +1006,7 @@ const getMeeting = async (req, res) => {
 };
 const createMeeting = async (req, res) => {
   try {
-    const { employeeId, location, clientName, notes, leadId, leadInfo, externalMeetingStatus } = req.body;
+    const { employeeId, location, clientName, notes, leadId, leadInfo, followUpId, externalMeetingStatus } = req.body;
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
     }
@@ -1018,6 +1024,8 @@ const createMeeting = async (req, res) => {
       status: "in-progress",
       leadId: leadId || void 0,
       leadInfo: leadInfo || void 0,
+      followUpId: followUpId || void 0,
+      // 🔹 Store follow-up meeting ID
       externalMeetingStatus: externalMeetingStatus || void 0
       // 🔹 NEW: Store external meeting status
     };

@@ -82,6 +82,7 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
     trackingSessionId: meeting.trackingSessionId,
     leadId: meeting.leadId,
     leadInfo: meeting.leadInfo,
+    followUpId: meeting.followUpId, // 🔹 Include follow-up ID
     meetingDetails: meeting.meetingDetails,
   };
 }
@@ -217,7 +218,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 
 export const createMeeting: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, location, clientName, notes, leadId, leadInfo, externalMeetingStatus } = req.body;
+    const { employeeId, location, clientName, notes, leadId, leadInfo, followUpId, externalMeetingStatus } = req.body;
 
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
@@ -239,6 +240,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
       status: "in-progress" as const,
       leadId: leadId || undefined,
       leadInfo: leadInfo || undefined,
+      followUpId: followUpId || undefined, // 🔹 Store follow-up meeting ID
       externalMeetingStatus: externalMeetingStatus || undefined, // 🔹 NEW: Store external meeting status
     };
 

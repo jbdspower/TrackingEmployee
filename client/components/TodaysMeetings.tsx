@@ -96,10 +96,13 @@ export function TodaysMeetings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // Refresh when refreshTrigger changes
+  // Refresh when refreshTrigger changes (after meeting ends)
   useEffect(() => {
-    if (refreshTrigger !== undefined) {
+    if (refreshTrigger !== undefined && refreshTrigger > 0) {
+      console.log("🔄 Refresh trigger changed, fetching meetings and clearing local state");
       fetchTodaysMeetings();
+      // Clear local active state when meetings are refreshed (after successful end)
+      setLocalActiveFollowUpId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
@@ -336,11 +339,38 @@ export function TodaysMeetings({
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
             {meetings.map((meeting) => {
-              const isActiveForThisRow =
-                isMeetingActiveFromStatus(meeting) ||
-                localActiveFollowUpId === meeting._id ||
-                (startedMeetingMap &&
-                  !!startedMeetingMap[meeting._id]);
+              // Check if this meeting is active AND we have a valid meeting ID
+              const hasValidMeetingId = startedMeetingMap && !!startedMeetingMap[meeting._id];
+              const isLocallyActive = localActiveFollowUpId === meeting._id;
+              const isActiveInAPI = isMeetingActiveFromStatus(meeting);
+              
+              // Show as active if:
+              // 1. It's locally marked as active (just started)
+              // 2. OR it's active in API AND we have a valid meeting ID
+              // 3. OR it's active in API AND parent says there IS an active meeting (hasActiveMeeting)
+              const isActiveForThisRow = isLocallyActive || 
+                                        (isActiveInAPI && hasValidMeetingId) ||
+                                        (isActiveInAPI && hasActiveMeeting);
+              
+              // Only mark as orphaned if:
+              // 1. API says it's active
+              // 2. AND we don't have it locally or in the map
+              // 3. AND parent says there's NO active meeting
+              const isOrphanedMeeting = isActiveInAPI && 
+                                       !hasValidMeetingId && 
+                                       !isLocallyActive && 
+                                       !hasActiveMeeting;
+              
+              if (isOrphanedMeeting) {
+                console.warn("⚠️ Orphaned meeting detected:", {
+                  id: meeting._id,
+                  company: meeting.companyName,
+                  status: meeting.meetingStatus,
+                  hasValidMeetingId,
+                  isLocallyActive,
+                  hasActiveMeeting
+                });
+              }
 
               return (
                 <div
@@ -416,12 +446,13 @@ export function TodaysMeetings({
                     </div>
 
                     {/* ✅ Button logic with Incomplete status */}
-                    {meeting.meetingStatus === "Incomplete" ? (
+                    {meeting.meetingStatus === "Incomplete" || isOrphanedMeeting ? (
                       <Button
                         size="sm"
                         variant="outline"
                         disabled
                         className="flex-shrink-0 border-orange-500 text-orange-600"
+                        title={isOrphanedMeeting ? "Meeting was started but local data was lost. Please contact support." : "Meeting marked as incomplete"}
                       >
                         <AlertCircle className="h-4 w-4 mr-2" />
                         Incomplete
@@ -465,8 +496,8 @@ export function TodaysMeetings({
                             }
                           }
                           
-                          // clear local state
-                          setLocalActiveFollowUpId(null);
+                          // DON'T clear local state here - it will be cleared after meeting ends successfully
+                          // setLocalActiveFollowUpId(null);
                         }}
                         className="flex-shrink-0"
                       >

@@ -113,6 +113,7 @@ export interface MeetingLog {
     companyName: string;
     contactName: string;
   };
+  followUpId?: string; // Follow-up meeting ID from external API
   meetingDetails?: MeetingDetails;
 }
 

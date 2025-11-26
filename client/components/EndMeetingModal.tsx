@@ -89,7 +89,7 @@ export function EndMeetingModal({
   // Prefill form with follow-up meeting data when modal opens
   useEffect(() => {
     if (isOpen && followUpMeetingData) {
-      console.log("Prefilling form with follow-up meeting data:", followUpMeetingData);
+      console.log("📋 Prefilling form with follow-up meeting data:", followUpMeetingData);
       
       // Create customer contact from follow-up data
       const customerContact: CustomerContact = {
@@ -101,61 +101,88 @@ export function EndMeetingModal({
         customerDepartment: "",
       };
 
+      console.log("✅ Created customer contact from follow-up:", customerContact);
+      
       setSelectedCustomers([customerContact]);
-      setFormData(prev => ({
-        ...prev,
-        customers: [customerContact],
-        customerName: followUpMeetingData.companyName,
-        customerEmployeeName: followUpMeetingData.customerName,
-        customerEmail: followUpMeetingData.customerEmail,
-        customerMobile: followUpMeetingData.customerMobile,
-        customerDesignation: followUpMeetingData.customerDesignation,
-        customerDepartment: "",
-        // discussion: followUpMeetingData.remark ? `Follow-up: ${followUpMeetingData.type} - ${followUpMeetingData.remark}` : `Follow-up: ${followUpMeetingData.type}`,
-      }));
+      setFormData(prev => {
+        const newData = {
+          ...prev,
+          customers: [customerContact],
+          customerName: followUpMeetingData.companyName,
+          customerEmployeeName: followUpMeetingData.customerName,
+          customerEmail: followUpMeetingData.customerEmail || "",
+          customerMobile: String(followUpMeetingData.customerMobile || ""),
+          customerDesignation: followUpMeetingData.customerDesignation || "",
+          customerDepartment: "",
+        };
+        console.log("✅ Updated formData with customer:", newData);
+        return newData;
+      });
+      
+      console.log("✅ Form prefilled with customer data");
+    } else if (isOpen && !followUpMeetingData) {
+      console.log("⚠️ Modal opened but no followUpMeetingData provided");
     }
   }, [isOpen, followUpMeetingData]);
+  
+  // Debug: Log when selectedCustomers changes
+  useEffect(() => {
+    console.log("🔄 selectedCustomers changed:", selectedCustomers.length, selectedCustomers);
+  }, [selectedCustomers]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    console.log("Validating form with selectedCustomers:", selectedCustomers.length);
+    console.log("Form data customers:", formData.customers?.length);
+
     // At least one customer is mandatory
     if (selectedCustomers.length === 0) {
       newErrors.customers = "Please add at least one customer contact";
+      console.log("Validation failed: No customers selected");
     }
 
     // Validate each customer in the array
     selectedCustomers.forEach((customer, index) => {
-      // Email validation if provided
+      // Email validation if provided (only validate if not empty)
       if (
         customer.customerEmail &&
+        customer.customerEmail.trim() !== "" &&
         typeof customer.customerEmail === 'string' &&
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.customerEmail)
       ) {
         newErrors[`customer_${index}_email`] = `Invalid email for ${customer.customerEmployeeName}`;
+        console.log(`Validation failed: Invalid email for customer ${index}`);
       }
 
-      // Mobile validation if provided
+      // Mobile validation if provided (only validate if not empty)
       if (
         customer.customerMobile &&
+        customer.customerMobile.trim() !== "" &&
         typeof customer.customerMobile === 'string' &&
-        !/^[\+]?[1-9][\d]{0,15}$/.test(
-          customer.customerMobile.replace(/[\s\-\(\)]/g, ""),
-        )
+        customer.customerMobile.length > 0
       ) {
-        newErrors[`customer_${index}_mobile`] = `Invalid mobile for ${customer.customerEmployeeName}`;
+        // Remove formatting characters for validation
+        const cleanMobile = customer.customerMobile.replace(/[\s\-\(\)]/g, "");
+        // More lenient mobile validation - just check if it has digits
+        if (!/^\+?\d{7,15}$/.test(cleanMobile)) {
+          newErrors[`customer_${index}_mobile`] = `Invalid mobile for ${customer.customerEmployeeName}`;
+          console.log(`Validation failed: Invalid mobile for customer ${index}:`, customer.customerMobile);
+        }
       }
     });
 
     // Discussion is mandatory
     if (!formData.discussion.trim()) {
       newErrors.discussion = "Discussion details are required";
+      console.log("Validation failed: No discussion provided");
     }
 
-    // Legacy field validation for backward compatibility
+    // Legacy field validation for backward compatibility (only if provided)
     // Email validation if provided
     if (
       formData.customerEmail &&
+      formData.customerEmail.trim() !== "" &&
       typeof formData.customerEmail === 'string' &&
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)
     ) {
@@ -165,14 +192,16 @@ export function EndMeetingModal({
     // Mobile validation if provided
     if (
       formData.customerMobile &&
-      typeof formData.customerMobile === 'string' &&
-      !/^[\+]?[1-9][\d]{0,15}$/.test(
-        formData.customerMobile.replace(/[\s\-\(\)]/g, ""),
-      )
+      formData.customerMobile.trim() !== "" &&
+      typeof formData.customerMobile === 'string'
     ) {
-      newErrors.customerMobile = "Please enter a valid mobile number";
+      const cleanMobile = formData.customerMobile.replace(/[\s\-\(\)]/g, "");
+      if (!/^\+?\d{7,15}$/.test(cleanMobile)) {
+        newErrors.customerMobile = "Please enter a valid mobile number";
+      }
     }
 
+    console.log("Validation errors:", newErrors);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -374,27 +403,37 @@ export function EndMeetingModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log("🔵 EndMeetingModal: Form submit triggered");
     console.log("EndMeetingModal: Form data before validation:", formData);
     console.log("EndMeetingModal: Selected customers:", selectedCustomers);
+    console.log("EndMeetingModal: Discussion:", formData.discussion);
 
-    if (!validateForm()) {
-      console.log("EndMeetingModal: Form validation failed");
+    const isValid = validateForm();
+    console.log("EndMeetingModal: Validation result:", isValid);
+    
+    if (!isValid) {
+      console.log("EndMeetingModal: Form validation failed with errors:", errors);
+      // Scroll to first error
+      const firstErrorElement = document.querySelector('.border-destructive');
+      if (firstErrorElement) {
+        firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
+    console.log("✅ EndMeetingModal: Validation passed, submitting...");
     setIsSubmitting(true);
     try {
-      console.log("EndMeetingModal: Submitting form data:", formData);
-      console.log("EndMeetingModal: Selected customers:", selectedCustomers);
+      console.log("EndMeetingModal: Calling onEndMeeting with form data:", formData);
       await onEndMeeting(formData);
-      console.log("Meeting ended successfully, clearing temp employees");
+      console.log("✅ Meeting ended successfully, clearing temp employees");
       // Clear temporary employees after successful meeting end
       if (customerSelectorRef.current) {
         customerSelectorRef.current.clearTempEmployees();
       }
       handleClose();
     } catch (error) {
-      console.error("Error ending meeting:", error);
+      console.error("❌ Error ending meeting:", error);
       // Error is handled by parent component
     } finally {
       setIsSubmitting(false);
@@ -402,9 +441,12 @@ export function EndMeetingModal({
   };
 
   const handleClose = () => {
-    if (isSubmitting || isLoading) return;
+    if (isSubmitting || isLoading) {
+      console.log("⚠️ Cannot close: Form is submitting or loading");
+      return;
+    }
 
-    console.log("EndMeetingModal: Closing and resetting all state");
+    console.log("🔴 EndMeetingModal: Closing and resetting all state");
 
     // Reset all form state
     setFormData({

@@ -51,6 +51,7 @@ export interface IMeeting extends Document {
    companyName: string;
    contactName: string;
  };
+ followUpId?: string; // Follow-up meeting ID from external API
  meetingDetails?: MeetingDetails;
  externalMeetingStatus?: string; // Status from external follow-up API
  createdAt: Date;
@@ -150,6 +151,10 @@ const MeetingSchema = new Schema({
    index: true
  },
  leadInfo: LeadInfoSchema,
+ followUpId: {
+   type: String,
+   index: true
+ },
  meetingDetails: MeetingDetailsSchema,
  externalMeetingStatus: {
    type: String
