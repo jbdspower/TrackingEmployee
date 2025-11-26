@@ -58,6 +58,7 @@ export function EndMeetingModal({
   followUpMeetingData = null,
 }: EndMeetingModalProps) {
   const [formData, setFormData] = useState<MeetingDetails>({
+    incomplete: false,
     customers: [],
     discussion: "",
     // Legacy fields for backward compatibility
@@ -94,9 +95,9 @@ export function EndMeetingModal({
       const customerContact: CustomerContact = {
         customerName: followUpMeetingData.companyName,
         customerEmployeeName: followUpMeetingData.customerName,
-        customerEmail: followUpMeetingData.customerEmail,
-        customerMobile: followUpMeetingData.customerMobile,
-        customerDesignation: followUpMeetingData.customerDesignation,
+        customerEmail: followUpMeetingData.customerEmail || "",
+        customerMobile: String(followUpMeetingData.customerMobile || ""),
+        customerDesignation: followUpMeetingData.customerDesignation || "",
         customerDepartment: "",
       };
 
@@ -123,14 +124,39 @@ export function EndMeetingModal({
       newErrors.customers = "Please add at least one customer contact";
     }
 
+    // Validate each customer in the array
+    selectedCustomers.forEach((customer, index) => {
+      // Email validation if provided
+      if (
+        customer.customerEmail &&
+        typeof customer.customerEmail === 'string' &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.customerEmail)
+      ) {
+        newErrors[`customer_${index}_email`] = `Invalid email for ${customer.customerEmployeeName}`;
+      }
+
+      // Mobile validation if provided
+      if (
+        customer.customerMobile &&
+        typeof customer.customerMobile === 'string' &&
+        !/^[\+]?[1-9][\d]{0,15}$/.test(
+          customer.customerMobile.replace(/[\s\-\(\)]/g, ""),
+        )
+      ) {
+        newErrors[`customer_${index}_mobile`] = `Invalid mobile for ${customer.customerEmployeeName}`;
+      }
+    });
+
     // Discussion is mandatory
     if (!formData.discussion.trim()) {
       newErrors.discussion = "Discussion details are required";
     }
 
+    // Legacy field validation for backward compatibility
     // Email validation if provided
     if (
       formData.customerEmail &&
+      typeof formData.customerEmail === 'string' &&
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)
     ) {
       newErrors.customerEmail = "Please enter a valid email address";
@@ -139,6 +165,7 @@ export function EndMeetingModal({
     // Mobile validation if provided
     if (
       formData.customerMobile &&
+      typeof formData.customerMobile === 'string' &&
       !/^[\+]?[1-9][\d]{0,15}$/.test(
         formData.customerMobile.replace(/[\s\-\(\)]/g, ""),
       )
@@ -181,10 +208,10 @@ export function EndMeetingModal({
     const customerContact: CustomerContact = {
       customerName: customer.CustomerCompanyName,
       customerEmployeeName: employee.CustomerEmpName,
-      customerEmail: employee.Email || "",
-      customerMobile: employee.Mobile || "",
-      customerDesignation: employee.Designation || "",
-      customerDepartment: employee.Department || "",
+      customerEmail: String(employee.Email || ""),
+      customerMobile: String(employee.Mobile || ""),
+      customerDesignation: String(employee.Designation || ""),
+      customerDepartment: String(employee.Department || ""),
     };
 
     // Check if this customer is already added
@@ -381,6 +408,7 @@ export function EndMeetingModal({
 
     // Reset all form state
     setFormData({
+      incomplete: false,
       customers: [],
       discussion: "",
       // Legacy fields
