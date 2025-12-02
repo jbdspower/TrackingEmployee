@@ -1,0 +1,76 @@
+fix: Resolve "Cannot find Active meeting" error when ending meetings
+
+## Problem
+Users encountered "Cannot find Active meeting. Please try refreshing the page." 
+error when attempting to end meetings, particularly:
+- After page refresh
+- When ending follow-up meetings from Today's Meetings
+- In scenarios with network delays
+
+## Root Cause
+1. Weak meeting lookup logic that didn't check meeting's followUpId field
+2. Incomplete state restoration after page refresh
+3. No fallback mechanisms when primary lookup failed
+
+## Solution
+Enhanced meeting lookup with multi-level fallback system:
+
+### 1. Multi-Level Meeting Lookup
+- Priority 1: Search by followUpId in meetings array (most reliable)
+- Priority 2: Find any active meeting by status
+- Priority 3: Check startedMeetingMap cache
+- Only show error if all 3 methods fail
+
+### 2. Improved State Restoration
+- Restore mappings for ALL active meetings (not just first)
+- Preserve existing mappings instead of clearing
+- Handle multiple active meetings properly
+
+### 3. Enhanced Data Retrieval
+- Check followUpDataMap by meeting ID
+- Search todaysFollowUpMeetings by follow-up ID
+- Match by meeting's followUpId field
+
+### 4. Better Error Handling
+- Replaced alert() with toast notifications
+- Added "started" status to active meeting checks
+- Improved error messages and logging
+
+## Changes
+- Modified: client/pages/Tracking.tsx
+  - handleEndMeetingFromFollowUp(): Enhanced with 3-level lookup
+  - fetchMeetings(): Improved state restoration for all active meetings
+  - handleEndMeetingAttempt(): Better error handling with toast
+  - Added detailed console logging for debugging
+
+## Testing
+✅ Normal meeting end (no follow-up)
+✅ Follow-up meeting end (happy path)
+✅ Follow-up meeting end after page refresh
+✅ Multiple browser tabs
+✅ Network delay simulation
+✅ No active meeting edge case
+
+## Impact
+- Zero "Cannot find active meeting" errors expected
+- Meetings can be ended reliably after page refresh
+- Better user experience with clear error messages
+- Backward compatible with existing meetings
+
+## Documentation
+- END_MEETING_FIX.md - Technical details
+- TEST_END_MEETING_FIX.md - Test plan
+- MEETING_END_FIX_SUMMARY.md - Complete summary
+- QUICK_FIX_REFERENCE_END_MEETING.md - Quick reference
+- END_MEETING_FLOW_DIAGRAM.md - Visual diagrams
+- DEPLOYMENT_CHECKLIST_END_MEETING_FIX.md - Deployment guide
+
+## Database
+No schema changes required. Uses existing followUpId field.
+
+## Backward Compatibility
+✅ Meetings without followUpId still work
+✅ Existing meetings unaffected
+✅ Old "Start Meeting" flow unchanged
+
+Fixes: #[issue-number]

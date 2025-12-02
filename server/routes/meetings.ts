@@ -108,10 +108,16 @@ export const getMeetings: RequestHandler = async (req, res) => {
       if (endDate) query.startTime.$lte = new Date(endDate as string);
     }
 
-    console.log("Fetching meetings with query:", query);
+    console.log("📥 Fetching meetings with query:", JSON.stringify(query, null, 2));
 
     // Try MongoDB first
     try {
+      // 🔹 DEBUG: Count total meetings for this employee
+      if (employeeId) {
+        const totalCount = await Meeting.countDocuments({ employeeId });
+        console.log(`📊 Total meetings in DB for employee ${employeeId}:`, totalCount);
+      }
+      
       const mongoMeetings = await Meeting.find(query)
         .sort({ startTime: -1 })
         .limit(parseInt(limit as string))
@@ -127,7 +133,19 @@ export const getMeetings: RequestHandler = async (req, res) => {
         total: meetingLogs.length,
       };
 
-      console.log(`Found ${meetingLogs.length} meetings in MongoDB`);
+      console.log(`✅ Found ${meetingLogs.length} meetings matching query:`, 
+        meetingLogs.map(m => ({ id: m.id, status: m.status, followUpId: m.followUpId, client: m.clientName }))
+      );
+      
+      // 🔹 DEBUG: If no meetings found but we expected some
+      if (meetingLogs.length === 0 && employeeId) {
+        console.warn("⚠️ No meetings found for query, checking all statuses...");
+        const allMeetings = await Meeting.find({ employeeId }).lean();
+        console.log("📋 All meetings for this employee:", 
+          allMeetings.map(m => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
+        );
+      }
+      
       res.json(response);
       return;
     } catch (dbError) {
@@ -250,7 +268,26 @@ export const createMeeting: RequestHandler = async (req, res) => {
       const savedMeeting = await newMeeting.save();
       const meetingLog = await convertMeetingToMeetingLog(savedMeeting);
 
-      console.log("Meeting saved to MongoDB:", savedMeeting._id);
+      console.log("✅ Meeting saved to MongoDB:", {
+        id: savedMeeting._id,
+        employeeId: savedMeeting.employeeId,
+        followUpId: savedMeeting.followUpId,
+        status: savedMeeting.status,
+        clientName: savedMeeting.clientName
+      });
+      
+      // 🔹 VERIFICATION: Immediately query to confirm it was saved
+      try {
+        const verification = await Meeting.findById(savedMeeting._id);
+        if (verification) {
+          console.log("✅ VERIFIED: Meeting exists in database");
+        } else {
+          console.error("❌ VERIFICATION FAILED: Meeting not found after save!");
+        }
+      } catch (verifyError) {
+        console.error("❌ VERIFICATION ERROR:", verifyError);
+      }
+      
       res.status(201).json(meetingLog);
       return;
     } catch (dbError) {

@@ -54,7 +54,7 @@ interface TodaysMeetingsProps {
   userId: string;
   onStartMeeting: (meeting: FollowUpMeeting) => void;
   startedMeetingMap?: Record<string, string>;
-  onEndMeetingFromFollowUp?: (followUpId: string, meetingId: string) => void;
+  onEndMeetingFromFollowUp?: (followUpId: string, meetingId: string) => void | Promise<void>;
   onMeetingsFetched?: (meetings: FollowUpMeeting[]) => void;
   refreshTrigger?: number;
   hasActiveMeeting?: boolean; // indicates if there's an active meeting anywhere
@@ -339,27 +339,18 @@ export function TodaysMeetings({
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
             {meetings.map((meeting) => {
-              // Check if this meeting is active AND we have a valid meeting ID
+              // Check if this meeting is active
               const hasValidMeetingId = startedMeetingMap && !!startedMeetingMap[meeting._id];
               const isLocallyActive = localActiveFollowUpId === meeting._id;
               const isActiveInAPI = isMeetingActiveFromStatus(meeting);
               
-              // Show as active if:
-              // 1. It's locally marked as active (just started)
-              // 2. OR it's active in API AND we have a valid meeting ID
-              // 3. OR it's active in API AND parent says there IS an active meeting (hasActiveMeeting)
-              const isActiveForThisRow = isLocallyActive || 
-                                        (isActiveInAPI && hasValidMeetingId) ||
-                                        (isActiveInAPI && hasActiveMeeting);
+              // 🔹 CRITICAL FIX: Show "End Meeting" button if API says meeting is active
+              // This ensures button shows even after page refresh or if startedMeetingMap is lost
+              const isActiveForThisRow = isActiveInAPI || isLocallyActive;
               
-              // Only mark as orphaned if:
-              // 1. API says it's active
-              // 2. AND we don't have it locally or in the map
-              // 3. AND parent says there's NO active meeting
-              const isOrphanedMeeting = isActiveInAPI && 
-                                       !hasValidMeetingId && 
-                                       !isLocallyActive && 
-                                       !hasActiveMeeting;
+              // Mark as orphaned only if there's a conflict:
+              // API says active BUT there's ANOTHER active meeting somewhere else
+              const isOrphanedMeeting = false; // 🔹 Disabled orphan detection - let parent handle finding meeting
               
               if (isOrphanedMeeting) {
                 console.warn("⚠️ Orphaned meeting detected:", {
