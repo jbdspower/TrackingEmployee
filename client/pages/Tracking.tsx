@@ -327,177 +327,145 @@ export default function Tracking() {
   const handleEndMeetingFromFollowUp = async (followUpId: string, meetingId: string) => {
     console.log("🔴 handleEndMeetingFromFollowUp called with:", { followUpId, meetingId });
     
-    // 🔹 CRITICAL FIX: Get fresh meetings state using callback
-    let currentMeetings: MeetingLog[] = [];
-    setMeetings(prev => {
-      currentMeetings = prev;
-      return prev; // Don't modify, just read
+    // 🔹 CRITICAL FIX: Always fetch fresh data from server to ensure we have the latest meeting state
+    console.log("📥 Fetching fresh meeting data from server...");
+    toast({
+      title: "Loading Meeting Data",
+      description: "Please wait...",
     });
     
-    console.log("📊 Current meetings:", currentMeetings.map(m => ({ id: m.id, status: m.status, client: m.clientName, followUpId: m.followUpId })));
-    console.log("🗺️ startedMeetingMap:", startedMeetingMap);
-    console.log("📋 followUpDataMap:", Object.keys(followUpDataMap));
-    
-    // 🔹 CRITICAL FIX: If meetings array is empty, fetch from server first
-    if (currentMeetings.length === 0) {
-      console.log("⚠️ Meetings array is empty, fetching from server...");
-      toast({
-        title: "Loading Meeting Data",
-        description: "Please wait while we fetch your meeting information...",
-      });
-      try {
-        await fetchMeetings();
-        // Wait a bit for state to update
-        await new Promise(resolve => setTimeout(resolve, 500));
-        // Get updated state
-        setMeetings(prev => {
-          currentMeetings = prev;
-          return prev;
-        });
-        console.log("✅ Meetings fetched, updated count:", currentMeetings.length);
-      } catch (error) {
-        console.error("❌ Failed to fetch meetings:", error);
-      }
-    }
-    
-    // If meetingId is empty or not provided, try to find the active meeting
     let finalMeetingId = meetingId;
-    if (!finalMeetingId || finalMeetingId === "") {
-      console.log("⚠️ No meetingId provided, searching for active meeting...");
-      console.log("Available meetings:", currentMeetings);
-      
-      // First, try to find by followUpId in the meetings array (most reliable after refresh)
-      if (followUpId) {
-        const meetingByFollowUpId = currentMeetings.find(
-          (m) => m.followUpId === followUpId && (m.status === "in-progress" || m.status === "started")
+    let currentMeetings: MeetingLog[] = [];
+    
+    try {
+      // 🔹 STEP 1: Try to find the meeting by followUpId (most reliable)
+      if (followUpId && (!finalMeetingId || finalMeetingId === "")) {
+        console.log("🔍 Searching for meeting by followUpId:", followUpId);
+        
+        // Query for all recent meetings for this employee
+        const response = await HttpClient.get(
+          `/api/meetings?employeeId=${employeeId}&limit=20`
         );
         
-        if (meetingByFollowUpId) {
-          finalMeetingId = meetingByFollowUpId.id;
-          console.log("✅ Found active meeting by followUpId in meetings array:", finalMeetingId);
+        if (response.ok) {
+          const data = await response.json();
+          currentMeetings = data.meetings || [];
+          console.log("📥 Fetched", currentMeetings.length, "meetings from API");
+          
+          // Find the meeting with matching followUpId
+          const meetingWithFollowUp = currentMeetings.find(
+            (m: MeetingLog) => m.followUpId === followUpId && 
+            (m.status === "in-progress" || m.status === "started")
+          );
+          
+          if (meetingWithFollowUp) {
+            finalMeetingId = meetingWithFollowUp.id;
+            console.log("✅ Found meeting by followUpId:", finalMeetingId);
+          } else {
+            console.warn("⚠️ No active meeting found with followUpId:", followUpId);
+            console.log("Available meetings:", currentMeetings.map(m => ({
+              id: m.id,
+              status: m.status,
+              followUpId: m.followUpId,
+              client: m.clientName
+            })));
+          }
         }
       }
       
-      // If not found by followUpId, try to find any active meeting
-      if (!finalMeetingId) {
+      // 🔹 STEP 2: If still no meeting ID, try to find any active meeting
+      if (!finalMeetingId || finalMeetingId === "") {
+        console.log("🔍 No meeting found by followUpId, searching for any active meeting...");
+        
+        // If we haven't fetched meetings yet, do it now
+        if (currentMeetings.length === 0) {
+          const response = await HttpClient.get(
+            `/api/meetings?employeeId=${employeeId}&limit=20`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            currentMeetings = data.meetings || [];
+          }
+        }
+        
+        // Find any active meeting
         const activeMeeting = currentMeetings.find(
-          (m) => m.status === "in-progress" || m.status === "started"
+          (m: MeetingLog) => m.status === "in-progress" || m.status === "started"
         );
         
         if (activeMeeting) {
           finalMeetingId = activeMeeting.id;
-          console.log("✅ Found active meeting by status:", finalMeetingId);
+          console.log("✅ Found active meeting:", finalMeetingId);
         }
       }
       
-      // Last resort: try to find by followUpId in startedMeetingMap
-      if (!finalMeetingId && followUpId && startedMeetingMap[followUpId]) {
-        finalMeetingId = startedMeetingMap[followUpId];
-        console.log("✅ Found meeting ID from startedMeetingMap:", finalMeetingId);
-      }
-      
-      // 🔹 CRITICAL FIX: If still not found, try fetching directly from API
-      if (!finalMeetingId) {
-        console.log("⚠️ Attempting direct API fetch...");
-        try {
-          // Try multiple queries to find the meeting
-          const queries = [
-            `/api/meetings?employeeId=${employeeId}&status=in-progress`,
-            `/api/meetings?employeeId=${employeeId}&status=started`,
-            `/api/meetings?employeeId=${employeeId}&limit=10`, // Get all recent meetings
-          ];
-          
-          for (const query of queries) {
-            console.log("🔍 Trying query:", query);
-            const response = await HttpClient.get(query);
-            if (response.ok) {
-              const data = await response.json();
-              console.log("📥 API returned:", data.meetings?.length || 0, "meetings");
-              
-              if (data.meetings && data.meetings.length > 0) {
-                console.log("📋 Meetings from API:", data.meetings.map((m: any) => ({
-                  id: m.id,
-                  status: m.status,
-                  followUpId: m.followUpId,
-                  client: m.clientName
-                })));
-                
-                // Try to find by followUpId first
-                if (followUpId) {
-                  const meetingWithFollowUp = data.meetings.find(
-                    (m: any) => m.followUpId === followUpId
-                  );
-                  if (meetingWithFollowUp) {
-                    finalMeetingId = meetingWithFollowUp.id;
-                    console.log("✅ Found meeting by followUpId via API:", finalMeetingId);
-                    setMeetings(data.meetings);
-                    currentMeetings = data.meetings;
-                    break;
-                  }
-                }
-                
-                // Otherwise, take the first active meeting
-                const activeMeeting = data.meetings.find(
-                  (m: any) => m.status === "in-progress" || m.status === "started"
-                );
-                if (activeMeeting) {
-                  finalMeetingId = activeMeeting.id;
-                  console.log("✅ Found active meeting via API:", finalMeetingId);
-                  setMeetings(data.meetings);
-                  currentMeetings = data.meetings;
-                  break;
-                }
-              }
-            }
+      // 🔹 STEP 3: Update local state with fresh data
+      if (currentMeetings.length > 0) {
+        setMeetings(currentMeetings);
+        
+        // Restore startedMeetingMap from active meetings
+        const newStartedMeetingMap: Record<string, string> = {};
+        currentMeetings.forEach((meeting: MeetingLog) => {
+          if ((meeting.status === "in-progress" || meeting.status === "started") && meeting.followUpId) {
+            newStartedMeetingMap[meeting.followUpId] = meeting.id;
           }
-        } catch (error) {
-          console.error("❌ Direct API fetch failed:", error);
+        });
+        
+        if (Object.keys(newStartedMeetingMap).length > 0) {
+          console.log("� Res tored startedMeetingMap:", newStartedMeetingMap);
+          setStartedMeetingMap(prev => ({
+            ...prev,
+            ...newStartedMeetingMap
+          }));
         }
       }
       
-      // If still not found, show error
-      // if (!finalMeetingId) {
-      //   console.error("❌ No active meeting found!");
-      //   console.error("Available meeting statuses:", currentMeetings.map(m => ({ id: m.id, status: m.status, followUpId: m.followUpId })));
-      //   toast({
-      //     title: "Error",
-      //     description: "Cannot find active meeting. Please try refreshing the page.",
-      //     variant: "destructive",
-      //   });
-      //   return; // Don't open modal if we can't find the meeting
-      // }
-    }
-    
-    console.log("🎯 Final meeting ID:", finalMeetingId);
-    
-    // Try to get follow-up data from our stored map first (by meeting ID)
-    let followUpData = followUpDataMap[finalMeetingId];
-    console.log("📋 Follow-up data from map:", !!followUpData);
-    
-    // If not found in map, try to find it in todaysFollowUpMeetings by followUpId
-    if (!followUpData && followUpId) {
-      followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
-      console.log("📋 Found follow-up data from todaysFollowUpMeetings:", !!followUpData);
-    }
-    
-    // If still not found, try to find by matching the meeting's followUpId
-    if (!followUpData) {
-      const currentMeeting = currentMeetings.find(m => m.id === finalMeetingId);
-      if (currentMeeting?.followUpId) {
-        followUpData = todaysFollowUpMeetings.find(m => m._id === currentMeeting.followUpId);
-        console.log("📋 Found follow-up data by meeting's followUpId:", !!followUpData);
+      // 🔹 STEP 4: If we still don't have a meeting ID, show error
+      if (!finalMeetingId || finalMeetingId === "") {
+        console.error("❌ No active meeting found!");
+        toast({
+          title: "No Active Meeting",
+          description: "No active meeting found. Please start a meeting first.",
+          variant: "destructive",
+        });
+        return;
       }
+      
+      console.log("🎯 Final meeting ID:", finalMeetingId);
+      
+      // 🔹 STEP 5: Get follow-up data for the modal
+      let followUpData = followUpDataMap[finalMeetingId];
+      
+      if (!followUpData && followUpId) {
+        followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+      }
+      
+      if (!followUpData) {
+        const currentMeeting = currentMeetings.find(m => m.id === finalMeetingId);
+        if (currentMeeting?.followUpId) {
+          followUpData = todaysFollowUpMeetings.find(m => m._id === currentMeeting.followUpId);
+        }
+      }
+      
+      if (followUpData) {
+        console.log("✅ Setting follow-up data for modal:", followUpData);
+        setStartedFollowUpData(followUpData);
+      } else {
+        console.warn("⚠️ No follow-up data found for meeting:", finalMeetingId);
+      }
+      
+      // 🔹 STEP 6: Open the modal
+      setActiveMeetingId(finalMeetingId);
+      setIsEndMeetingModalOpen(true);
+      
+    } catch (error) {
+      console.error("❌ Error in handleEndMeetingFromFollowUp:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load meeting data. Please try again.",
+        variant: "destructive",
+      });
     }
-    
-    if (followUpData) {
-      console.log("✅ Setting follow-up data for modal:", followUpData);
-      setStartedFollowUpData(followUpData);
-    } else {
-      console.warn("⚠️ No follow-up data found for meeting:", finalMeetingId);
-    }
-    
-    setActiveMeetingId(finalMeetingId);
-    setIsEndMeetingModalOpen(true);
   };
 
   const handleEndMeetingAttempt = () => {
@@ -529,55 +497,14 @@ const handleEndMeetingWithDetails = async (
     hasDiscussion: !!meetingDetails.discussion
   });
   
-  // 🔹 CRITICAL FIX: If no activeMeetingId, try to find it now
+  // 🔹 CRITICAL FIX: Validate that we have an activeMeetingId
   let meetingIdToEnd = activeMeetingId;
   
   if (!meetingIdToEnd) {
-    console.warn("⚠️ No activeMeetingId set, attempting to find active meeting...");
-    
-    // Get fresh meetings state
-    let currentMeetings: MeetingLog[] = [];
-    setMeetings(prev => {
-      currentMeetings = prev;
-      return prev;
-    });
-    
-    // Try to find any active meeting
-    const activeMeeting = currentMeetings.find(
-      (m) => m.status === "in-progress" || m.status === "started"
-    );
-    
-    if (activeMeeting) {
-      meetingIdToEnd = activeMeeting.id;
-      console.log("✅ Found active meeting:", meetingIdToEnd);
-      setActiveMeetingId(meetingIdToEnd);
-    } else {
-      // Last resort: Try direct API call
-      console.log("⚠️ No meeting in state, trying API...");
-      try {
-        const response = await HttpClient.get(
-          `/api/meetings?employeeId=${employeeId}&status=in-progress&limit=1`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data.meetings && data.meetings.length > 0) {
-            meetingIdToEnd = data.meetings[0].id;
-            console.log("✅ Found meeting via API:", meetingIdToEnd);
-            setActiveMeetingId(meetingIdToEnd);
-            setMeetings(data.meetings);
-          }
-        }
-      } catch (error) {
-        console.error("❌ API fetch failed:", error);
-      }
-    }
-  }
-  
-  if (!meetingIdToEnd) {
-    console.error("❌ Cannot end meeting: No meeting ID found!");
+    console.error("❌ Cannot end meeting: No activeMeetingId set!");
     toast({
       title: "Error",
-      description: "No active meeting found. Please start a meeting first.",
+      description: "No active meeting found. Please try again.",
       variant: "destructive",
     });
     return;
