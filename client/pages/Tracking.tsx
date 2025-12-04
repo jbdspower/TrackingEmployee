@@ -327,26 +327,25 @@ export default function Tracking() {
   const handleEndMeetingFromFollowUp = async (followUpId: string, meetingId: string) => {
     console.log("🔴 handleEndMeetingFromFollowUp called with:", { followUpId, meetingId });
     
-    // 🔹 DATABASE-FIRST APPROACH: Use dedicated API endpoint to get active meeting from DATABASE
-    console.log("📥 Fetching active meeting from DATABASE via /api/meetings/active...");
+    // 🔹 HYBRID APPROACH: Check BOTH local database AND external API
+    console.log("📥 Fetching active meeting from local database AND external API...");
     toast({
       title: "Loading Meeting Data",
-      description: "Fetching from database...",
+      description: "Searching for active meeting...",
     });
     
     let finalMeetingId = meetingId;
     let activeMeetingData: MeetingLog | null = null;
     
     try {
-      // 🔹 STEP 1: Use the new dedicated endpoint to get active meeting from DATABASE
-      // This queries the database directly, not React state, so it works after tab close
+      // 🔹 STEP 1: Try local database first (fastest)
       if (!finalMeetingId || finalMeetingId === "") {
-        console.log("🔍 Calling /api/meetings/active endpoint...");
+        console.log("🔍 Step 1: Checking local database...");
         
-        // Try by followUpId first (most specific - links external meeting to internal meeting)
+        // Try by followUpId first
         if (followUpId) {
           try {
-            console.log("🔍 Querying database by followUpId:", followUpId);
+            console.log("🔍 Querying local database by followUpId:", followUpId);
             const response = await HttpClient.get(
               `/api/meetings/active?followUpId=${followUpId}`
             );
@@ -354,26 +353,19 @@ export default function Tracking() {
             if (response.ok) {
               activeMeetingData = await response.json();
               finalMeetingId = activeMeetingData.id;
-              console.log("✅ Found active meeting by followUpId from DATABASE:", finalMeetingId);
-              console.log("📋 Meeting data:", {
-                id: activeMeetingData.id,
-                status: activeMeetingData.status,
-                client: activeMeetingData.clientName,
-                followUpId: activeMeetingData.followUpId
-              });
+              console.log("✅ Found active meeting in LOCAL DATABASE:", finalMeetingId);
             } else {
-              const errorData = await response.json().catch(() => ({}));
-              console.warn("⚠️ No active meeting found with followUpId:", followUpId, errorData);
+              console.warn("⚠️ Not found in local database by followUpId");
             }
           } catch (error) {
-            console.warn("⚠️ Error fetching by followUpId:", error);
+            console.warn("⚠️ Error querying local database:", error);
           }
         }
         
-        // If not found by followUpId, try by employeeId (fallback)
+        // Try by employeeId if not found
         if (!finalMeetingId && employeeId) {
           try {
-            console.log("🔍 Querying database by employeeId:", employeeId);
+            console.log("🔍 Querying local database by employeeId:", employeeId);
             const response = await HttpClient.get(
               `/api/meetings/active?employeeId=${employeeId}`
             );
@@ -381,42 +373,101 @@ export default function Tracking() {
             if (response.ok) {
               activeMeetingData = await response.json();
               finalMeetingId = activeMeetingData.id;
-              console.log("✅ Found active meeting by employeeId from DATABASE:", finalMeetingId);
-              console.log("📋 Meeting data:", {
-                id: activeMeetingData.id,
-                status: activeMeetingData.status,
-                client: activeMeetingData.clientName,
-                followUpId: activeMeetingData.followUpId
-              });
+              console.log("✅ Found active meeting in LOCAL DATABASE:", finalMeetingId);
             } else {
-              const errorData = await response.json().catch(() => ({}));
-              console.warn("⚠️ No active meeting found for employee:", employeeId, errorData);
+              console.warn("⚠️ Not found in local database by employeeId");
             }
           } catch (error) {
-            console.warn("⚠️ Error fetching by employeeId:", error);
+            console.warn("⚠️ Error querying local database:", error);
           }
         }
-      } else {
-        console.log("✅ Meeting ID already provided:", finalMeetingId);
       }
       
-      // 🔹 STEP 2: If we still don't have a meeting ID, show error
+      // 🔹 STEP 2: If not found in local database, check external API
       if (!finalMeetingId || finalMeetingId === "") {
-        console.error("❌ No active meeting found in DATABASE!");
+        console.log("🔍 Step 2: Not found in local database, checking external API...");
+        
+        if (employeeId) {
+          try {
+            const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
+            const baseUrl = externalApiUrl.replace("/getAllLead", "");
+            const url = `${baseUrl}/getFollowUpHistory?userId=${employeeId}`;
+            
+            console.log("🔍 Querying external API:", url);
+            const response = await fetch(url);
+            
+            if (response.ok) {
+              const followUps = await response.json();
+              console.log("📥 External API returned", followUps.length, "follow-ups");
+              
+              // Find the meeting with "meeting on-going" status
+              const ongoingMeeting = followUps.find((m: any) => 
+                m.meetingStatus === "meeting on-going" || 
+                m.meetingStatus === "In Progress" ||
+                m.meetingStatus === "IN_PROGRESS" ||
+                m.meetingStatus === "Started"
+              );
+              
+              if (ongoingMeeting) {
+                console.log("✅ Found ongoing meeting in EXTERNAL API:", ongoingMeeting._id);
+                console.log("📋 External meeting data:", {
+                  id: ongoingMeeting._id,
+                  status: ongoingMeeting.meetingStatus,
+                  company: ongoingMeeting.companyName,
+                  customer: ongoingMeeting.customerName
+                });
+                
+                // Now search local database for this meeting
+                try {
+                  const localResponse = await HttpClient.get(
+                    `/api/meetings/active?followUpId=${ongoingMeeting._id}`
+                  );
+                  
+                  if (localResponse.ok) {
+                    activeMeetingData = await localResponse.json();
+                    finalMeetingId = activeMeetingData.id;
+                    console.log("✅ Found corresponding meeting in local database:", finalMeetingId);
+                  } else {
+                    console.warn("⚠️ External API shows ongoing meeting, but not found in local database");
+                    console.warn("This might mean the meeting was started but not saved properly");
+                  }
+                } catch (error) {
+                  console.error("❌ Error searching local database for external meeting:", error);
+                }
+              } else {
+                console.warn("⚠️ No ongoing meetings found in external API");
+                console.log("Available meetings:", followUps.map((m: any) => ({
+                  id: m._id,
+                  status: m.meetingStatus,
+                  company: m.companyName
+                })));
+              }
+            } else {
+              console.error("❌ External API request failed:", response.status);
+            }
+          } catch (error) {
+            console.error("❌ Error querying external API:", error);
+          }
+        }
+      }
+      
+      // 🔹 STEP 3: If we still don't have a meeting ID, show error
+      if (!finalMeetingId || finalMeetingId === "") {
+        console.error("❌ No active meeting found in LOCAL DATABASE or EXTERNAL API!");
         console.error("Searched with:", { followUpId, employeeId });
         toast({
           title: "No Active Meeting",
-          description: "No active meeting found in database. Please start a meeting first.",
+          description: "No active meeting found. The meeting may not have been saved properly when started.",
           variant: "destructive",
         });
         return;
       }
       
-      console.log("🎯 Final meeting ID from DATABASE:", finalMeetingId);
+      console.log("🎯 Final meeting ID:", finalMeetingId);
       
-      // 🔹 STEP 3: Update local state with the active meeting from DATABASE
+      // 🔹 STEP 4: Update local state with the active meeting
       if (activeMeetingData) {
-        console.log("🔄 Updating local state with database data...");
+        console.log("🔄 Updating local state with meeting data...");
         
         // Update meetings array if needed
         setMeetings(prev => {
@@ -429,9 +480,9 @@ export default function Tracking() {
           return prev;
         });
         
-        // Restore startedMeetingMap from DATABASE data
+        // Restore startedMeetingMap
         if (activeMeetingData.followUpId) {
-          console.log("🔄 Restoring startedMeetingMap from DATABASE:", {
+          console.log("🔄 Restoring startedMeetingMap:", {
             [activeMeetingData.followUpId]: activeMeetingData.id
           });
           setStartedMeetingMap(prev => ({
@@ -441,7 +492,7 @@ export default function Tracking() {
         }
       }
       
-      // 🔹 STEP 4: Get follow-up data for the modal (for pre-filling customer info)
+      // 🔹 STEP 5: Get follow-up data for the modal (for pre-filling customer info)
       let followUpData = followUpDataMap[finalMeetingId];
       
       if (!followUpData && followUpId) {
