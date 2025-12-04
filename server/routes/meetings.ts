@@ -281,6 +281,21 @@ export const createMeeting: RequestHandler = async (req, res) => {
         const verification = await Meeting.findById(savedMeeting._id);
         if (verification) {
           console.log("✅ VERIFIED: Meeting exists in database");
+          console.log("✅ VERIFIED followUpId:", verification.followUpId);
+          console.log("✅ VERIFIED status:", verification.status);
+          
+          // Also verify we can find it by followUpId
+          if (verification.followUpId) {
+            const byFollowUpId = await Meeting.findOne({ 
+              followUpId: verification.followUpId,
+              status: { $in: ["in-progress", "started"] }
+            });
+            if (byFollowUpId) {
+              console.log("✅ VERIFIED: Can find meeting by followUpId");
+            } else {
+              console.error("❌ VERIFICATION FAILED: Cannot find meeting by followUpId!");
+            }
+          }
         } else {
           console.error("❌ VERIFICATION FAILED: Meeting not found after save!");
         }
@@ -454,11 +469,38 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
         .lean();
 
       if (!activeMeeting) {
-        console.log("⚠️ No active meeting found");
+        console.log("⚠️ No active meeting found with query:", JSON.stringify(query, null, 2));
+        
+        // 🔹 DEBUG: Check what meetings exist for this employee
+        if (employeeId) {
+          const allMeetings = await Meeting.find({ employeeId }).lean();
+          console.log("📋 All meetings for employee:", allMeetings.map(m => ({
+            id: m._id,
+            status: m.status,
+            followUpId: m.followUpId,
+            startTime: m.startTime
+          })));
+        }
+        
+        // 🔹 DEBUG: Check if there are ANY active meetings
+        const anyActiveMeetings = await Meeting.find({ 
+          status: { $in: ["in-progress", "started"] } 
+        }).lean();
+        console.log("📋 All active meetings in database:", anyActiveMeetings.map(m => ({
+          id: m._id,
+          employeeId: m.employeeId,
+          followUpId: m.followUpId,
+          status: m.status
+        })));
+        
         return res.status(404).json({ 
           error: "No active meeting found",
           employeeId,
-          followUpId
+          followUpId,
+          debug: {
+            totalMeetingsForEmployee: allMeetings?.length || 0,
+            totalActiveMeetings: anyActiveMeetings?.length || 0
+          }
         });
       }
 

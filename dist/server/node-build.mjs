@@ -944,10 +944,10 @@ const getMeetings = async (req, res) => {
       );
       if (meetingLogs.length === 0 && employeeId) {
         console.warn("⚠️ No meetings found for query, checking all statuses...");
-        const allMeetings = await Meeting.find({ employeeId }).lean();
+        const allMeetings2 = await Meeting.find({ employeeId }).lean();
         console.log(
           "📋 All meetings for this employee:",
-          allMeetings.map((m) => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
+          allMeetings2.map((m) => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
         );
       }
       res.json(response2);
@@ -1059,6 +1059,19 @@ const createMeeting = async (req, res) => {
         const verification = await Meeting.findById(savedMeeting._id);
         if (verification) {
           console.log("✅ VERIFIED: Meeting exists in database");
+          console.log("✅ VERIFIED followUpId:", verification.followUpId);
+          console.log("✅ VERIFIED status:", verification.status);
+          if (verification.followUpId) {
+            const byFollowUpId = await Meeting.findOne({
+              followUpId: verification.followUpId,
+              status: { $in: ["in-progress", "started"] }
+            });
+            if (byFollowUpId) {
+              console.log("✅ VERIFIED: Can find meeting by followUpId");
+            } else {
+              console.error("❌ VERIFICATION FAILED: Cannot find meeting by followUpId!");
+            }
+          }
         } else {
           console.error("❌ VERIFICATION FAILED: Meeting not found after save!");
         }
@@ -1189,11 +1202,33 @@ const getActiveMeeting = async (req, res) => {
       console.log("📥 Query:", JSON.stringify(query, null, 2));
       const activeMeeting = await Meeting.findOne(query).sort({ startTime: -1 }).lean();
       if (!activeMeeting) {
-        console.log("⚠️ No active meeting found");
+        console.log("⚠️ No active meeting found with query:", JSON.stringify(query, null, 2));
+        if (employeeId) {
+          const allMeetings2 = await Meeting.find({ employeeId }).lean();
+          console.log("📋 All meetings for employee:", allMeetings2.map((m) => ({
+            id: m._id,
+            status: m.status,
+            followUpId: m.followUpId,
+            startTime: m.startTime
+          })));
+        }
+        const anyActiveMeetings = await Meeting.find({
+          status: { $in: ["in-progress", "started"] }
+        }).lean();
+        console.log("📋 All active meetings in database:", anyActiveMeetings.map((m) => ({
+          id: m._id,
+          employeeId: m.employeeId,
+          followUpId: m.followUpId,
+          status: m.status
+        })));
         return res.status(404).json({
           error: "No active meeting found",
           employeeId,
-          followUpId
+          followUpId,
+          debug: {
+            totalMeetingsForEmployee: allMeetings?.length || 0,
+            totalActiveMeetings: anyActiveMeetings?.length || 0
+          }
         });
       }
       const meetingLog = await convertMeetingToMeetingLog(activeMeeting);
