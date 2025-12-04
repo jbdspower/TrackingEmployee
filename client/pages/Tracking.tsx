@@ -355,10 +355,11 @@ export default function Tracking() {
               finalMeetingId = activeMeetingData.id;
               console.log("✅ Found active meeting in LOCAL DATABASE:", finalMeetingId);
             } else {
-              console.warn("⚠️ Not found in local database by followUpId");
+              console.warn("⚠️ Not found in local database by followUpId (404)");
             }
           } catch (error) {
-            console.warn("⚠️ Error querying local database:", error);
+            console.warn("⚠️ Error querying local database by followUpId:", error);
+            // Continue to next step - don't stop here
           }
         }
         
@@ -375,12 +376,15 @@ export default function Tracking() {
               finalMeetingId = activeMeetingData.id;
               console.log("✅ Found active meeting in LOCAL DATABASE:", finalMeetingId);
             } else {
-              console.warn("⚠️ Not found in local database by employeeId");
+              console.warn("⚠️ Not found in local database by employeeId (404)");
             }
           } catch (error) {
-            console.warn("⚠️ Error querying local database:", error);
+            console.warn("⚠️ Error querying local database by employeeId:", error);
+            // Continue to Step 2 - don't stop here
           }
         }
+        
+        console.log("📊 Step 1 complete. finalMeetingId:", finalMeetingId || "not found");
       }
       
       // 🔹 STEP 2: If not found in local database, check external API
@@ -418,6 +422,7 @@ export default function Tracking() {
                 });
                 
                 // Now search local database for this meeting
+                let foundInLocalDB = false;
                 try {
                   const localResponse = await HttpClient.get(
                     `/api/meetings/active?followUpId=${ongoingMeeting._id}`
@@ -426,13 +431,49 @@ export default function Tracking() {
                   if (localResponse.ok) {
                     activeMeetingData = await localResponse.json();
                     finalMeetingId = activeMeetingData.id;
+                    foundInLocalDB = true;
                     console.log("✅ Found corresponding meeting in local database:", finalMeetingId);
-                  } else {
-                    console.warn("⚠️ External API shows ongoing meeting, but not found in local database");
-                    console.warn("This might mean the meeting was started but not saved properly");
                   }
                 } catch (error) {
-                  console.error("❌ Error searching local database for external meeting:", error);
+                  console.warn("⚠️ Error searching local database (404 expected):", error.message);
+                  // Continue to auto-recovery
+                }
+                
+                // 🔹 AUTO-RECOVERY: If not found in local DB, create it from external API data
+                if (!foundInLocalDB && !finalMeetingId) {
+                  console.warn("⚠️ External API shows ongoing meeting, but not found in local database");
+                  console.warn("🔧 Creating meeting in local database from external API data...");
+                  
+                  try {
+                    if (!employee) {
+                      console.error("❌ Cannot create meeting: No employee data");
+                    } else {
+                      const createResponse = await HttpClient.post("/api/meetings", {
+                        employeeId: employee.id,
+                        location: {
+                          lat: employee.location.lat,
+                          lng: employee.location.lng,
+                          address: employee.location.address,
+                        },
+                        clientName: ongoingMeeting.companyName,
+                        notes: `Recovered meeting from external API - ${ongoingMeeting.type}: ${ongoingMeeting.remark}`,
+                        followUpId: ongoingMeeting._id,
+                        leadId: ongoingMeeting.leadId || undefined,
+                        externalMeetingStatus: ongoingMeeting.meetingStatus,
+                      });
+                      
+                      if (createResponse.ok) {
+                        activeMeetingData = await createResponse.json();
+                        finalMeetingId = activeMeetingData.id;
+                        console.log("✅ Successfully created meeting in local database:", finalMeetingId);
+                        console.log("📋 Meeting recovered from external API");
+                      } else {
+                        console.error("❌ Failed to create meeting in local database");
+                      }
+                    }
+                  } catch (createError) {
+                    console.error("❌ Error creating meeting in local database:", createError);
+                  }
                 }
               } else {
                 console.warn("⚠️ No ongoing meetings found in external API");
