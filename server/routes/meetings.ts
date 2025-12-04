@@ -419,6 +419,69 @@ export const deleteMeeting: RequestHandler = async (req, res) => {
   }
 };
 
+// 🔹 NEW ENDPOINT: Get active meeting for employee (by employeeId or followUpId)
+export const getActiveMeeting: RequestHandler = async (req, res) => {
+  try {
+    const { employeeId, followUpId } = req.query;
+
+    if (!employeeId && !followUpId) {
+      return res.status(400).json({ 
+        error: "Either employeeId or followUpId is required" 
+      });
+    }
+
+    console.log("🔍 Searching for active meeting:", { employeeId, followUpId });
+
+    // Try MongoDB first
+    try {
+      // Build query to find active meetings
+      const query: any = {
+        status: { $in: ["in-progress", "started"] }
+      };
+
+      if (followUpId) {
+        // If followUpId is provided, search by it (most specific)
+        query.followUpId = followUpId;
+      } else if (employeeId) {
+        // Otherwise search by employeeId
+        query.employeeId = employeeId;
+      }
+
+      console.log("📥 Query:", JSON.stringify(query, null, 2));
+
+      const activeMeeting = await Meeting.findOne(query)
+        .sort({ startTime: -1 }) // Get the most recent one
+        .lean();
+
+      if (!activeMeeting) {
+        console.log("⚠️ No active meeting found");
+        return res.status(404).json({ 
+          error: "No active meeting found",
+          employeeId,
+          followUpId
+        });
+      }
+
+      const meetingLog = await convertMeetingToMeetingLog(activeMeeting);
+      console.log("✅ Active meeting found:", {
+        id: meetingLog.id,
+        followUpId: meetingLog.followUpId,
+        status: meetingLog.status,
+        client: meetingLog.clientName
+      });
+
+      res.json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.error("MongoDB query failed:", dbError);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+  } catch (error) {
+    console.error("Error getting active meeting:", error);
+    res.status(500).json({ error: "Failed to get active meeting" });
+  }
+};
+
 // Add this endpoint to clear geocoding cache
 export const clearGeocodeCache: RequestHandler = async (req, res) => {
   try {

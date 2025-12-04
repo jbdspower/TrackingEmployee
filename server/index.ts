@@ -20,6 +20,7 @@ import {
   updateMeeting,
   getMeeting,
   deleteMeeting,
+  getActiveMeeting,
 } from "./routes/meetings";
 import {
   getTrackingSessions,
@@ -127,6 +128,7 @@ export function createServer() {
   // Meeting routes
   app.get("/api/meetings", getMeetings);
   app.post("/api/meetings", createMeeting);
+  app.get("/api/meetings/active", getActiveMeeting); // 🔹 NEW: Get active meeting
   app.get("/api/meetings/:id", getMeeting);
   app.put("/api/meetings/:id", updateMeeting);
   app.delete("/api/meetings/:id", deleteMeeting);

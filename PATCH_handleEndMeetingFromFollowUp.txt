@@ -1,0 +1,139 @@
+# PATCH: Update handleEndMeetingFromFollowUp to use new /api/meetings/active endpoint
+
+## Find this function in TrackingEmployee/client/pages/Tracking.tsx (around line 327)
+
+Replace the ENTIRE `handleEndMeetingFromFollowUp` function with this new version:
+
+```typescript
+const handleEndMeetingFromFollowUp = async (followUpId: string, meetingId: string) => {
+  console.log("🔴 handleEndMeetingFromFollowUp called with:", { followUpId, meetingId });
+  
+  // 🔹 NEW APPROACH: Use dedicated API endpoint to get active meeting from DATABASE
+  console.log("📥 Fetching active meeting from dedicated API endpoint (database)...");
+  toast({
+    title: "Loading Meeting Data",
+    description: "Please wait...",
+  });
+  
+  let finalMeetingId = meetingId;
+  let activeMeetingData: MeetingLog | null = null;
+  
+  try {
+    // 🔹 STEP 1: Use the new dedicated endpoint to get active meeting from DATABASE
+    // This is more reliable than relying on React state which gets lost on tab close
+    if (!finalMeetingId || finalMeetingId === "") {
+      console.log("🔍 Calling /api/meetings/active endpoint...");
+      
+      // Try by followUpId first (most specific)
+      if (followUpId) {
+        try {
+          const response = await HttpClient.get(
+            `/api/meetings/active?followUpId=${followUpId}`
+          );
+          
+          if (response.ok) {
+            activeMeetingData = await response.json();
+            finalMeetingId = activeMeetingData.id;
+            console.log("✅ Found active meeting by followUpId from DATABASE:", finalMeetingId);
+          } else {
+            console.warn("⚠️ No active meeting found with followUpId:", followUpId);
+          }
+        } catch (error) {
+          console.warn("⚠️ Error fetching by followUpId:", error);
+        }
+      }
+      
+      // If not found by followUpId, try by employeeId
+      if (!finalMeetingId && employeeId) {
+        try {
+          const response = await HttpClient.get(
+            `/api/meetings/active?employeeId=${employeeId}`
+          );
+          
+          if (response.ok) {
+            activeMeetingData = await response.json();
+            finalMeetingId = activeMeetingData.id;
+            console.log("✅ Found active meeting by employeeId from DATABASE:", finalMeetingId);
+          } else {
+            console.warn("⚠️ No active meeting found for employee:", employeeId);
+          }
+        } catch (error) {
+          console.warn("⚠️ Error fetching by employeeId:", error);
+        }
+      }
+    }
+    
+    // 🔹 STEP 2: If we still don't have a meeting ID, show error
+    if (!finalMeetingId || finalMeetingId === "") {
+      console.error("❌ No active meeting found in DATABASE!");
+      toast({
+        title: "No Active Meeting",
+        description: "No active meeting found. Please start a meeting first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    console.log("🎯 Final meeting ID from DATABASE:", finalMeetingId);
+    
+    // 🔹 STEP 3: Update local state with the active meeting from DATABASE
+    if (activeMeetingData) {
+      // Update meetings array if needed
+      setMeetings(prev => {
+        const exists = prev.find(m => m.id === activeMeetingData!.id);
+        if (!exists) {
+          return [activeMeetingData!, ...prev];
+        }
+        return prev;
+      });
+      
+      // Restore startedMeetingMap from DATABASE data
+      if (activeMeetingData.followUpId) {
+        console.log("🔄 Restoring startedMeetingMap from DATABASE:", {
+          [activeMeetingData.followUpId]: activeMeetingData.id
+        });
+        setStartedMeetingMap(prev => ({
+          ...prev,
+          [activeMeetingData!.followUpId!]: activeMeetingData!.id
+        }));
+      }
+    }
+    
+    // 🔹 STEP 4: Get follow-up data for the modal
+    let followUpData = followUpDataMap[finalMeetingId];
+    
+    if (!followUpData && followUpId) {
+      followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+    }
+    
+    if (!followUpData && activeMeetingData?.followUpId) {
+      followUpData = todaysFollowUpMeetings.find(m => m._id === activeMeetingData.followUpId);
+    }
+    
+    if (followUpData) {
+      console.log("✅ Setting follow-up data for modal:", followUpData);
+      setStartedFollowUpData(followUpData);
+    } else {
+      console.warn("⚠️ No follow-up data found for meeting:", finalMeetingId);
+    }
+    
+    // 🔹 STEP 5: Open the modal
+    setActiveMeetingId(finalMeetingId);
+    setIsEndMeetingModalOpen(true);
+    
+  } catch (error) {
+    console.error("❌ Error in handleEndMeetingFromFollowUp:", error);
+    toast({
+      title: "Error",
+      description: "Failed to load meeting data. Please try again.",
+        variant: "destructive",
+    });
+  }
+};
+```
+
+## Key Changes:
+1. Uses new `/api/meetings/active` endpoint instead of `/api/meetings?employeeId=...`
+2. Queries DATABASE directly for active meetings (not React state)
+3. More reliable - works even after browser tab close
+4. Simpler logic - dedicated endpoint does the filtering

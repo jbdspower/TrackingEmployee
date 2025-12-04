@@ -1168,10 +1168,57 @@ const deleteMeeting = async (req, res) => {
     res.status(500).json({ error: "Failed to delete meeting" });
   }
 };
+const getActiveMeeting = async (req, res) => {
+  try {
+    const { employeeId, followUpId } = req.query;
+    if (!employeeId && !followUpId) {
+      return res.status(400).json({
+        error: "Either employeeId or followUpId is required"
+      });
+    }
+    console.log("🔍 Searching for active meeting:", { employeeId, followUpId });
+    try {
+      const query = {
+        status: { $in: ["in-progress", "started"] }
+      };
+      if (followUpId) {
+        query.followUpId = followUpId;
+      } else if (employeeId) {
+        query.employeeId = employeeId;
+      }
+      console.log("📥 Query:", JSON.stringify(query, null, 2));
+      const activeMeeting = await Meeting.findOne(query).sort({ startTime: -1 }).lean();
+      if (!activeMeeting) {
+        console.log("⚠️ No active meeting found");
+        return res.status(404).json({
+          error: "No active meeting found",
+          employeeId,
+          followUpId
+        });
+      }
+      const meetingLog = await convertMeetingToMeetingLog(activeMeeting);
+      console.log("✅ Active meeting found:", {
+        id: meetingLog.id,
+        followUpId: meetingLog.followUpId,
+        status: meetingLog.status,
+        client: meetingLog.clientName
+      });
+      res.json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.error("MongoDB query failed:", dbError);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+  } catch (error) {
+    console.error("Error getting active meeting:", error);
+    res.status(500).json({ error: "Failed to get active meeting" });
+  }
+};
 const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   createMeeting,
   deleteMeeting,
+  getActiveMeeting,
   getMeeting,
   getMeetings,
   inMemoryMeetings,
@@ -3158,6 +3205,7 @@ function createServer() {
   app2.post("/api/employees/clear-cache", clearLocationCache);
   app2.get("/api/meetings", getMeetings);
   app2.post("/api/meetings", createMeeting);
+  app2.get("/api/meetings/active", getActiveMeeting);
   app2.get("/api/meetings/:id", getMeeting);
   app2.put("/api/meetings/:id", updateMeeting);
   app2.delete("/api/meetings/:id", deleteMeeting);
