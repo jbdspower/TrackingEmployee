@@ -2653,6 +2653,215 @@ const getAttendance = async (req, res) => {
     });
   }
 };
+const getAllEmployeesDetails = async (req, res) => {
+  try {
+    const { dateRange = "today", startDate, endDate } = req.query;
+    const { start, end } = getDateRange(
+      dateRange,
+      startDate,
+      endDate
+    );
+    console.log(`All employees details date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
+    console.log(`Calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
+    const externalUsers = await fetchExternalUsers();
+    const employees = externalUsers.map(
+      (user, index) => mapExternalUserToEmployee(user, index)
+    );
+    console.log(`Processing ${employees.length} employees`);
+    let actualMeetings = [];
+    try {
+      const mongoMeetings = await Meeting.find({}).lean();
+      actualMeetings = mongoMeetings.map((meeting) => ({
+        id: meeting._id.toString(),
+        employeeId: meeting.employeeId,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime,
+        clientName: meeting.clientName,
+        leadId: meeting.leadId,
+        status: meeting.status,
+        meetingDetails: meeting.meetingDetails,
+        location: meeting.location
+      }));
+      console.log(`Found ${actualMeetings.length} total meetings in MongoDB`);
+      if (actualMeetings.length === 0) {
+        const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
+        actualMeetings = inMemoryMeetings2 || [];
+        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory`);
+      }
+    } catch (dbError) {
+      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
+      const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
+      actualMeetings = inMemoryMeetings2 || [];
+    }
+    let trackingSessions2 = [];
+    try {
+      const { TrackingSession: TrackingSession2 } = await import("./index-BZmtEn10.js");
+      const mongoSessions = await TrackingSession2.find({
+        startTime: { $gte: start.toISOString(), $lte: end.toISOString() }
+      }).lean();
+      trackingSessions2 = mongoSessions.map((session) => ({
+        id: session.id,
+        employeeId: session.employeeId,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        startLocation: session.startLocation,
+        endLocation: session.endLocation,
+        status: session.status,
+        duration: session.duration
+      }));
+      console.log(`Found ${trackingSessions2.length} tracking sessions`);
+    } catch (dbError) {
+      console.warn("Failed to fetch tracking sessions:", dbError);
+    }
+    let attendanceRecords = [];
+    try {
+      const mongoAttendance = await Attendance.find({
+        date: {
+          $gte: format(start, "yyyy-MM-dd"),
+          $lte: format(end, "yyyy-MM-dd")
+        }
+      }).lean();
+      attendanceRecords = mongoAttendance.map((att) => ({
+        employeeId: att.employeeId,
+        date: att.date,
+        attendenceCreated: att.attendenceCreated,
+        attendanceStatus: att.attendanceStatus,
+        attendanceReason: att.attendanceReason
+      }));
+      console.log(`Found ${attendanceRecords.length} attendance records`);
+    } catch (dbError) {
+      console.warn("Failed to fetch attendance records:", dbError);
+    }
+    const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
+    const allEmployeesData = employees.map((employee) => {
+      const employeeMeetings = actualMeetings.filter(
+        (meeting) => meeting.employeeId === employee.id
+      );
+      const meetingsInRange = employeeMeetings.filter((meeting) => {
+        const meetingDate = new Date(meeting.startTime);
+        const meetingTime = meetingDate.getTime();
+        const startTime = start.getTime();
+        const endTime = end.getTime();
+        return meetingTime >= startTime && meetingTime <= endTime;
+      });
+      const employeeSessions = trackingSessions2.filter(
+        (session) => session.employeeId === employee.id
+      );
+      const dateGroups = meetingsInRange.reduce(
+        (groups, meeting) => {
+          const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
+          if (!groups[date]) groups[date] = [];
+          groups[date].push(meeting);
+          return groups;
+        },
+        {}
+      );
+      const sessionDateGroups = employeeSessions.reduce(
+        (groups, session) => {
+          const date = format(new Date(session.startTime), "yyyy-MM-dd");
+          if (!groups[date]) groups[date] = [];
+          groups[date].push(session);
+          return groups;
+        },
+        {}
+      );
+      const allDates = /* @__PURE__ */ new Set([
+        ...Object.keys(dateGroups),
+        ...Object.keys(sessionDateGroups)
+      ]);
+      const dayRecords = Array.from(allDates).map((date) => {
+        const meetings2 = dateGroups[date] || [];
+        const sessions = sessionDateGroups[date] || [];
+        const totalMeetings = meetings2.length;
+        const totalMeetingHours = meetings2.reduce((total, meeting) => {
+          return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
+        }, 0);
+        const sortedMeetings = [...meetings2].sort(
+          (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        );
+        const firstMeeting = sortedMeetings[0];
+        const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
+        const firstSession = sessions[0];
+        const lastSession = sessions[sessions.length - 1];
+        const startLocationTime = firstMeeting?.startTime || "";
+        const startLocationAddress = firstMeeting?.location?.address || "";
+        const outLocationTime = lastMeeting?.endTime || "";
+        const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : lastMeeting?.location?.address || "";
+        let totalDutyHours = 8;
+        if (firstSession && lastSession?.endTime) {
+          const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1e3 * 60 * 60);
+          totalDutyHours = Math.max(0, sessionDuration);
+        }
+        const attendance = attendanceRecords.find((att) => att.date === date && att.employeeId === employee.id);
+        const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
+        return {
+          date,
+          totalMeetings,
+          startLocationTime,
+          startLocationAddress,
+          outLocationTime,
+          outLocationAddress,
+          totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
+          meetingTime: totalMeetingHours,
+          travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
+          attendanceAddedBy
+        };
+      });
+      const meetingRecords = meetingsInRange.map((meeting) => {
+        return {
+          employeeName: employee.name,
+          companyName: meeting.clientName || "Unknown Company",
+          date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
+          leadId: meeting.leadId || "",
+          meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+          meetingInLocation: meeting.location?.address || "",
+          meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress",
+          meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "" : "Meeting in progress",
+          totalStayTime: calculateMeetingDuration(
+            meeting.startTime,
+            meeting.endTime
+          ),
+          discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
+          meetingPerson: meeting.meetingDetails?.customers?.length > 0 ? meeting.meetingDetails.customers.map((customer) => customer.customerEmployeeName).join(", ") : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
+          meetingStatus: meeting.status || "completed",
+          externalMeetingStatus: meeting.externalMeetingStatus || "",
+          incomplete: meeting.meetingDetails?.incomplete || false,
+          incompleteReason: meeting.meetingDetails?.incompleteReason || ""
+        };
+      });
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        email: employee.email,
+        phone: employee.phone,
+        designation: employee.designation,
+        department: employee.department,
+        companyName: employee.companyName,
+        reportTo: employee.reportTo,
+        dayRecords: dayRecords.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+        meetingRecords: meetingRecords.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        )
+      };
+    });
+    console.log(`Processed ${allEmployeesData.length} employees with their details`);
+    res.json({
+      success: true,
+      dateRange: {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        label: dateRange
+      },
+      totalEmployees: allEmployeesData.length,
+      employees: allEmployeesData
+    });
+  } catch (error) {
+    console.error("Error fetching all employees details:", error);
+    res.status(500).json({ error: "Failed to fetch all employees details" });
+  }
+};
 const syncAllData = async (req, res) => {
   try {
     console.log("Starting data synchronization...");
@@ -3314,6 +3523,7 @@ function createServer() {
   app2.get("/api/incomplete-meeting-remarks", getIncompleteMeetingRemark);
   app2.get("/api/analytics/employees", getEmployeeAnalytics);
   app2.get("/api/analytics/employee-details/:employeeId", getEmployeeDetails);
+  app2.get("/api/analytics/all-employees-details", getAllEmployeesDetails);
   app2.get("/api/analytics/lead-history/:leadId", getLeadHistory);
   app2.post("/api/analytics/save-attendance", saveAttendance);
   app2.get("/api/analytics/attendance", (req, res, next) => {

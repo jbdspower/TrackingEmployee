@@ -41,6 +41,7 @@ import {
   saveAttendance,
   getAttendance,
   getMeetingTrends,
+  getAllEmployeesDetails,
 } from "./routes/analytics";
 import {
   syncAllData,
@@ -153,6 +154,7 @@ export function createServer() {
   // Analytics routes
   app.get("/api/analytics/employees", getEmployeeAnalytics);
   app.get("/api/analytics/employee-details/:employeeId", getEmployeeDetails);
+  app.get("/api/analytics/all-employees-details", getAllEmployeesDetails); // New endpoint for all employees
   app.get("/api/analytics/lead-history/:leadId", getLeadHistory);
   app.post("/api/analytics/save-attendance", saveAttendance);
   app.get("/api/analytics/attendance", (req, res, next) => {
