@@ -84,30 +84,12 @@ export default function Tracking() {
         description: "Please access the tracking page with a valid employee ID",
         variant: "destructive",
       });
-      // Don't navigate anywhere - just show error
       return;
     }
 
-    // 🔒 SECURITY: Validate user is accessing their own tracking page
-    const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
-    const isSuperAdmin = currentUser?._id === "67daa55d9c4abb36045d5bfe";
-    
-    // Allow access if:
-    // 1. User is super admin, OR
-    // 2. User is accessing their own tracking page
-    if (!isSuperAdmin && currentUser?._id !== employeeId) {
-      console.error("❌ Unauthorized access attempt - user trying to access another employee's tracking");
-      toast({
-        title: "Access Denied",
-        description: "You can only access your own tracking page",
-        variant: "destructive",
-      });
-      // Redirect to their own tracking page
-      if (currentUser?._id) {
-        navigate(`/tracking/${currentUser._id}`);
-      }
-      return;
-    }
+    // ✅ ALLOW: If user comes from CRM with valid employee ID in URL, allow access
+    // The URL parameter is the source of truth for tracking pages
+    console.log("✅ Loading tracking page for employee:", employeeId);
 
     const initializeData = async () => {
       try {
@@ -118,7 +100,7 @@ export default function Tracking() {
     };
 
     initializeData();
-  }, [employeeId, navigate, toast]);
+  }, [employeeId, navigate]);
 
   const fetchEmployee = async (retryCount = 0) => {
     try {

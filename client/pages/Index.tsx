@@ -59,7 +59,14 @@ export default function Index() {
         const isSuperAdmin = user._id === "67daa55d9c4abb36045d5bfe";
         if (!isSuperAdmin && user._id) {
           console.log("🔒 Redirecting regular user to their tracking page");
-          window.location.href = `/tracking/${user._id}`;
+          toast({
+            title: "Access Denied",
+            description: "Direct access to dashboard is not allowed. Redirecting to your tracking page...",
+            variant: "destructive",
+          });
+          setTimeout(() => {
+            window.location.href = `/tracking/${user._id}`;
+          }, 1500);
         }
       } catch (error) {
         console.error("Failed to parse user from localStorage:", error);
@@ -67,6 +74,11 @@ export default function Index() {
     } else {
       // 🔒 SECURITY: No user logged in - show error
       console.error("❌ No user found in localStorage - access denied");
+      toast({
+        title: "Access Denied",
+        description: "Please access the tracking page with a valid employee ID from the CRM system.",
+        variant: "destructive",
+      });
     }
   }, []);
 
