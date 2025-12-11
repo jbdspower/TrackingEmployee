@@ -472,6 +472,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     }
 
     // Filter meetings for this employee within date range
+    // 🔹 IMPORTANT: Include ALL meetings (completed, in-progress, started) that fall within the date range
     const employeeMeetings = actualMeetings.filter((meeting) => {
       const meetingDate = new Date(meeting.startTime);
       const meetingTime = meetingDate.getTime();
@@ -480,9 +481,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       const inDateRange = meetingTime >= startTime && meetingTime <= endTime;
 
       if (inDateRange) {
-        console.log(`✅ Employee meeting ${meeting.id} included: ${meeting.startTime} (${meeting.clientName || 'No client'})`);
+        console.log(`✅ Employee meeting ${meeting.id} included: ${meeting.startTime} (${meeting.clientName || 'No client'}) [Status: ${meeting.status}]`);
       } else {
-        console.log(`❌ Employee meeting ${meeting.id} excluded: ${meeting.startTime} (outside ${start.toISOString()} to ${end.toISOString()})`);
+        console.log(`❌ Employee meeting ${meeting.id} excluded: ${meeting.startTime} (outside ${start.toISOString()} to ${end.toISOString()}) [Status: ${meeting.status}]`);
       }
 
       return inDateRange;
@@ -636,37 +637,47 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       };
     });
 
-    // Generate meeting records
-    const meetingRecords = employeeMeetings.map((meeting) => ({
-      employeeName: "", // Will be filled by client
-      companyName: meeting.clientName || "Unknown Company",
-      date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
-      leadId: meeting.leadId || "",
-      meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
-      meetingInLocation: meeting.location?.address || "",
-      meetingOutTime: meeting.endTime
-        ? format(new Date(meeting.endTime), "HH:mm")
-        : "",
-      // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
-      meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
-        ? meeting.location.endLocation.address
-        : "",
-      totalStayTime: calculateMeetingDuration(
-        meeting.startTime,
-        meeting.endTime,
-      ),
-      discussion: meeting.meetingDetails?.discussion || meeting.notes || "",
-      meetingPerson:
-        meeting.meetingDetails?.customers?.length > 0
-          ? meeting.meetingDetails.customers
-              .map((customer) => customer.customerEmployeeName)
-              .join(", ")
-          : meeting.meetingDetails?.customerEmployeeName || "Unknown",
-      meetingStatus: meeting.status || "completed", // Internal meeting status
-      externalMeetingStatus: meeting.externalMeetingStatus || "", // 🔹 NEW: Status from external follow-up API
-      incomplete: meeting.meetingDetails?.incomplete || false, // Include incomplete flag
-      incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
-    }));
+    // Generate meeting records - Include ALL meetings (completed, in-progress, started)
+    const meetingRecords = employeeMeetings.map((meeting) => {
+      console.log(`📋 Generating meeting record for meeting ${meeting.id}:`, {
+        status: meeting.status,
+        clientName: meeting.clientName,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime || 'N/A (active meeting)',
+        hasDetails: !!meeting.meetingDetails
+      });
+      
+      return {
+        employeeName: "", // Will be filled by client
+        companyName: meeting.clientName || "Unknown Company",
+        date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
+        leadId: meeting.leadId || "",
+        meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+        meetingInLocation: meeting.location?.address || "",
+        meetingOutTime: meeting.endTime
+          ? format(new Date(meeting.endTime), "HH:mm")
+          : "In Progress", // Show "In Progress" for active meetings
+        // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
+        meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
+          ? meeting.location.endLocation.address
+          : (meeting.status === "completed" ? "" : "Meeting in progress"),
+        totalStayTime: calculateMeetingDuration(
+          meeting.startTime,
+          meeting.endTime,
+        ),
+        discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
+        meetingPerson:
+          meeting.meetingDetails?.customers?.length > 0
+            ? meeting.meetingDetails.customers
+                .map((customer) => customer.customerEmployeeName)
+                .join(", ")
+            : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
+        meetingStatus: meeting.status || "completed", // Internal meeting status
+        externalMeetingStatus: meeting.externalMeetingStatus || "", // 🔹 NEW: Status from external follow-up API
+        incomplete: meeting.meetingDetails?.incomplete || false, // Include incomplete flag
+        incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
+      };
+    });
 
     const finalResult = {
       dayRecords: dayRecords.sort(
@@ -923,6 +934,10 @@ export const getAttendance: RequestHandler = async (req, res) => {
 
       console.log(`Found ${attendanceRecords.length} attendance records`);
 
+      // Fetch external users to map attendenceCreated IDs to names
+      const externalUsers = await fetchExternalUsers();
+      const userMap = new Map(externalUsers.map(user => [user._id, user.name]));
+
       // Format the response
       const formattedRecords = attendanceRecords.map(record => ({
         id: record._id.toString(),
@@ -930,6 +945,10 @@ export const getAttendance: RequestHandler = async (req, res) => {
         date: record.date,
         attendanceStatus: record.attendanceStatus,
         attendanceReason: record.attendanceReason || "",
+        attendenceCreated: record.attendenceCreated,
+        attendenceCreatedName: record.attendenceCreated 
+          ? userMap.get(record.attendenceCreated) || record.attendenceCreated
+          : null,
         savedAt: record.updatedAt || record.createdAt
       }));
 
