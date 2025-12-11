@@ -365,3 +365,35 @@ export interface CreateRouteSnapshotRequest {
   status?: 'active' | 'completed' | 'paused';
   mapBounds: MapBounds;
 }
+
+// Attendance interfaces
+export interface AttendanceRecord {
+  id?: string;
+  employeeId: string;
+  date: string; // YYYY-MM-DD format
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceReason?: string;
+  attendenceCreated?: string | null; // userId who created the attendance (null for tracking employee, userId from CRM dashboard)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SaveAttendanceRequest {
+  employeeId: string;
+  date: string; // YYYY-MM-DD format
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceReason?: string;
+  attendenceCreated?: string | null; // null by default for tracking employee
+}
+
+export interface SaveAttendanceResponse {
+  success: boolean;
+  message: string;
+  data: AttendanceRecord;
+}
+
+export interface GetAttendanceResponse {
+  success: boolean;
+  count: number;
+  data: AttendanceRecord[];
+}

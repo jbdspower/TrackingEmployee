@@ -105,9 +105,13 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
+            {/* 🔒 Root route - only accessible by super admin */}
             <Route path="/" element={<Index />} />
+            {/* 🔒 Dashboard - only accessible by super admin */}
             <Route path="/dashboard" element={<Dashboard />} />
+            {/* ✅ Tracking page - accessible with employee ID in URL */}
             <Route path="/tracking/:employeeId" element={<Tracking />} />
+            {/* 🔒 Admin routes */}
             <Route path="/team-management" element={<TeamManagement />} />
             <Route path="/data-management" element={<DataManagement />} />
             <Route path="/route-test" element={<RouteTest />} />

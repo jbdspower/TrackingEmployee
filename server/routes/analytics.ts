@@ -543,6 +543,33 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       ...Object.keys(sessionDateGroups)
     ]);
 
+    // 🔹 NEW: Fetch attendance records for the date range to get attendenceCreated info
+    let attendanceRecords: any[] = [];
+    try {
+      const mongoAttendance = await Attendance.find({
+        employeeId,
+        date: { 
+          $gte: format(start, "yyyy-MM-dd"), 
+          $lte: format(end, "yyyy-MM-dd") 
+        }
+      }).lean();
+      
+      attendanceRecords = mongoAttendance.map(att => ({
+        date: att.date,
+        attendenceCreated: att.attendenceCreated,
+        attendanceStatus: att.attendanceStatus,
+        attendanceReason: att.attendanceReason
+      }));
+      
+      console.log(`Found ${attendanceRecords.length} attendance records for employee ${employeeId}`);
+    } catch (dbError) {
+      console.warn("Failed to fetch attendance records:", dbError);
+    }
+
+    // 🔹 NEW: Fetch external users to map attendenceCreated IDs to names
+    const externalUsers = await fetchExternalUsers();
+    const userMap = new Map(externalUsers.map(user => [user._id, user.name]));
+
     // Generate day records combining meetings and tracking sessions
     const dayRecords = Array.from(allDates).map((date) => {
       const meetings = dateGroups[date] || [];
@@ -555,23 +582,26 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         );
       }, 0);
 
-      // Use tracking session for login/logout times if available, otherwise use meetings
+      // Sort meetings by start time to get first and last
+      const sortedMeetings = [...meetings].sort((a, b) => 
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+      const firstMeeting = sortedMeetings[0];
+      const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
+
+      // Use tracking session for duty hours calculation
       const firstSession = sessions[0];
       const lastSession = sessions[sessions.length - 1];
-      const firstMeeting = meetings[0];
-      const lastMeeting = meetings[meetings.length - 1];
 
-      // Determine start location and time (prefer tracking session)
-      const startLocationTime = firstSession?.startTime || firstMeeting?.startTime || "";
-      const startLocationAddress = firstSession?.startLocation?.address || firstMeeting?.location?.address || "";
+      // ✅ MEETING-BASED TRACKING: Start location time from first meeting start
+      const startLocationTime = firstMeeting?.startTime || "";
+      const startLocationAddress = firstMeeting?.location?.address || "";
 
-      // Determine end location and time (prefer tracking session)
-      const outLocationTime = lastSession?.endTime || lastMeeting?.endTime || "";
-      const outLocationAddress = lastSession?.endTime && lastSession?.endLocation?.address
-        ? lastSession.endLocation.address
-        : (lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address
-          ? lastMeeting.location.endLocation.address
-          : "");
+      // ✅ MEETING-BASED TRACKING: Out location time from last meeting end
+      const outLocationTime = lastMeeting?.endTime || "";
+      const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address
+        ? lastMeeting.location.endLocation.address
+        : (lastMeeting?.location?.address || ""); // Fallback to start location if end location not available
 
       // Calculate total duty hours from tracking session if available
       let totalDutyHours = 8; // Default
@@ -580,7 +610,17 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         totalDutyHours = Math.max(0, sessionDuration);
       }
 
-      console.log(`Day record for ${date}: ${totalMeetings} meetings, ${totalMeetingHours.toFixed(2)} meeting hours, ${sessions.length} tracking sessions`);
+      // 🔹 NEW: Get attendance info for this date
+      const attendance = attendanceRecords.find(att => att.date === date);
+      const attendanceAddedBy = attendance?.attendenceCreated 
+        ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated
+        : null;
+
+      console.log(`Day record for ${date}:`);
+      console.log(`  - Meetings: ${totalMeetings}, Meeting hours: ${totalMeetingHours.toFixed(2)}h`);
+      console.log(`  - ✅ Start Location Time: ${startLocationTime || 'N/A'} (from FIRST MEETING START)`);
+      console.log(`  - ✅ Out Location Time: ${outLocationTime || 'N/A'} (from LAST MEETING END)`);
+      console.log(`  - Tracking sessions: ${sessions.length}, Attendance added by: ${attendanceAddedBy || 'N/A'}`);
       
       return {
         date,
@@ -591,7 +631,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         outLocationAddress,
         totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
         meetingTime: totalMeetingHours,
-        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours)
+        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
+        attendanceAddedBy // 🔹 NEW: Person who added the attendance
       };
     });
 
@@ -729,11 +770,12 @@ export const getLeadHistory: RequestHandler = async (req, res) => {
 
 export const saveAttendance: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, date, attendanceStatus, attendanceReason } = req.body;
+    const { employeeId, date, attendanceStatus, attendanceReason, attendenceCreated } = req.body;
 
     console.log(`Saving attendance for employee ${employeeId} on ${date}:`, {
       attendanceStatus,
-      attendanceReason
+      attendanceReason,
+      attendenceCreated
     });
 
     // Validate required fields
@@ -766,7 +808,8 @@ export const saveAttendance: RequestHandler = async (req, res) => {
           employeeId,
           date,
           attendanceStatus,
-          attendanceReason: attendanceReason || ""
+          attendanceReason: attendanceReason || "",
+          attendenceCreated: attendenceCreated !== undefined ? attendenceCreated : null // Default to null if not provided
         },
         {
           new: true,
@@ -776,6 +819,7 @@ export const saveAttendance: RequestHandler = async (req, res) => {
       );
 
       console.log("Attendance saved to MongoDB:", savedAttendance._id);
+      console.log("Attendance attendenceCreated value:", savedAttendance.attendenceCreated);
 
       res.json({
         success: true,
@@ -786,6 +830,7 @@ export const saveAttendance: RequestHandler = async (req, res) => {
           date: savedAttendance.date,
           attendanceStatus: savedAttendance.attendanceStatus,
           attendanceReason: savedAttendance.attendanceReason,
+          attendenceCreated: savedAttendance.attendenceCreated,
           savedAt: savedAttendance.updatedAt
         }
       });
@@ -802,6 +847,7 @@ export const saveAttendance: RequestHandler = async (req, res) => {
           date,
           attendanceStatus,
           attendanceReason,
+          attendenceCreated: attendenceCreated !== undefined ? attendenceCreated : null,
           savedAt: new Date().toISOString()
         }
       });

@@ -80,6 +80,7 @@ interface EmployeeDayRecord {
   travelAndLunchTime: number;
   attendanceStatus?: string;
   attendanceReason?: string;
+  attendanceAddedBy?: string | null; // Person who added the attendance
 }
 
 interface EmployeeMeetingRecord {
@@ -704,29 +705,28 @@ export default function Dashboard() {
     }));
 
     try {
+      // Get logged-in user ID from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const loggedInUserId = user?._id || null;
+
+      console.log(`👤 Logged-in user ID: ${loggedInUserId}`);
+
       const response = await HttpClient.post("/api/analytics/save-attendance", {
         employeeId: selectedEmployee,
         date,
         attendanceStatus: editData.attendanceStatus,
         attendanceReason: editData.attendanceReason,
+        attendenceCreated: loggedInUserId, // Pass logged-in user ID
       });
 
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Attendance saved successfully:`, result);
         
-        // Update the day record immediately in state
-        setEmployeeDayRecords((prev) =>
-          prev.map((record) =>
-            record.date === date
-              ? {
-                  ...record,
-                  attendanceStatus: editData.attendanceStatus,
-                  attendanceReason: editData.attendanceReason,
-                }
-              : record,
-          ),
-        );
+        // Refetch employee details to get updated attendanceAddedBy field
+        console.log(`🔄 Refetching employee details to update attendanceAddedBy...`);
+        const employeeName = analytics.find((emp) => emp.employeeId === selectedEmployee)?.employeeName || "Employee";
+        await handleEmployeeClick(selectedEmployee, employeeName);
 
         // Clear the editing state
         handleCancelAttendanceEdit(date);
@@ -1273,6 +1273,7 @@ export default function Dashboard() {
                                       <TableHead>Travel & Lunch Time</TableHead>
                                       <TableHead>Attendance Status</TableHead>
                                       <TableHead>Reason</TableHead>
+                                      <TableHead>Attendance Added By</TableHead>
                                       <TableHead>Actions</TableHead>
                                       {/* <TableHead>Route History</TableHead> */}
                                     </TableRow>
@@ -1397,6 +1398,13 @@ export default function Dashboard() {
                                             {dayRecord.attendanceReason || "-"}
                                           </div>
                                         )}
+                                      </TableCell>
+
+                                      {/* Attendance Added By */}
+                                      <TableCell>
+                                        <div className="text-xs text-muted-foreground">
+                                          {dayRecord.attendanceAddedBy || "-"}
+                                        </div>
                                       </TableCell>
 
                                       {/* Actions */}

@@ -253,6 +253,11 @@ const AttendanceSchema = new Schema({
   attendanceReason: {
     type: String,
     default: ""
+  },
+  attendenceCreated: {
+    type: String,
+    default: null
+    // null for tracking employee, userId from CRM dashboard
   }
 }, {
   timestamps: true,
@@ -2316,6 +2321,27 @@ const getEmployeeDetails = async (req, res) => {
       ...Object.keys(dateGroups),
       ...Object.keys(sessionDateGroups)
     ]);
+    let attendanceRecords = [];
+    try {
+      const mongoAttendance = await Attendance.find({
+        employeeId,
+        date: {
+          $gte: format(start, "yyyy-MM-dd"),
+          $lte: format(end, "yyyy-MM-dd")
+        }
+      }).lean();
+      attendanceRecords = mongoAttendance.map((att) => ({
+        date: att.date,
+        attendenceCreated: att.attendenceCreated,
+        attendanceStatus: att.attendanceStatus,
+        attendanceReason: att.attendanceReason
+      }));
+      console.log(`Found ${attendanceRecords.length} attendance records for employee ${employeeId}`);
+    } catch (dbError) {
+      console.warn("Failed to fetch attendance records:", dbError);
+    }
+    const externalUsers = await fetchExternalUsers();
+    const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
     const dayRecords = Array.from(allDates).map((date) => {
       const meetings2 = dateGroups[date] || [];
       const sessions = sessionDateGroups[date] || [];
@@ -2323,20 +2349,29 @@ const getEmployeeDetails = async (req, res) => {
       const totalMeetingHours = meetings2.reduce((total, meeting) => {
         return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
       }, 0);
+      const sortedMeetings = [...meetings2].sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+      const firstMeeting = sortedMeetings[0];
+      const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
       const firstSession = sessions[0];
       const lastSession = sessions[sessions.length - 1];
-      const firstMeeting = meetings2[0];
-      const lastMeeting = meetings2[meetings2.length - 1];
-      const startLocationTime = firstSession?.startTime || firstMeeting?.startTime || "";
-      const startLocationAddress = firstSession?.startLocation?.address || firstMeeting?.location?.address || "";
-      const outLocationTime = lastSession?.endTime || lastMeeting?.endTime || "";
-      const outLocationAddress = lastSession?.endTime && lastSession?.endLocation?.address ? lastSession.endLocation.address : lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : "";
+      const startLocationTime = firstMeeting?.startTime || "";
+      const startLocationAddress = firstMeeting?.location?.address || "";
+      const outLocationTime = lastMeeting?.endTime || "";
+      const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : lastMeeting?.location?.address || "";
       let totalDutyHours = 8;
       if (firstSession && lastSession?.endTime) {
         const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1e3 * 60 * 60);
         totalDutyHours = Math.max(0, sessionDuration);
       }
-      console.log(`Day record for ${date}: ${totalMeetings} meetings, ${totalMeetingHours.toFixed(2)} meeting hours, ${sessions.length} tracking sessions`);
+      const attendance = attendanceRecords.find((att) => att.date === date);
+      const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
+      console.log(`Day record for ${date}:`);
+      console.log(`  - Meetings: ${totalMeetings}, Meeting hours: ${totalMeetingHours.toFixed(2)}h`);
+      console.log(`  - ✅ Start Location Time: ${startLocationTime || "N/A"} (from FIRST MEETING START)`);
+      console.log(`  - ✅ Out Location Time: ${outLocationTime || "N/A"} (from LAST MEETING END)`);
+      console.log(`  - Tracking sessions: ${sessions.length}, Attendance added by: ${attendanceAddedBy || "N/A"}`);
       return {
         date,
         totalMeetings,
@@ -2346,7 +2381,9 @@ const getEmployeeDetails = async (req, res) => {
         outLocationAddress,
         totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
         meetingTime: totalMeetingHours,
-        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours)
+        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
+        attendanceAddedBy
+        // 🔹 NEW: Person who added the attendance
       };
     });
     const meetingRecords = employeeMeetings.map((meeting) => ({
@@ -2452,10 +2489,11 @@ const getLeadHistory = async (req, res) => {
 };
 const saveAttendance = async (req, res) => {
   try {
-    const { employeeId, date, attendanceStatus, attendanceReason } = req.body;
+    const { employeeId, date, attendanceStatus, attendanceReason, attendenceCreated } = req.body;
     console.log(`Saving attendance for employee ${employeeId} on ${date}:`, {
       attendanceStatus,
-      attendanceReason
+      attendanceReason,
+      attendenceCreated
     });
     if (!employeeId || !date || !attendanceStatus) {
       return res.status(400).json({
@@ -2480,7 +2518,9 @@ const saveAttendance = async (req, res) => {
           employeeId,
           date,
           attendanceStatus,
-          attendanceReason: attendanceReason || ""
+          attendanceReason: attendanceReason || "",
+          attendenceCreated: attendenceCreated !== void 0 ? attendenceCreated : null
+          // Default to null if not provided
         },
         {
           new: true,
@@ -2489,6 +2529,7 @@ const saveAttendance = async (req, res) => {
         }
       );
       console.log("Attendance saved to MongoDB:", savedAttendance._id);
+      console.log("Attendance attendenceCreated value:", savedAttendance.attendenceCreated);
       res.json({
         success: true,
         message: "Attendance saved successfully",
@@ -2498,6 +2539,7 @@ const saveAttendance = async (req, res) => {
           date: savedAttendance.date,
           attendanceStatus: savedAttendance.attendanceStatus,
           attendanceReason: savedAttendance.attendanceReason,
+          attendenceCreated: savedAttendance.attendenceCreated,
           savedAt: savedAttendance.updatedAt
         }
       });
@@ -2511,6 +2553,7 @@ const saveAttendance = async (req, res) => {
           date,
           attendanceStatus,
           attendanceReason,
+          attendenceCreated: attendenceCreated !== void 0 ? attendenceCreated : null,
           savedAt: (/* @__PURE__ */ new Date()).toISOString()
         }
       });

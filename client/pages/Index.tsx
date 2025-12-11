@@ -54,9 +54,19 @@ export default function Index() {
       try {
         const user = JSON.parse(userStr);
         setCurrentUser(user);
+        
+        // 🔒 SECURITY: Redirect non-super-admin users to their tracking page
+        const isSuperAdmin = user._id === "67daa55d9c4abb36045d5bfe";
+        if (!isSuperAdmin && user._id) {
+          console.log("🔒 Redirecting regular user to their tracking page");
+          window.location.href = `/tracking/${user._id}`;
+        }
       } catch (error) {
         console.error("Failed to parse user from localStorage:", error);
       }
+    } else {
+      // 🔒 SECURITY: No user logged in - show error
+      console.error("❌ No user found in localStorage - access denied");
     }
   }, []);
 

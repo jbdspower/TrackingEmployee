@@ -6,6 +6,7 @@ export interface IAttendance extends Document {
   date: string; // YYYY-MM-DD format
   attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
   attendanceReason: string;
+  attendenceCreated: string | null; // userId who created the attendance (null for tracking employee)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +33,10 @@ const AttendanceSchema = new Schema({
   attendanceReason: { 
     type: String,
     default: ''
+  },
+  attendenceCreated: {
+    type: String,
+    default: null // null for tracking employee, userId from CRM dashboard
   }
 }, {
   timestamps: true,

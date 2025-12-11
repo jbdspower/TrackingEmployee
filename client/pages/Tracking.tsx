@@ -76,8 +76,36 @@ export default function Tracking() {
   }, [meetings]);
 
   useEffect(() => {
+    // 🔒 SECURITY: Validate employee ID is present in URL
     if (!employeeId) {
-      navigate("/");
+      console.error("❌ No employee ID in URL - access denied");
+      toast({
+        title: "Access Denied",
+        description: "Please access the tracking page with a valid employee ID",
+        variant: "destructive",
+      });
+      // Don't navigate anywhere - just show error
+      return;
+    }
+
+    // 🔒 SECURITY: Validate user is accessing their own tracking page
+    const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const isSuperAdmin = currentUser?._id === "67daa55d9c4abb36045d5bfe";
+    
+    // Allow access if:
+    // 1. User is super admin, OR
+    // 2. User is accessing their own tracking page
+    if (!isSuperAdmin && currentUser?._id !== employeeId) {
+      console.error("❌ Unauthorized access attempt - user trying to access another employee's tracking");
+      toast({
+        title: "Access Denied",
+        description: "You can only access your own tracking page",
+        variant: "destructive",
+      });
+      // Redirect to their own tracking page
+      if (currentUser?._id) {
+        navigate(`/tracking/${currentUser._id}`);
+      }
       return;
     }
 
@@ -90,7 +118,7 @@ export default function Tracking() {
     };
 
     initializeData();
-  }, [employeeId, navigate]);
+  }, [employeeId, navigate, toast]);
 
   const fetchEmployee = async (retryCount = 0) => {
     try {
@@ -1250,11 +1278,10 @@ const handleEndMeetingWithDetails = async (
     );
   }
 
-  // Check if current user is super admin or specific employee
+  // Check if current user is super admin (only super admin can see Back button)
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
-  const isSuperAdmin = currentUser?.role === "super_admin";
-  const isSpecialEmployee = currentUser?._id === "67daa55d9c4abb36045d5bfe";
-  const showBackButton = isSuperAdmin || isSpecialEmployee;
+  const isSuperAdmin = currentUser?._id === "67daa55d9c4abb36045d5bfe";
+  const showBackButton = isSuperAdmin;
 
   return (
     <div className="min-h-screen bg-background">
