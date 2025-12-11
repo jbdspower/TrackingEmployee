@@ -829,13 +829,67 @@ const handleEndMeetingWithDetails = async (
 
     setIsStartingMeeting(true);
     try {
+      // 🔹 CRITICAL FIX: Get fresh location before starting meeting
+      let startLocation = {
+        lat: employee.location.lat,
+        lng: employee.location.lng,
+        address: employee.location.address,
+      };
+
+      try {
+        console.log("📍 Fetching fresh location for meeting start...");
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error("Geolocation not supported"));
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            {
+              enableHighAccuracy: true,
+              maximumAge: 0,
+              timeout: 10000,
+            }
+          );
+        });
+
+        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        
+        // Get human-readable address from coordinates
+        try {
+          console.log("🗺️ Fetching address for meeting start location...");
+          const addressResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+            {
+              headers: {
+                'User-Agent': 'EmployeeTrackingApp/1.0'
+              }
+            }
+          );
+          
+          if (addressResponse.ok) {
+            const addressData = await addressResponse.json();
+            address = addressData.display_name || address;
+            console.log("✅ Meeting start address resolved:", address);
+          }
+        } catch (addressError) {
+          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+        }
+
+        startLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          address: address,
+        };
+        console.log("✅ Fresh start location obtained:", startLocation);
+      } catch (locationError) {
+        console.warn("⚠️ Failed to get fresh location, using employee location:", locationError);
+      }
+
       const response = await HttpClient.post("/api/meetings", {
         employeeId: employee.id,
-        location: {
-          lat: employee.location.lat,
-          lng: employee.location.lng,
-          address: employee.location.address,
-        },
+        location: startLocation,
         clientName: meetingData.clientName,
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
@@ -913,13 +967,67 @@ const handleEndMeetingWithDetails = async (
       const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
       console.log("📋 Storing follow-up data for meeting:", followUpData);
       
+      // 🔹 CRITICAL FIX: Get fresh location before starting meeting
+      let startLocation = {
+        lat: employee.location.lat,
+        lng: employee.location.lng,
+        address: employee.location.address,
+      };
+
+      try {
+        console.log("📍 Fetching fresh location for meeting start...");
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error("Geolocation not supported"));
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            {
+              enableHighAccuracy: true,
+              maximumAge: 0,
+              timeout: 10000,
+            }
+          );
+        });
+
+        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        
+        // Get human-readable address from coordinates
+        try {
+          console.log("🗺️ Fetching address for meeting start location...");
+          const addressResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+            {
+              headers: {
+                'User-Agent': 'EmployeeTrackingApp/1.0'
+              }
+            }
+          );
+          
+          if (addressResponse.ok) {
+            const addressData = await addressResponse.json();
+            address = addressData.display_name || address;
+            console.log("✅ Meeting start address resolved:", address);
+          }
+        } catch (addressError) {
+          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+        }
+
+        startLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          address: address,
+        };
+        console.log("✅ Fresh start location obtained:", startLocation);
+      } catch (locationError) {
+        console.warn("⚠️ Failed to get fresh location, using employee location:", locationError);
+      }
+
       const response = await HttpClient.post("/api/meetings", {
         employeeId: employee.id,
-        location: {
-          lat: employee.location.lat,
-          lng: employee.location.lng,
-          address: employee.location.address,
-        },
+        location: startLocation,
         clientName: meetingData.clientName,
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
