@@ -21,6 +21,10 @@ interface NewCustomerEmployeeData {
   department: string;
 }
 
+// CRM API configuration
+const CRM_API_BASE_URL = "https://jbdspower.in/LeafNetServer/api";
+const CUSTOMER_COMPANY_ID = "68340889566d91e049668f07";
+
 interface AddCustomerEmployeeModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -80,17 +84,20 @@ export function AddCustomerEmployeeModal({
       newErrors.department = "Department is required";
     }
 
-    // Email validation if provided
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    // Email validation - now mandatory
+    if (!formData.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Please enter a valid email address";
     }
 
-    // Mobile validation if provided
-    if (
-      formData.mobile &&
-      !/^[\+]?[1-9][\d]{0,15}$/.test(formData.mobile.replace(/[\s\-\(\)]/g, ""))
+    // Mobile validation - now mandatory
+    if (!formData.mobile.trim()) {
+      newErrors.mobile = "Mobile number is required";
+    } else if (
+      !/^[\+]?[1-9][\d]{9,15}$/.test(formData.mobile.replace(/[\s\-\(\)]/g, ""))
     ) {
-      newErrors.mobile = "Please enter a valid mobile number";
+      newErrors.mobile = "Please enter a valid mobile number (10-16 digits)";
     }
 
     setErrors(newErrors);
@@ -125,11 +132,45 @@ export function AddCustomerEmployeeModal({
 
     setIsSubmitting(true);
     try {
+      // First, save to CRM database
+      const crmPayload = {
+        CustomerEmpName: formData.customerEmployeeName,
+        Department: formData.department,
+        Designation: formData.designation,
+        Email: formData.email,
+        Mobile: formData.mobile,
+      };
+
+      console.log("Saving employee to CRM:", crmPayload);
+
+      const crmResponse = await fetch(
+        `${CRM_API_BASE_URL}/addcustomerEmployee/${CUSTOMER_COMPANY_ID}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(crmPayload),
+        }
+      );
+
+      if (!crmResponse.ok) {
+        const errorText = await crmResponse.text();
+        console.error("CRM API error:", errorText);
+        throw new Error(`Failed to save to CRM: ${crmResponse.status}`);
+      }
+
+      const crmResult = await crmResponse.json();
+      console.log("Employee saved to CRM successfully:", crmResult);
+
+      // Then, call the parent's onAddEmployee callback (if needed for local database)
       await onAddEmployee(formData);
+      
       handleClose();
     } catch (error) {
       console.error("Error adding customer employee:", error);
       // Error is handled by parent component
+      throw error;
     } finally {
       setIsSubmitting(false);
     }
@@ -245,7 +286,7 @@ export function AddCustomerEmployeeModal({
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm">
               Email Address
-              <span className="text-muted-foreground ml-1">(Optional)</span>
+              <span className="text-destructive ml-1">*</span>
             </Label>
             <Input
               id="email"
@@ -255,6 +296,7 @@ export function AddCustomerEmployeeModal({
               onChange={(e) => handleInputChange("email", e.target.value)}
               disabled={isFormDisabled}
               className={errors.email ? "border-destructive" : ""}
+              required
             />
             {errors.email && (
               <div className="flex items-center space-x-1 text-sm text-destructive">
@@ -268,16 +310,17 @@ export function AddCustomerEmployeeModal({
           <div className="space-y-2">
             <Label htmlFor="mobile" className="text-sm">
               Mobile Number
-              <span className="text-muted-foreground ml-1">(Optional)</span>
+              <span className="text-destructive ml-1">*</span>
             </Label>
             <Input
               id="mobile"
               type="tel"
-              placeholder="+1 (555) 123-4567"
+              placeholder="1234567890"
               value={formData.mobile}
               onChange={(e) => handleInputChange("mobile", e.target.value)}
               disabled={isFormDisabled}
               className={errors.mobile ? "border-destructive" : ""}
+              required
             />
             {errors.mobile && (
               <div className="flex items-center space-x-1 text-sm text-destructive">
