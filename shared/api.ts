@@ -115,6 +115,8 @@ export interface MeetingLog {
   };
   followUpId?: string; // Follow-up meeting ID from external API
   meetingDetails?: MeetingDetails;
+  approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+  approvalReason?: string; // Reason for approval/rejection
 }
 
 // API Response types

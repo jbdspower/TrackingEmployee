@@ -21,6 +21,8 @@ import {
   getMeeting,
   deleteMeeting,
   getActiveMeeting,
+  updateMeetingApproval,
+  updateMeetingApprovalByDetails,
 } from "./routes/meetings";
 import {
   getTrackingSessions,
@@ -132,6 +134,8 @@ export function createServer() {
   app.get("/api/meetings/active", getActiveMeeting); // 🔹 NEW: Get active meeting
   app.get("/api/meetings/:id", getMeeting);
   app.put("/api/meetings/:id", updateMeeting);
+  app.put("/api/meetings/:id/approval", updateMeetingApproval); // Meeting approval by ID
+  app.put("/api/meetings/approval-by-details", updateMeetingApprovalByDetails); // Meeting approval by composite key
   app.delete("/api/meetings/:id", deleteMeeting);
 
   // Tracking session routes

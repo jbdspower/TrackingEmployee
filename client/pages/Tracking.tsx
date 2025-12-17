@@ -632,15 +632,35 @@ const handleEndMeetingWithDetails = async (
       meetingDetails,
     );
 
-    // 🔹 CRITICAL FIX: Get fresh location before ending meeting
+    // 🔹 MANDATORY: Check location permission before ending meeting
     let endLocation = null;
     try {
-      console.log("📍 Fetching fresh location for meeting end...");
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error("Geolocation not supported"));
+      console.log("📍 Checking location permission for meeting end...");
+      
+      // Check if geolocation is supported
+      if (!navigator.geolocation) {
+        throw new Error("Geolocation is not supported by your browser");
+      }
+
+      // Check permission status
+      if (navigator.permissions) {
+        const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+        console.log("Location permission status:", permissionStatus.state);
+        
+        if (permissionStatus.state === 'denied') {
+          toast({
+            title: "Location Permission Required",
+            description: "Please allow location access in your browser settings to end the meeting.",
+            variant: "destructive",
+          });
+          setIsEndingMeeting(null);
           return;
         }
+      }
+
+      // Attempt to get fresh location
+      console.log("📍 Fetching fresh location for meeting end...");
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(
           resolve,
           reject,
@@ -683,8 +703,24 @@ const handleEndMeetingWithDetails = async (
       };
       console.log("✅ Fresh end location obtained:", endLocation);
     } catch (locationError) {
-      console.warn("⚠️ Failed to get fresh location for meeting end:", locationError);
-      // Continue without end location - better to save the meeting than fail completely
+      console.error("❌ Location access error:", locationError);
+      
+      // Show user-friendly error message and prevent meeting end
+      const errorMessage = locationError instanceof GeolocationPositionError
+        ? locationError.code === 1
+          ? "Location permission denied. Please allow location access to end the meeting."
+          : locationError.code === 2
+          ? "Unable to determine your location. Please check your device settings."
+          : "Location request timed out. Please try again."
+        : "Failed to access location. Please allow location permission to end the meeting.";
+      
+      toast({
+        title: "Location Required",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      setIsEndingMeeting(null);
+      return;
     }
 
     console.log("📤 Sending PUT request to:", `/api/meetings/${meetingIdToEnd}`);
@@ -829,7 +865,7 @@ const handleEndMeetingWithDetails = async (
 
     setIsStartingMeeting(true);
     try {
-      // 🔹 CRITICAL FIX: Get fresh location before starting meeting
+      // 🔹 MANDATORY: Check location permission before starting meeting
       let startLocation = {
         lat: employee.location.lat,
         lng: employee.location.lng,
@@ -837,12 +873,32 @@ const handleEndMeetingWithDetails = async (
       };
 
       try {
-        console.log("📍 Fetching fresh location for meeting start...");
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error("Geolocation not supported"));
+        console.log("📍 Checking location permission for meeting start...");
+        
+        // Check if geolocation is supported
+        if (!navigator.geolocation) {
+          throw new Error("Geolocation is not supported by your browser");
+        }
+
+        // Check permission status
+        if (navigator.permissions) {
+          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+          console.log("Location permission status:", permissionStatus.state);
+          
+          if (permissionStatus.state === 'denied') {
+            toast({
+              title: "Location Permission Required",
+              description: "Please allow location access in your browser settings to start a meeting.",
+              variant: "destructive",
+            });
+            setIsStartingMeeting(false);
             return;
           }
+        }
+
+        // Attempt to get fresh location
+        console.log("📍 Fetching fresh location for meeting start...");
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
             reject,
@@ -884,7 +940,24 @@ const handleEndMeetingWithDetails = async (
         };
         console.log("✅ Fresh start location obtained:", startLocation);
       } catch (locationError) {
-        console.warn("⚠️ Failed to get fresh location, using employee location:", locationError);
+        console.error("❌ Location access error:", locationError);
+        
+        // Show user-friendly error message
+        const errorMessage = locationError instanceof GeolocationPositionError
+          ? locationError.code === 1
+            ? "Location permission denied. Please allow location access to start a meeting."
+            : locationError.code === 2
+            ? "Unable to determine your location. Please check your device settings."
+            : "Location request timed out. Please try again."
+          : "Failed to access location. Please allow location permission to start a meeting.";
+        
+        toast({
+          title: "Location Required",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setIsStartingMeeting(false);
+        return;
       }
 
       const response = await HttpClient.post("/api/meetings", {
@@ -967,7 +1040,7 @@ const handleEndMeetingWithDetails = async (
       const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
       console.log("📋 Storing follow-up data for meeting:", followUpData);
       
-      // 🔹 CRITICAL FIX: Get fresh location before starting meeting
+      // 🔹 MANDATORY: Check location permission before starting meeting
       let startLocation = {
         lat: employee.location.lat,
         lng: employee.location.lng,
@@ -975,12 +1048,32 @@ const handleEndMeetingWithDetails = async (
       };
 
       try {
-        console.log("📍 Fetching fresh location for meeting start...");
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error("Geolocation not supported"));
+        console.log("📍 Checking location permission for meeting start...");
+        
+        // Check if geolocation is supported
+        if (!navigator.geolocation) {
+          throw new Error("Geolocation is not supported by your browser");
+        }
+
+        // Check permission status
+        if (navigator.permissions) {
+          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+          console.log("Location permission status:", permissionStatus.state);
+          
+          if (permissionStatus.state === 'denied') {
+            toast({
+              title: "Location Permission Required",
+              description: "Please allow location access in your browser settings to start a meeting.",
+              variant: "destructive",
+            });
+            setIsStartingMeeting(false);
             return;
           }
+        }
+
+        // Attempt to get fresh location
+        console.log("📍 Fetching fresh location for meeting start...");
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
             reject,
@@ -1022,7 +1115,24 @@ const handleEndMeetingWithDetails = async (
         };
         console.log("✅ Fresh start location obtained:", startLocation);
       } catch (locationError) {
-        console.warn("⚠️ Failed to get fresh location, using employee location:", locationError);
+        console.error("❌ Location access error:", locationError);
+        
+        // Show user-friendly error message
+        const errorMessage = locationError instanceof GeolocationPositionError
+          ? locationError.code === 1
+            ? "Location permission denied. Please allow location access to start a meeting."
+            : locationError.code === 2
+            ? "Unable to determine your location. Please check your device settings."
+            : "Location request timed out. Please try again."
+          : "Failed to access location. Please allow location permission to start a meeting.";
+        
+        toast({
+          title: "Location Required",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setIsStartingMeeting(false);
+        return;
       }
 
       const response = await HttpClient.post("/api/meetings", {

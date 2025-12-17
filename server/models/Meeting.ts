@@ -54,6 +54,8 @@ export interface IMeeting extends Document {
  followUpId?: string; // Follow-up meeting ID from external API
  meetingDetails?: MeetingDetails;
  externalMeetingStatus?: string; // Status from external follow-up API
+ approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+ approvalReason?: string; // Reason for approval/rejection
  createdAt: Date;
  updatedAt: Date;
 }
@@ -157,6 +159,14 @@ const MeetingSchema = new Schema({
  },
  meetingDetails: MeetingDetailsSchema,
  externalMeetingStatus: {
+   type: String
+ },
+ approvalStatus: {
+   type: String,
+   enum: ['ok', 'not_ok'],
+   index: true
+ },
+ approvalReason: {
    type: String
  }
 }, {

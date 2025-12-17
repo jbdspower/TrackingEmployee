@@ -95,6 +95,9 @@ interface EmployeeMeetingRecord {
   totalStayTime: number;
   discussion: string;
   meetingPerson: string;
+  meetingId?: string;
+  approvalStatus?: 'ok' | 'not_ok';
+  approvalReason?: string;
 }
 
 interface DashboardFilters {
@@ -157,6 +160,21 @@ export default function Dashboard() {
         attendanceReason: string;
         isEditing: boolean;
         isSaving: boolean;
+      }
+    >
+  >({});
+
+  // Meeting approval editing state
+  const [meetingApprovalEdits, setMeetingApprovalEdits] = useState<
+    Record<
+      string,
+      {
+        approvalStatus: 'ok' | 'not_ok' | '';
+        approvalReason: string;
+        isEditing: boolean;
+        isSaving: boolean;
+        meetingId?: string;
+        meetingKey: string; // Composite key for meetings without ID
       }
     >
   >({});
@@ -397,6 +415,19 @@ export default function Dashboard() {
         const dayRecords = data.dayRecords || [];
         const meetingRecords = data.meetingRecords || [];
         
+        // Debug: Log meeting records to check structure
+        if (meetingRecords.length > 0) {
+          console.log(`🔍 First meeting record structure:`, meetingRecords[0]);
+          console.log(`🔍 Meeting ID present?`, !!meetingRecords[0].meetingId);
+          console.log(`🔍 All meeting IDs:`, meetingRecords.map((m: any) => ({ 
+            meetingId: m.meetingId, 
+            hasId: !!m.meetingId,
+            company: m.companyName 
+          })));
+        } else {
+          console.warn(`⚠️ No meeting records received from API`);
+        }
+        
         // Fetch attendance data and merge with day records
         try {
           const attendanceParams = new URLSearchParams({ employeeId });
@@ -448,6 +479,21 @@ export default function Dashboard() {
         }
         
         console.log(`📊 Setting state with ${dayRecords.length} day records and ${meetingRecords.length} meeting records`);
+        
+        // Debug: Check if meetingId is present in records
+        if (meetingRecords.length > 0) {
+          console.log(`📋 Sample meeting record:`, meetingRecords[0]);
+          const meetingsWithoutId = meetingRecords.filter((m: any) => !m.meetingId);
+          if (meetingsWithoutId.length > 0) {
+            console.error(`❌ ${meetingsWithoutId.length} meetings are missing IDs!`, meetingsWithoutId);
+          }
+          console.log(`📋 Meeting IDs:`, meetingRecords.map((m: any) => ({ 
+            id: m.meetingId, 
+            company: m.companyName,
+            hasId: !!m.meetingId 
+          })));
+        }
+        
         setEmployeeDayRecords(dayRecords);
         setEmployeeMeetingRecords(meetingRecords);
       } else {
@@ -756,6 +802,184 @@ export default function Dashboard() {
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
     return `${h}h ${m}m`;
+  };
+
+  // Meeting approval management functions
+  const approvalOptions = [
+    { value: "ok", label: "OK" },
+    { value: "not_ok", label: "Not OK" },
+  ];
+
+  // Generate a unique key for a meeting record (fallback when meetingId is not available)
+  const getMeetingKey = (record: EmployeeMeetingRecord): string => {
+    if (record.meetingId) {
+      return record.meetingId;
+    }
+    // Use composite key: date + company + meetingInTime
+    return `${record.date}_${record.companyName}_${record.meetingInTime}`.replace(/\s+/g, '_');
+  };
+
+  const handleEditMeetingApproval = (
+    record: EmployeeMeetingRecord,
+  ) => {
+    const meetingKey = getMeetingKey(record);
+    
+    console.log(`✏️ Editing meeting approval for: ${meetingKey}`, {
+      meetingId: record.meetingId,
+      company: record.companyName,
+      date: record.date
+    });
+    
+    setMeetingApprovalEdits((prev) => ({
+      ...prev,
+      [meetingKey]: {
+        approvalStatus: record.approvalStatus || '',
+        approvalReason: record.approvalReason || "",
+        isEditing: true,
+        isSaving: false,
+        meetingId: record.meetingId,
+        meetingKey: meetingKey,
+      },
+    }));
+  };
+
+  const handleCancelMeetingApprovalEdit = (meetingKey: string) => {
+    setMeetingApprovalEdits((prev) => {
+      const newEdits = { ...prev };
+      delete newEdits[meetingKey];
+      return newEdits;
+    });
+  };
+
+  const handleMeetingApprovalStatusChange = (meetingKey: string, status: 'ok' | 'not_ok') => {
+    setMeetingApprovalEdits((prev) => ({
+      ...prev,
+      [meetingKey]: {
+        ...prev[meetingKey],
+        approvalStatus: status,
+      },
+    }));
+  };
+
+  const handleMeetingApprovalReasonChange = (meetingKey: string, reason: string) => {
+    setMeetingApprovalEdits((prev) => ({
+      ...prev,
+      [meetingKey]: {
+        ...prev[meetingKey],
+        approvalReason: reason,
+      },
+    }));
+  };
+
+  const handleSaveMeetingApproval = async (meetingKey: string) => {
+    const editData = meetingApprovalEdits[meetingKey];
+    if (!editData || !editData.approvalStatus) {
+      alert("Please select an approval status");
+      return;
+    }
+
+    if (!editData.approvalReason.trim()) {
+      alert("Please provide a reason for your approval decision");
+      return;
+    }
+
+    // Find the meeting record to get all its details
+    const meetingRecord = employeeMeetingRecords.find(
+      (record) => getMeetingKey(record) === meetingKey
+    );
+
+    if (!meetingRecord) {
+      console.error("❌ Cannot find meeting record for key:", meetingKey);
+      alert("Error: Meeting record not found.");
+      return;
+    }
+
+    console.log(`💾 Saving meeting approval for ${meetingKey}:`, {
+      meetingId: editData.meetingId,
+      employeeId: selectedEmployee,
+      date: meetingRecord.date,
+      company: meetingRecord.companyName,
+      status: editData.approvalStatus,
+      reason: editData.approvalReason
+    });
+
+    setMeetingApprovalEdits((prev) => ({
+      ...prev,
+      [meetingKey]: {
+        ...prev[meetingKey],
+        isSaving: true,
+      },
+    }));
+
+    try {
+      let response;
+      
+      // If we have a meetingId, use the direct endpoint
+      if (editData.meetingId) {
+        const url = `/api/meetings/${editData.meetingId}/approval`;
+        console.log(`📡 Sending PUT request to: ${url}`);
+        
+        response = await HttpClient.put(url, {
+          approvalStatus: editData.approvalStatus,
+          approvalReason: editData.approvalReason,
+        });
+      } else {
+        // Otherwise, use composite key to find and update the meeting
+        const url = `/api/meetings/approval-by-details`;
+        console.log(`📡 Sending PUT request to: ${url} (using composite key)`);
+        
+        response = await HttpClient.put(url, {
+          employeeId: selectedEmployee,
+          date: meetingRecord.date,
+          companyName: meetingRecord.companyName,
+          meetingInTime: meetingRecord.meetingInTime,
+          approvalStatus: editData.approvalStatus,
+          approvalReason: editData.approvalReason,
+        });
+      }
+
+      console.log(`📡 Response status: ${response.status}`);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Meeting approval saved successfully:`, result);
+        
+        // Update the meeting record in state using the meetingKey
+        setEmployeeMeetingRecords((prev) =>
+          prev.map((record) => {
+            const recordKey = getMeetingKey(record);
+            return recordKey === meetingKey
+              ? {
+                  ...record,
+                  approvalStatus: editData.approvalStatus as 'ok' | 'not_ok',
+                  approvalReason: editData.approvalReason,
+                }
+              : record;
+          })
+        );
+
+        // Clear the editing state
+        handleCancelMeetingApprovalEdit(meetingKey);
+
+        console.log(`✅ Meeting approval updated in UI for ${meetingKey}`);
+      } else {
+        console.error(`❌ Failed to save meeting approval - Status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Error response:`, errorText);
+        alert("Failed to save meeting approval. Please try again.");
+      }
+    } catch (error) {
+      console.error("❌ Error saving meeting approval:", error);
+      alert("Error saving meeting approval. Please try again.");
+    } finally {
+      setMeetingApprovalEdits((prev) => ({
+        ...prev,
+        [meetingKey]: {
+          ...prev[meetingKey],
+          isSaving: false,
+        },
+      }));
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -1507,6 +1731,9 @@ export default function Dashboard() {
                                       <TableHead>Total Stay Time</TableHead>
                                       <TableHead>Discussion</TableHead>
                                       <TableHead>Meeting Person</TableHead>
+                                      <TableHead>Approval Status</TableHead>
+                                      <TableHead>Approval Reason</TableHead>
+                                      <TableHead>Actions</TableHead>
                                       <TableHead>History</TableHead>
                                     </TableRow>
                                   </TableHeader>
@@ -1558,6 +1785,147 @@ export default function Dashboard() {
                                           <TableCell>
                                             {record.meetingPerson}
                                           </TableCell>
+
+                                          {/* Approval Status */}
+                                          <TableCell>
+                                            {(() => {
+                                              const meetingKey = getMeetingKey(record);
+                                              return meetingApprovalEdits[meetingKey]?.isEditing ? (
+                                                <Select
+                                                  value={
+                                                    meetingApprovalEdits[meetingKey]
+                                                      .approvalStatus
+                                                  }
+                                                  onValueChange={(value) =>
+                                                    handleMeetingApprovalStatusChange(
+                                                      meetingKey,
+                                                      value as 'ok' | 'not_ok',
+                                                    )
+                                                  }
+                                                >
+                                                  <SelectTrigger className="w-28">
+                                                    <SelectValue placeholder="Select..." />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {approvalOptions.map(
+                                                      (option) => (
+                                                        <SelectItem
+                                                          key={option.value}
+                                                          value={option.value}
+                                                        >
+                                                          {option.label}
+                                                        </SelectItem>
+                                                      ),
+                                                    )}
+                                                  </SelectContent>
+                                                </Select>
+                                              ) : (
+                                                <div className="flex items-center space-x-2">
+                                                  {record.approvalStatus ? (
+                                                    <Badge
+                                                      variant={
+                                                        record.approvalStatus === 'ok'
+                                                          ? 'default'
+                                                          : 'destructive'
+                                                      }
+                                                      className={
+                                                        record.approvalStatus === 'ok'
+                                                          ? 'bg-success text-success-foreground'
+                                                          : ''
+                                                      }
+                                                    >
+                                                      {record.approvalStatus === 'ok' ? 'OK' : 'Not OK'}
+                                                    </Badge>
+                                                  ) : (
+                                                    <span className="text-xs text-muted-foreground">
+                                                      Not reviewed
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              );
+                                            })()}
+                                          </TableCell>
+
+                                          {/* Approval Reason */}
+                                          <TableCell>
+                                            {(() => {
+                                              const meetingKey = getMeetingKey(record);
+                                              return meetingApprovalEdits[meetingKey]?.isEditing ? (
+                                                <Textarea
+                                                  value={
+                                                    meetingApprovalEdits[meetingKey]
+                                                      .approvalReason
+                                                  }
+                                                  onChange={(e) =>
+                                                    handleMeetingApprovalReasonChange(
+                                                      meetingKey,
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                  placeholder="Enter reason (required)..."
+                                                  className="w-48 h-16 text-xs"
+                                                />
+                                              ) : (
+                                                <div className="max-w-48 text-xs">
+                                                  {record.approvalReason || "-"}
+                                                </div>
+                                              );
+                                            })()}
+                                          </TableCell>
+
+                                          {/* Actions */}
+                                          <TableCell>
+                                            {(() => {
+                                              const meetingKey = getMeetingKey(record);
+                                              return meetingApprovalEdits[meetingKey]?.isEditing ? (
+                                                <div className="flex items-center space-x-1">
+                                                  <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                      handleSaveMeetingApproval(meetingKey)
+                                                    }
+                                                    disabled={
+                                                      meetingApprovalEdits[meetingKey]?.isSaving
+                                                    }
+                                                    className="h-7 px-2"
+                                                  >
+                                                    {meetingApprovalEdits[meetingKey]
+                                                      ?.isSaving ? (
+                                                      <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                                                    ) : (
+                                                      <Save className="h-3 w-3" />
+                                                    )}
+                                                  </Button>
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() =>
+                                                      handleCancelMeetingApprovalEdit(meetingKey)
+                                                    }
+                                                    disabled={
+                                                      meetingApprovalEdits[meetingKey]?.isSaving
+                                                    }
+                                                    className="h-7 px-2"
+                                                  >
+                                                    ✕
+                                                  </Button>
+                                                </div>
+                                              ) : (
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() =>
+                                                    handleEditMeetingApproval(record)
+                                                  }
+                                                  className="h-7 px-2"
+                                                  title="Edit approval"
+                                                >
+                                                  <Edit className="h-3 w-3" />
+                                                </Button>
+                                              );
+                                            })()}
+                                          </TableCell>
+
                                           <TableCell>
                                             <Button
                                               variant="outline"

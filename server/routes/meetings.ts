@@ -84,6 +84,8 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
     leadInfo: meeting.leadInfo,
     followUpId: meeting.followUpId, // 🔹 Include follow-up ID
     meetingDetails: meeting.meetingDetails,
+    approvalStatus: meeting.approvalStatus, // Meeting approval status
+    approvalReason: meeting.approvalReason, // Meeting approval reason
   };
 }
 
@@ -532,5 +534,147 @@ export const clearGeocodeCache: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error("Error clearing cache:", error);
     res.status(500).json({ error: "Failed to clear cache" });
+  }
+};
+
+// Update meeting approval status
+export const updateMeetingApproval: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approvalStatus, approvalReason } = req.body;
+
+    // Validate inputs
+    if (!approvalStatus || !['ok', 'not_ok'].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    }
+
+    if (!approvalReason || !approvalReason.trim()) {
+      return res.status(400).json({ error: "Approval reason is required" });
+    }
+
+    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason });
+
+    try {
+      const updatedMeeting = await Meeting.findByIdAndUpdate(
+        id,
+        { 
+          $set: { 
+            approvalStatus, 
+            approvalReason: approvalReason.trim() 
+          } 
+        },
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedMeeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      console.log("✅ Meeting approval updated:", updatedMeeting._id);
+      
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      res.json({ 
+        success: true, 
+        meeting: meetingLog,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason
+      });
+    } catch (dbError) {
+      console.error("MongoDB update failed:", dbError);
+      res.status(500).json({ error: "Failed to update meeting approval" });
+    }
+  } catch (error) {
+    console.error("Error updating meeting approval:", error);
+    res.status(500).json({ error: "Failed to update meeting approval" });
+  }
+};
+
+// Update meeting approval by composite details (when meetingId is not available)
+export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) => {
+  try {
+    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason } = req.body;
+
+    // Validate inputs
+    if (!employeeId || !date || !companyName || !meetingInTime) {
+      return res.status(400).json({ error: "Employee ID, date, company name, and meeting time are required" });
+    }
+
+    if (!approvalStatus || !['ok', 'not_ok'].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    }
+
+    if (!approvalReason || !approvalReason.trim()) {
+      return res.status(400).json({ error: "Approval reason is required" });
+    }
+
+    console.log(`📝 Updating meeting approval by details:`, { 
+      employeeId, 
+      date, 
+      companyName, 
+      meetingInTime,
+      approvalStatus, 
+      approvalReason 
+    });
+
+    try {
+      // Parse the date and time to create a date range for the query
+      const startOfDayDate = new Date(date);
+      startOfDayDate.setHours(0, 0, 0, 0);
+      
+      const endOfDayDate = new Date(date);
+      endOfDayDate.setHours(23, 59, 59, 999);
+
+      // Find the meeting by composite details
+      const meeting = await Meeting.findOne({
+        employeeId: employeeId,
+        clientName: companyName,
+        startTime: {
+          $gte: startOfDayDate.toISOString(),
+          $lte: endOfDayDate.toISOString()
+        }
+      }).lean();
+
+      if (!meeting) {
+        console.error("❌ Meeting not found with details:", { employeeId, date, companyName });
+        return res.status(404).json({ 
+          error: "Meeting not found",
+          details: { employeeId, date, companyName, meetingInTime }
+        });
+      }
+
+      console.log(`✅ Found meeting by details: ${meeting._id}`);
+
+      // Update the meeting
+      const updatedMeeting = await Meeting.findByIdAndUpdate(
+        meeting._id,
+        { 
+          $set: { 
+            approvalStatus, 
+            approvalReason: approvalReason.trim() 
+          } 
+        },
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedMeeting) {
+        return res.status(404).json({ error: "Failed to update meeting" });
+      }
+
+      console.log("✅ Meeting approval updated by details:", updatedMeeting._id);
+      
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      res.json({ 
+        success: true, 
+        meeting: meetingLog,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason
+      });
+    } catch (dbError) {
+      console.error("MongoDB update failed:", dbError);
+      res.status(500).json({ error: "Failed to update meeting approval" });
+    }
+  } catch (error) {
+    console.error("Error updating meeting approval by details:", error);
+    res.status(500).json({ error: "Failed to update meeting approval" });
   }
 };

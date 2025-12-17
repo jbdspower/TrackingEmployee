@@ -444,19 +444,31 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       // Get ALL meetings for this employee, then filter by date range
       const mongoMeetings = await Meeting.find({ employeeId }).lean();
 
-      actualMeetings = mongoMeetings.map(meeting => ({
-        id: meeting._id.toString(),
-        employeeId: meeting.employeeId,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime,
-        clientName: meeting.clientName,
-        leadId: meeting.leadId,
-        status: meeting.status,
-        meetingDetails: meeting.meetingDetails,
-        location: meeting.location
-      }));
+      actualMeetings = mongoMeetings.map(meeting => {
+        if (!meeting._id) {
+          console.error(`❌ Meeting from MongoDB has no _id:`, meeting);
+        }
+        return {
+          id: meeting._id ? meeting._id.toString() : undefined,
+          employeeId: meeting.employeeId,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          clientName: meeting.clientName,
+          leadId: meeting.leadId,
+          status: meeting.status,
+          meetingDetails: meeting.meetingDetails,
+          location: meeting.location,
+          approvalStatus: meeting.approvalStatus,
+          approvalReason: meeting.approvalReason
+        };
+      });
 
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
+      
+      // Debug: Log IDs of all meetings
+      if (actualMeetings.length > 0) {
+        console.log(`📋 Meeting IDs from MongoDB:`, actualMeetings.map(m => ({ id: m.id, hasId: !!m.id })));
+      }
       console.log(`Employee details date range: ${start.toISOString()} to ${end.toISOString()}`);
 
       // If no MongoDB data, fallback to in-memory
@@ -490,6 +502,15 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     });
 
     console.log(`Filtered to ${employeeMeetings.length} meetings in date range for employee ${employeeId}`);
+    
+    // Debug: Check if filtered meetings still have IDs
+    if (employeeMeetings.length > 0) {
+      console.log(`📋 Filtered meeting IDs:`, employeeMeetings.map(m => ({ 
+        id: m.id, 
+        hasId: !!m.id,
+        client: m.clientName 
+      })));
+    }
 
     // 🔹 NEW: Get tracking sessions for attendance (login/logout)
     let trackingSessions: any[] = [];
@@ -604,11 +625,11 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         ? lastMeeting.location.endLocation.address
         : (lastMeeting?.location?.address || ""); // Fallback to start location if end location not available
 
-      // Calculate total duty hours from tracking session if available
+      // Calculate total duty hours from first meeting start to last meeting end
       let totalDutyHours = 8; // Default
-      if (firstSession && lastSession?.endTime) {
-        const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1000 * 60 * 60);
-        totalDutyHours = Math.max(0, sessionDuration);
+      if (firstMeeting && lastMeeting?.endTime) {
+        const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1000 * 60 * 60);
+        totalDutyHours = Math.max(0, dutyDuration);
       }
 
       // 🔹 NEW: Get attendance info for this date
@@ -640,14 +661,22 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     // Generate meeting records - Include ALL meetings (completed, in-progress, started)
     const meetingRecords = employeeMeetings.map((meeting) => {
       console.log(`📋 Generating meeting record for meeting ${meeting.id}:`, {
+        id: meeting.id,
+        hasId: !!meeting.id,
         status: meeting.status,
         clientName: meeting.clientName,
         startTime: meeting.startTime,
         endTime: meeting.endTime || 'N/A (active meeting)',
-        hasDetails: !!meeting.meetingDetails
+        hasDetails: !!meeting.meetingDetails,
+        approvalStatus: meeting.approvalStatus || 'Not reviewed'
       });
       
+      if (!meeting.id) {
+        console.error(`❌ WARNING: Meeting has no ID!`, meeting);
+      }
+      
       return {
+        meetingId: meeting.id, // Include meeting ID for approval updates
         employeeName: "", // Will be filled by client
         companyName: meeting.clientName || "Unknown Company",
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
@@ -676,6 +705,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         externalMeetingStatus: meeting.externalMeetingStatus || "", // 🔹 NEW: Status from external follow-up API
         incomplete: meeting.meetingDetails?.incomplete || false, // Include incomplete flag
         incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
+        approvalStatus: meeting.approvalStatus || undefined, // Meeting approval status
+        approvalReason: meeting.approvalReason || undefined, // Meeting approval reason
       };
     });
 
@@ -1164,11 +1195,11 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           ? lastMeeting.location.endLocation.address
           : (lastMeeting?.location?.address || "");
 
-        // Calculate total duty hours from tracking session if available
+        // Calculate total duty hours from first meeting start to last meeting end
         let totalDutyHours = 8; // Default
-        if (firstSession && lastSession?.endTime) {
-          const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1000 * 60 * 60);
-          totalDutyHours = Math.max(0, sessionDuration);
+        if (firstMeeting && lastMeeting?.endTime) {
+          const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1000 * 60 * 60);
+          totalDutyHours = Math.max(0, dutyDuration);
         }
 
         // Get attendance info for this date

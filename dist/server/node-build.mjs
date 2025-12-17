@@ -162,6 +162,14 @@ const MeetingSchema = new Schema({
   meetingDetails: MeetingDetailsSchema$1,
   externalMeetingStatus: {
     type: String
+  },
+  approvalStatus: {
+    type: String,
+    enum: ["ok", "not_ok"],
+    index: true
+  },
+  approvalReason: {
+    type: String
   }
 }, {
   timestamps: true,
@@ -914,7 +922,11 @@ async function convertMeetingToMeetingLog(meeting) {
     leadInfo: meeting.leadInfo,
     followUpId: meeting.followUpId,
     // 🔹 Include follow-up ID
-    meetingDetails: meeting.meetingDetails
+    meetingDetails: meeting.meetingDetails,
+    approvalStatus: meeting.approvalStatus,
+    // Meeting approval status
+    approvalReason: meeting.approvalReason
+    // Meeting approval reason
   };
 }
 let inMemoryMeetings = [];
@@ -1254,6 +1266,119 @@ const getActiveMeeting = async (req, res) => {
     res.status(500).json({ error: "Failed to get active meeting" });
   }
 };
+const updateMeetingApproval = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approvalStatus, approvalReason } = req.body;
+    if (!approvalStatus || !["ok", "not_ok"].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    }
+    if (!approvalReason || !approvalReason.trim()) {
+      return res.status(400).json({ error: "Approval reason is required" });
+    }
+    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason });
+    try {
+      const updatedMeeting = await Meeting.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            approvalStatus,
+            approvalReason: approvalReason.trim()
+          }
+        },
+        { new: true, runValidators: true }
+      );
+      if (!updatedMeeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+      console.log("✅ Meeting approval updated:", updatedMeeting._id);
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      res.json({
+        success: true,
+        meeting: meetingLog,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason
+      });
+    } catch (dbError) {
+      console.error("MongoDB update failed:", dbError);
+      res.status(500).json({ error: "Failed to update meeting approval" });
+    }
+  } catch (error) {
+    console.error("Error updating meeting approval:", error);
+    res.status(500).json({ error: "Failed to update meeting approval" });
+  }
+};
+const updateMeetingApprovalByDetails = async (req, res) => {
+  try {
+    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason } = req.body;
+    if (!employeeId || !date || !companyName || !meetingInTime) {
+      return res.status(400).json({ error: "Employee ID, date, company name, and meeting time are required" });
+    }
+    if (!approvalStatus || !["ok", "not_ok"].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    }
+    if (!approvalReason || !approvalReason.trim()) {
+      return res.status(400).json({ error: "Approval reason is required" });
+    }
+    console.log(`📝 Updating meeting approval by details:`, {
+      employeeId,
+      date,
+      companyName,
+      meetingInTime,
+      approvalStatus,
+      approvalReason
+    });
+    try {
+      const startOfDayDate = new Date(date);
+      startOfDayDate.setHours(0, 0, 0, 0);
+      const endOfDayDate = new Date(date);
+      endOfDayDate.setHours(23, 59, 59, 999);
+      const meeting = await Meeting.findOne({
+        employeeId,
+        clientName: companyName,
+        startTime: {
+          $gte: startOfDayDate.toISOString(),
+          $lte: endOfDayDate.toISOString()
+        }
+      }).lean();
+      if (!meeting) {
+        console.error("❌ Meeting not found with details:", { employeeId, date, companyName });
+        return res.status(404).json({
+          error: "Meeting not found",
+          details: { employeeId, date, companyName, meetingInTime }
+        });
+      }
+      console.log(`✅ Found meeting by details: ${meeting._id}`);
+      const updatedMeeting = await Meeting.findByIdAndUpdate(
+        meeting._id,
+        {
+          $set: {
+            approvalStatus,
+            approvalReason: approvalReason.trim()
+          }
+        },
+        { new: true, runValidators: true }
+      );
+      if (!updatedMeeting) {
+        return res.status(404).json({ error: "Failed to update meeting" });
+      }
+      console.log("✅ Meeting approval updated by details:", updatedMeeting._id);
+      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      res.json({
+        success: true,
+        meeting: meetingLog,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason
+      });
+    } catch (dbError) {
+      console.error("MongoDB update failed:", dbError);
+      res.status(500).json({ error: "Failed to update meeting approval" });
+    }
+  } catch (error) {
+    console.error("Error updating meeting approval by details:", error);
+    res.status(500).json({ error: "Failed to update meeting approval" });
+  }
+};
 const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   createMeeting,
@@ -1262,7 +1387,9 @@ const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProp
   getMeeting,
   getMeetings,
   inMemoryMeetings,
-  updateMeeting
+  updateMeeting,
+  updateMeetingApproval,
+  updateMeetingApprovalByDetails
 }, Symbol.toStringTag, { value: "Module" }));
 let lastGeocodingTime = 0;
 const GEOCODING_DELAY = 1e3;
@@ -2241,18 +2368,28 @@ const getEmployeeDetails = async (req, res) => {
     let actualMeetings = [];
     try {
       const mongoMeetings = await Meeting.find({ employeeId }).lean();
-      actualMeetings = mongoMeetings.map((meeting) => ({
-        id: meeting._id.toString(),
-        employeeId: meeting.employeeId,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime,
-        clientName: meeting.clientName,
-        leadId: meeting.leadId,
-        status: meeting.status,
-        meetingDetails: meeting.meetingDetails,
-        location: meeting.location
-      }));
+      actualMeetings = mongoMeetings.map((meeting) => {
+        if (!meeting._id) {
+          console.error(`❌ Meeting from MongoDB has no _id:`, meeting);
+        }
+        return {
+          id: meeting._id ? meeting._id.toString() : void 0,
+          employeeId: meeting.employeeId,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          clientName: meeting.clientName,
+          leadId: meeting.leadId,
+          status: meeting.status,
+          meetingDetails: meeting.meetingDetails,
+          location: meeting.location,
+          approvalStatus: meeting.approvalStatus,
+          approvalReason: meeting.approvalReason
+        };
+      });
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
+      if (actualMeetings.length > 0) {
+        console.log(`📋 Meeting IDs from MongoDB:`, actualMeetings.map((m) => ({ id: m.id, hasId: !!m.id })));
+      }
       console.log(`Employee details date range: ${start.toISOString()} to ${end.toISOString()}`);
       if (actualMeetings.length === 0) {
         const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
@@ -2278,6 +2415,13 @@ const getEmployeeDetails = async (req, res) => {
       return inDateRange;
     });
     console.log(`Filtered to ${employeeMeetings.length} meetings in date range for employee ${employeeId}`);
+    if (employeeMeetings.length > 0) {
+      console.log(`📋 Filtered meeting IDs:`, employeeMeetings.map((m) => ({
+        id: m.id,
+        hasId: !!m.id,
+        client: m.clientName
+      })));
+    }
     let trackingSessions2 = [];
     try {
       const { TrackingSession: TrackingSession2 } = await import("./index-BZmtEn10.js");
@@ -2361,9 +2505,9 @@ const getEmployeeDetails = async (req, res) => {
       const outLocationTime = lastMeeting?.endTime || "";
       const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : lastMeeting?.location?.address || "";
       let totalDutyHours = 8;
-      if (firstSession && lastSession?.endTime) {
-        const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1e3 * 60 * 60);
-        totalDutyHours = Math.max(0, sessionDuration);
+      if (firstMeeting && lastMeeting?.endTime) {
+        const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1e3 * 60 * 60);
+        totalDutyHours = Math.max(0, dutyDuration);
       }
       const attendance = attendanceRecords.find((att) => att.date === date);
       const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
@@ -2388,13 +2532,21 @@ const getEmployeeDetails = async (req, res) => {
     });
     const meetingRecords = employeeMeetings.map((meeting) => {
       console.log(`📋 Generating meeting record for meeting ${meeting.id}:`, {
+        id: meeting.id,
+        hasId: !!meeting.id,
         status: meeting.status,
         clientName: meeting.clientName,
         startTime: meeting.startTime,
         endTime: meeting.endTime || "N/A (active meeting)",
-        hasDetails: !!meeting.meetingDetails
+        hasDetails: !!meeting.meetingDetails,
+        approvalStatus: meeting.approvalStatus || "Not reviewed"
       });
+      if (!meeting.id) {
+        console.error(`❌ WARNING: Meeting has no ID!`, meeting);
+      }
       return {
+        meetingId: meeting.id,
+        // Include meeting ID for approval updates
         employeeName: "",
         // Will be filled by client
         companyName: meeting.clientName || "Unknown Company",
@@ -2418,8 +2570,12 @@ const getEmployeeDetails = async (req, res) => {
         // 🔹 NEW: Status from external follow-up API
         incomplete: meeting.meetingDetails?.incomplete || false,
         // Include incomplete flag
-        incompleteReason: meeting.meetingDetails?.incompleteReason || ""
+        incompleteReason: meeting.meetingDetails?.incompleteReason || "",
         // Include incomplete reason
+        approvalStatus: meeting.approvalStatus || void 0,
+        // Meeting approval status
+        approvalReason: meeting.approvalReason || void 0
+        // Meeting approval reason
       };
     });
     const finalResult = {
@@ -2788,9 +2944,9 @@ const getAllEmployeesDetails = async (req, res) => {
         const outLocationTime = lastMeeting?.endTime || "";
         const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : lastMeeting?.location?.address || "";
         let totalDutyHours = 8;
-        if (firstSession && lastSession?.endTime) {
-          const sessionDuration = (new Date(lastSession.endTime).getTime() - new Date(firstSession.startTime).getTime()) / (1e3 * 60 * 60);
-          totalDutyHours = Math.max(0, sessionDuration);
+        if (firstMeeting && lastMeeting?.endTime) {
+          const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1e3 * 60 * 60);
+          totalDutyHours = Math.max(0, dutyDuration);
         }
         const attendance = attendanceRecords.find((att) => att.date === date && att.employeeId === employee.id);
         const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
@@ -3509,6 +3665,8 @@ function createServer() {
   app2.get("/api/meetings/active", getActiveMeeting);
   app2.get("/api/meetings/:id", getMeeting);
   app2.put("/api/meetings/:id", updateMeeting);
+  app2.put("/api/meetings/:id/approval", updateMeetingApproval);
+  app2.put("/api/meetings/approval-by-details", updateMeetingApprovalByDetails);
   app2.delete("/api/meetings/:id", deleteMeeting);
   app2.get("/api/tracking-sessions", getTrackingSessions);
   app2.post("/api/tracking-sessions", createTrackingSession);
