@@ -86,8 +86,10 @@ export function createServer() {
 
   // Middleware
   app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Increase body size limit to handle file attachments (base64 encoded)
+  // 20MB limit allows for ~15MB of base64 data (which is ~11MB of original files)
+  app.use(express.json({ limit: '20mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
   // Request logging
   app.use((req, res, next) => {

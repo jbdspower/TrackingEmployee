@@ -16,6 +16,7 @@ interface CustomerContact {
 interface MeetingDetails {
  customers: CustomerContact[];
  discussion: string;
+ attachments?: string[]; // Array of base64 encoded files or URLs
  // Legacy fields for backward compatibility
  customerName?: string;
  customerEmployeeName?: string;
@@ -57,6 +58,7 @@ export interface IMeeting extends Document {
  approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
  approvalReason?: string; // Reason for approval/rejection
  approvedBy?: string | null; // userId who approved the meeting
+ attachments?: string[]; // Array of attachment file URLs/paths
  createdAt: Date;
  updatedAt: Date;
 }
@@ -77,6 +79,7 @@ const CustomerContactSchema = new Schema({
 const MeetingDetailsSchema = new Schema({
  customers: [CustomerContactSchema],
  discussion: { type: String, required: true },
+ attachments: { type: [String], default: [] }, // Array of base64 encoded files or URLs
  // Legacy fields
  customerName: { type: String },
  customerEmployeeName: { type: String },
@@ -173,6 +176,10 @@ const MeetingSchema = new Schema({
  approvedBy: {
    type: String,
    default: null // userId who approved the meeting
+ },
+ attachments: {
+   type: [String],
+   default: [] // Array of attachment file URLs/paths
  }
 }, {
  timestamps: true,

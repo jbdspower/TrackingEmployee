@@ -91,6 +91,8 @@ const CustomerContactSchema$1 = new Schema({
 const MeetingDetailsSchema$1 = new Schema({
   customers: [CustomerContactSchema$1],
   discussion: { type: String, required: true },
+  attachments: { type: [String], default: [] },
+  // Array of base64 encoded files or URLs
   // Legacy fields
   customerName: { type: String },
   customerEmployeeName: { type: String },
@@ -175,6 +177,11 @@ const MeetingSchema = new Schema({
     type: String,
     default: null
     // userId who approved the meeting
+  },
+  attachments: {
+    type: [String],
+    default: []
+    // Array of attachment file URLs/paths
   }
 }, {
   timestamps: true,
@@ -1133,6 +1140,16 @@ const updateMeeting = async (req, res) => {
     const updates = req.body;
     console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
     console.log(`📍 End location in request:`, updates.endLocation);
+    if (updates.meetingDetails?.attachments) {
+      console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
+      updates.meetingDetails.attachments.forEach((att, idx) => {
+        const size = att.length;
+        const type = att.match(/data:([^;]+);/)?.[1] || "unknown";
+        console.log(`   File ${idx + 1}: ${type}, ${(size / 1024).toFixed(2)} KB`);
+      });
+    } else {
+      console.log(`📎 No attachments in request`);
+    }
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
     }
@@ -1165,7 +1182,17 @@ const updateMeeting = async (req, res) => {
       if (updatedMeeting.location?.endLocation) {
         console.log("✅ End location saved:", updatedMeeting.location.endLocation);
       }
+      if (updatedMeeting.meetingDetails?.attachments) {
+        console.log(`✅ Attachments stored: ${updatedMeeting.meetingDetails.attachments.length} files`);
+      } else {
+        console.log(`⚠️ No attachments in stored meeting`);
+      }
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      if (meetingLog.meetingDetails?.attachments) {
+        console.log(`✅ Attachments in response: ${meetingLog.meetingDetails.attachments.length} files`);
+      } else {
+        console.log(`⚠️ No attachments in response`);
+      }
       res.json(meetingLog);
       return;
     } catch (dbError) {
@@ -2607,8 +2634,10 @@ const getEmployeeDetails = async (req, res) => {
         // Meeting approval reason
         approvedBy: meeting.approvedBy || void 0,
         // User ID who approved the meeting
-        approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0
+        approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0,
         // Name of user who approved
+        attachments: meeting.meetingDetails?.attachments || meeting.attachments || []
+        // Attachment files
       };
     });
     const finalResult = {
@@ -3022,7 +3051,8 @@ const getAllEmployeesDetails = async (req, res) => {
           approvalStatus: meeting.approvalStatus || void 0,
           approvalReason: meeting.approvalReason || void 0,
           approvedBy: meeting.approvedBy || void 0,
-          approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0
+          approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0,
+          attachments: meeting.meetingDetails?.attachments || meeting.attachments || []
         };
       });
       return {
@@ -3668,8 +3698,8 @@ function createServer() {
   };
   initializeDatabase();
   app2.use(cors());
-  app2.use(express__default.json());
-  app2.use(express__default.urlencoded({ extended: true }));
+  app2.use(express__default.json({ limit: "20mb" }));
+  app2.use(express__default.urlencoded({ extended: true, limit: "20mb" }));
   app2.use((req, res, next) => {
     console.log(`${req.method} ${req.path} - ${(/* @__PURE__ */ new Date()).toISOString()}`);
     next();

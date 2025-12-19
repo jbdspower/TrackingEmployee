@@ -415,6 +415,7 @@ export function EndMeetingModal({
     console.log("EndMeetingModal: Form data before validation:", formData);
     console.log("EndMeetingModal: Selected customers:", selectedCustomers);
     console.log("EndMeetingModal: Discussion:", formData.discussion);
+    console.log("EndMeetingModal: Attached files:", attachedFiles.length);
 
     const isValid = validateForm();
     console.log("EndMeetingModal: Validation result:", isValid);
@@ -429,11 +430,39 @@ export function EndMeetingModal({
       return;
     }
 
-    console.log("✅ EndMeetingModal: Validation passed, submitting...");
+    console.log("✅ EndMeetingModal: Validation passed, processing files...");
     setIsSubmitting(true);
     try {
-      console.log("EndMeetingModal: Calling onEndMeeting with form data:", formData);
-      await onEndMeeting(formData);
+      // Convert files to base64 for storage
+      const attachmentPromises = attachedFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = reader.result as string;
+            // Store as data URL (includes file type)
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      });
+
+      console.log("📎 Converting files to base64...");
+      const attachments = await Promise.all(attachmentPromises);
+      console.log(`✅ Converted ${attachments.length} files to base64`);
+
+      // Include attachments in meeting details
+      const meetingDetailsWithAttachments = {
+        ...formData,
+        attachments: attachments.length > 0 ? attachments : undefined
+      };
+
+      console.log("EndMeetingModal: Calling onEndMeeting with attachments:", {
+        ...meetingDetailsWithAttachments,
+        attachments: attachments.length > 0 ? `${attachments.length} files` : 'none'
+      });
+      
+      await onEndMeeting(meetingDetailsWithAttachments);
       console.log("✅ Meeting ended successfully, clearing temp employees");
       // Clear temporary employees after successful meeting end
       if (customerSelectorRef.current) {
@@ -442,7 +471,11 @@ export function EndMeetingModal({
       handleClose();
     } catch (error) {
       console.error("❌ Error ending meeting:", error);
-      // Error is handled by parent component
+      toast({
+        title: "Error",
+        description: "Failed to end meeting. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -542,13 +575,46 @@ export function EndMeetingModal({
     const files = e.target.files;
     if (files && files.length > 0) {
       const newFiles = Array.from(files);
-      setAttachedFiles(prev => [...prev, ...newFiles]);
-      console.log("📎 Files attached:", newFiles.map(f => f.name));
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
       
-      toast({
-        title: "Files Attached",
-        description: `${newFiles.length} file(s) attached successfully`,
-      });
+      // Validate file sizes
+      const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
+      const validFiles = newFiles.filter(f => f.size <= MAX_FILE_SIZE);
+      
+      if (oversizedFiles.length > 0) {
+        const fileNames = oversizedFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)`).join(', ');
+        toast({
+          title: "File Size Limit Exceeded",
+          description: `The following file(s) exceed 5MB limit: ${fileNames}`,
+          variant: "destructive",
+        });
+        console.warn("⚠️ Oversized files rejected:", oversizedFiles.map(f => ({ name: f.name, size: f.size })));
+      }
+      
+      if (validFiles.length > 0) {
+        // Check total size of all files (current + new)
+        const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+        const newTotalSize = validFiles.reduce((sum, f) => sum + f.size, 0);
+        const totalSize = currentTotalSize + newTotalSize;
+        const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10MB total
+        
+        if (totalSize > MAX_TOTAL_SIZE) {
+          toast({
+            title: "Total Size Limit Exceeded",
+            description: `Total file size cannot exceed 10MB. Current: ${(currentTotalSize / 1024 / 1024).toFixed(2)} MB, Adding: ${(newTotalSize / 1024 / 1024).toFixed(2)} MB`,
+            variant: "destructive",
+          });
+          console.warn("⚠️ Total size limit exceeded:", { currentTotalSize, newTotalSize, totalSize });
+        } else {
+          setAttachedFiles(prev => [...prev, ...validFiles]);
+          console.log("📎 Files attached:", validFiles.map(f => ({ name: f.name, size: `${(f.size / 1024).toFixed(2)} KB` })));
+          
+          toast({
+            title: "Files Attached",
+            description: `${validFiles.length} file(s) attached successfully`,
+          });
+        }
+      }
     }
     
     // Reset input value to allow selecting the same file again
@@ -769,9 +835,14 @@ export function EndMeetingModal({
 
           {/* File Attachment */}
           <div className="space-y-2">
-            <Label className="text-sm flex items-center space-x-2">
-              <Paperclip className="h-4 w-4" />
-              <span>Attach Files (Optional)</span>
+            <Label className="text-sm flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Paperclip className="h-4 w-4" />
+                <span>Attach Files (Optional)</span>
+              </div>
+              <span className="text-xs text-muted-foreground font-normal">
+                Max 5MB per file
+              </span>
             </Label>
             
             <input
@@ -794,12 +865,19 @@ export function EndMeetingModal({
               <Paperclip className="h-4 w-4 mr-2" />
               Choose Files
             </Button>
+            
+            <div className="text-xs text-muted-foreground">
+              Supported: Images, PDF, DOC, DOCX, XLS, XLSX • Max 5MB per file • Max 10MB total
+            </div>
 
             {/* Attached Files List */}
             {attachedFiles.length > 0 && (
               <div className="space-y-2 mt-2">
-                <div className="text-xs text-muted-foreground">
-                  {attachedFiles.length} file(s) attached
+                <div className="text-xs text-muted-foreground flex items-center justify-between">
+                  <span>{attachedFiles.length} file(s) attached</span>
+                  <span>
+                    Total: {(attachedFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB
+                  </span>
                 </div>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {attachedFiles.map((file, index) => (

@@ -100,6 +100,7 @@ interface EmployeeMeetingRecord {
   approvalReason?: string;
   approvedBy?: string;
   approvedByName?: string;
+  attachments?: string[];
 }
 
 interface DashboardFilters {
@@ -1752,6 +1753,7 @@ export default function Dashboard() {
                                       <TableHead>Approval Status</TableHead>
                                       <TableHead>Approval Reason</TableHead>
                                       <TableHead>Approved By</TableHead>
+                                      <TableHead>Attachments</TableHead>
                                       <TableHead>Actions</TableHead>
                                       <TableHead>History</TableHead>
                                     </TableRow>
@@ -1897,6 +1899,54 @@ export default function Dashboard() {
                                             <div className="text-xs text-muted-foreground">
                                               {record.approvedByName || "-"}
                                             </div>
+                                          </TableCell>
+
+                                          {/* Attachments */}
+                                          <TableCell>
+                                            {record.attachments && record.attachments.length > 0 ? (
+                                              <div className="flex flex-col space-y-1">
+                                                {record.attachments.map((attachment, idx) => {
+                                                  // Extract file info from base64 data URL or regular URL
+                                                  const isDataUrl = attachment.startsWith('data:');
+                                                  let fileName = `File ${idx + 1}`;
+                                                  let fileType = '';
+                                                  
+                                                  if (isDataUrl) {
+                                                    // Extract MIME type from data URL
+                                                    const mimeMatch = attachment.match(/data:([^;]+);/);
+                                                    if (mimeMatch) {
+                                                      fileType = mimeMatch[1];
+                                                      // Get file extension from MIME type
+                                                      const ext = fileType.split('/')[1];
+                                                      fileName = `attachment-${idx + 1}.${ext}`;
+                                                    }
+                                                  } else {
+                                                    // Regular URL
+                                                    fileName = attachment.split('/').pop() || fileName;
+                                                  }
+                                                  
+                                                  return (
+                                                    <a
+                                                      key={idx}
+                                                      href={attachment}
+                                                      download={fileName}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-xs text-primary hover:underline flex items-center space-x-1"
+                                                    >
+                                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                                      </svg>
+                                                      <span className="truncate max-w-[150px]" title={fileName}>
+                                                        {fileName}
+                                                      </span>
+                                                    </a>
+                                                  );
+                                                })}
+                                              </div>
+                                            ) : (
+                                              <div className="text-xs text-muted-foreground">-</div>
+                                            )}
                                           </TableCell>
 
                                           {/* Actions */}

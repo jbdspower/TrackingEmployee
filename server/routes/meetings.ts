@@ -343,6 +343,18 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
     console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
     console.log(`📍 End location in request:`, updates.endLocation);
+    
+    // Log attachments info
+    if (updates.meetingDetails?.attachments) {
+      console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
+      updates.meetingDetails.attachments.forEach((att: string, idx: number) => {
+        const size = att.length;
+        const type = att.match(/data:([^;]+);/)?.[1] || 'unknown';
+        console.log(`   File ${idx + 1}: ${type}, ${(size / 1024).toFixed(2)} KB`);
+      });
+    } else {
+      console.log(`📎 No attachments in request`);
+    }
 
     // Handle meeting completion
     if (updates.status === "completed" && !updates.endTime) {
@@ -388,7 +400,22 @@ export const updateMeeting: RequestHandler = async (req, res) => {
         console.log("✅ End location saved:", updatedMeeting.location.endLocation);
       }
       
+      // Log attachments storage
+      if (updatedMeeting.meetingDetails?.attachments) {
+        console.log(`✅ Attachments stored: ${updatedMeeting.meetingDetails.attachments.length} files`);
+      } else {
+        console.log(`⚠️ No attachments in stored meeting`);
+      }
+      
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
+      
+      // Verify attachments in response
+      if (meetingLog.meetingDetails?.attachments) {
+        console.log(`✅ Attachments in response: ${meetingLog.meetingDetails.attachments.length} files`);
+      } else {
+        console.log(`⚠️ No attachments in response`);
+      }
+      
       res.json(meetingLog);
       return;
     } catch (dbError) {

@@ -87,6 +87,7 @@ export interface MeetingDetails {
   incomplete: boolean;
   customers: CustomerContact[]; // Array of customer contacts
   discussion: string; // mandatory
+  attachments?: string[]; // Array of attachment file URLs/paths
 
   // Legacy fields for backward compatibility
   customerName?: string;
@@ -118,6 +119,7 @@ export interface MeetingLog {
   approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
   approvalReason?: string; // Reason for approval/rejection
   approvedBy?: string | null; // userId who approved the meeting
+  attachments?: string[]; // Array of attachment file URLs/paths
 }
 
 // API Response types

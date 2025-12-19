@@ -710,6 +710,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         approvalReason: meeting.approvalReason || undefined, // Meeting approval reason
         approvedBy: meeting.approvedBy || undefined, // User ID who approved the meeting
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined, // Name of user who approved
+        attachments: meeting.meetingDetails?.attachments || meeting.attachments || [], // Attachment files
       };
     });
 
@@ -1262,6 +1263,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           approvalReason: meeting.approvalReason || undefined,
           approvedBy: meeting.approvedBy || undefined,
           approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined,
+          attachments: meeting.meetingDetails?.attachments || meeting.attachments || [],
         };
       });
 
