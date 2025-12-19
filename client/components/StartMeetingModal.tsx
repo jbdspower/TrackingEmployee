@@ -18,10 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Clock, MapPin, User, Loader2, AlertCircle, FileText } from "lucide-react";
+import { Clock, MapPin, User, Loader2, AlertCircle, FileText, Plus, Building2 } from "lucide-react";
 import { Customer, Lead } from "@shared/api";
 import { BasicSelect, BasicSelectOption } from "@/components/ui/basic-select";
 import { HttpClient } from "@/lib/httpClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface StartMeetingModalProps {
   isOpen: boolean;
@@ -92,6 +93,13 @@ export function StartMeetingModal({
   const [leadError, setLeadError] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<string>("");
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
+  
+  // Create Lead state
+  const [showCreateLead, setShowCreateLead] = useState(false);
+  const [newLeadCompanyName, setNewLeadCompanyName] = useState("");
+  const [isCreatingLead, setIsCreatingLead] = useState(false);
+  
+  const { toast } = useToast();
 
   // Fetch customers from external API
   const fetchCustomers = async () => {
@@ -224,7 +232,101 @@ export function StartMeetingModal({
     }
   }, [leads, clientName]);
 
-  const handleSubmit = () => {
+  const handleCreateLead = async () => {
+    if (!newLeadCompanyName.trim()) {
+      toast({
+        title: "Company Name Required",
+        description: "Please enter a company name to create a lead.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    // Get token from localStorage
+    const token = localStorage.getItem("idToken");
+    
+    if (!token) {
+      toast({
+        title: "Authentication Error",
+        description: "No authentication token found. Please log in again.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    // Get user ID from localStorage
+    const userStr = localStorage.getItem("user");
+    const userId = userStr ? JSON.parse(userStr)._id : "67daa55d9c4abb36045d5bfe";
+
+    setIsCreatingLead(true);
+    
+    try {
+      const leadPayload = {
+        CompanyName: newLeadCompanyName.trim(),
+        Name: "New Lead",
+        CreatedBy: userId,
+        Id: `JBDSL-${Date.now().toString().slice(-4)}`,
+      };
+
+      console.log("📤 Creating lead:", leadPayload);
+      console.log("🔑 Token:", token.substring(0, 20) + "...");
+
+      const response = await fetch(
+        `https://jbdspower.in/LeafNetServer/api/createLead?auth=${token}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(leadPayload),
+        }
+      );
+
+      console.log("📥 Response:", response.status);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Lead created:", result);
+        
+        toast({
+          title: "Lead Created",
+          description: `Lead created successfully for ${newLeadCompanyName}`,
+        });
+        
+        // Set as custom client
+        setCustomClient(newLeadCompanyName);
+        setClientName("custom");
+        
+        // Refresh leads
+        fetchLeads();
+        
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error("❌ Failed:", response.status, errorText);
+        
+        toast({
+          title: "Failed to Create Lead",
+          description: `Error: ${response.status}`,
+          variant: "destructive",
+        });
+        
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create lead. Please try again.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsCreatingLead(false);
+    }
+  };
+
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: { [key: string]: string } = {};
 
@@ -241,6 +343,14 @@ export function StartMeetingModal({
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
+    }
+
+    // If creating a new lead, create it first
+    if (showCreateLead && newLeadCompanyName.trim()) {
+      const leadCreated = await handleCreateLead();
+      if (!leadCreated) {
+        console.warn("Lead creation failed, but proceeding with meeting");
+      }
     }
 
     // Get selected lead info with proper error handling
@@ -282,6 +392,8 @@ export function StartMeetingModal({
     setLeadError(null);
     setSelectedLead("");
     setFilteredLeads([]);
+    setShowCreateLead(false);
+    setNewLeadCompanyName("");
     onClose();
   };
 
@@ -307,7 +419,24 @@ export function StartMeetingModal({
 
           {/* Client Selection */}
           <div className="space-y-2">
-            <Label htmlFor="client">Client / Company</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="client">Client / Company</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowCreateLead(!showCreateLead);
+                  if (!showCreateLead) {
+                    setNewLeadCompanyName("");
+                  }
+                }}
+                className="h-8"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                {showCreateLead ? "Cancel" : "Create New Lead"}
+              </Button>
+            </div>
             {customerError ? (
               <div className="space-y-2">
                 <div className="border border-destructive rounded-md p-3 text-sm text-destructive">
@@ -393,6 +522,38 @@ export function StartMeetingModal({
               <p className="text-sm text-destructive">{errors.client}</p>
             )}
           </div>
+
+          {/* Create New Lead Section */}
+          {showCreateLead && (
+            <div className="space-y-3 p-4 border-2 border-primary/30 rounded-lg bg-primary/5">
+              <div className="flex items-center space-x-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-sm text-primary">Create New Lead</h3>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="newLeadCompanyName" className="text-sm font-medium">
+                  Company Name for New Lead
+                  <span className="text-destructive ml-1">*</span>
+                </Label>
+                <Input
+                  id="newLeadCompanyName"
+                  value={newLeadCompanyName}
+                  onChange={(e) => {
+                    setNewLeadCompanyName(e.target.value);
+                    setCustomClient(e.target.value);
+                    setClientName("custom");
+                  }}
+                  placeholder="Enter company name to create lead"
+                  disabled={isCreatingLead}
+                  className="border-primary/50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  💡 This will create a new lead and use it for the meeting
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Custom Client Input */}
           {clientName === "custom" && (
@@ -578,11 +739,20 @@ export function StartMeetingModal({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+          <Button variant="outline" onClick={handleClose} disabled={isLoading || isCreatingLead}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading}>
-            {isLoading ? "Starting..." : "Start Meeting"}
+          <Button onClick={handleSubmit} disabled={isLoading || isCreatingLead}>
+            {isCreatingLead ? (
+              <div className="flex items-center space-x-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Creating Lead...</span>
+              </div>
+            ) : isLoading ? (
+              "Starting..."
+            ) : (
+              "Start Meeting"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -459,7 +459,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
           meetingDetails: meeting.meetingDetails,
           location: meeting.location,
           approvalStatus: meeting.approvalStatus,
-          approvalReason: meeting.approvalReason
+          approvalReason: meeting.approvalReason,
+          approvedBy: meeting.approvedBy
         };
       });
 
@@ -707,6 +708,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         incompleteReason: meeting.meetingDetails?.incompleteReason || "", // Include incomplete reason
         approvalStatus: meeting.approvalStatus || undefined, // Meeting approval status
         approvalReason: meeting.approvalReason || undefined, // Meeting approval reason
+        approvedBy: meeting.approvedBy || undefined, // User ID who approved the meeting
+        approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined, // Name of user who approved
       };
     });
 
@@ -1048,7 +1051,10 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         leadId: meeting.leadId,
         status: meeting.status,
         meetingDetails: meeting.meetingDetails,
-        location: meeting.location
+        location: meeting.location,
+        approvalStatus: meeting.approvalStatus,
+        approvalReason: meeting.approvalReason,
+        approvedBy: meeting.approvedBy
       }));
 
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB`);
@@ -1252,6 +1258,10 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           externalMeetingStatus: meeting.externalMeetingStatus || "",
           incomplete: meeting.meetingDetails?.incomplete || false,
           incompleteReason: meeting.meetingDetails?.incompleteReason || "",
+          approvalStatus: meeting.approvalStatus || undefined,
+          approvalReason: meeting.approvalReason || undefined,
+          approvedBy: meeting.approvedBy || undefined,
+          approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined,
         };
       });
 

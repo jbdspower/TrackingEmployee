@@ -170,6 +170,11 @@ const MeetingSchema = new Schema({
   },
   approvalReason: {
     type: String
+  },
+  approvedBy: {
+    type: String,
+    default: null
+    // userId who approved the meeting
   }
 }, {
   timestamps: true,
@@ -925,8 +930,10 @@ async function convertMeetingToMeetingLog(meeting) {
     meetingDetails: meeting.meetingDetails,
     approvalStatus: meeting.approvalStatus,
     // Meeting approval status
-    approvalReason: meeting.approvalReason
+    approvalReason: meeting.approvalReason,
     // Meeting approval reason
+    approvedBy: meeting.approvedBy
+    // User ID who approved the meeting
   };
 }
 let inMemoryMeetings = [];
@@ -1269,35 +1276,45 @@ const getActiveMeeting = async (req, res) => {
 const updateMeetingApproval = async (req, res) => {
   try {
     const { id } = req.params;
-    const { approvalStatus, approvalReason } = req.body;
+    const { approvalStatus, approvalReason, approvedBy } = req.body;
     if (!approvalStatus || !["ok", "not_ok"].includes(approvalStatus)) {
       return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
     }
     if (!approvalReason || !approvalReason.trim()) {
       return res.status(400).json({ error: "Approval reason is required" });
     }
-    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason });
+    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason, approvedBy });
+    console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
     try {
+      const updateData = {
+        approvalStatus,
+        approvalReason: approvalReason.trim(),
+        approvedBy: approvedBy !== void 0 ? approvedBy : null
+      };
+      console.log(`📝 Update data being sent to MongoDB:`, updateData);
       const updatedMeeting = await Meeting.findByIdAndUpdate(
         id,
-        {
-          $set: {
-            approvalStatus,
-            approvalReason: approvalReason.trim()
-          }
-        },
+        { $set: updateData },
         { new: true, runValidators: true }
       );
       if (!updatedMeeting) {
         return res.status(404).json({ error: "Meeting not found" });
       }
       console.log("✅ Meeting approval updated:", updatedMeeting._id);
+      console.log("✅ Approved by user ID stored in DB:", updatedMeeting.approvedBy);
+      console.log("✅ Full updated meeting:", JSON.stringify({
+        id: updatedMeeting._id,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
+      }));
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       res.json({
         success: true,
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
-        approvalReason: updatedMeeting.approvalReason
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
       });
     } catch (dbError) {
       console.error("MongoDB update failed:", dbError);
@@ -1310,7 +1327,7 @@ const updateMeetingApproval = async (req, res) => {
 };
 const updateMeetingApprovalByDetails = async (req, res) => {
   try {
-    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason } = req.body;
+    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason, approvedBy } = req.body;
     if (!employeeId || !date || !companyName || !meetingInTime) {
       return res.status(400).json({ error: "Employee ID, date, company name, and meeting time are required" });
     }
@@ -1326,7 +1343,8 @@ const updateMeetingApprovalByDetails = async (req, res) => {
       companyName,
       meetingInTime,
       approvalStatus,
-      approvalReason
+      approvalReason,
+      approvedBy
     });
     try {
       const startOfDayDate = new Date(date);
@@ -1349,26 +1367,36 @@ const updateMeetingApprovalByDetails = async (req, res) => {
         });
       }
       console.log(`✅ Found meeting by details: ${meeting._id}`);
+      console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
+      const updateData = {
+        approvalStatus,
+        approvalReason: approvalReason.trim(),
+        approvedBy: approvedBy !== void 0 ? approvedBy : null
+      };
+      console.log(`📝 Update data being sent to MongoDB:`, updateData);
       const updatedMeeting = await Meeting.findByIdAndUpdate(
         meeting._id,
-        {
-          $set: {
-            approvalStatus,
-            approvalReason: approvalReason.trim()
-          }
-        },
+        { $set: updateData },
         { new: true, runValidators: true }
       );
       if (!updatedMeeting) {
         return res.status(404).json({ error: "Failed to update meeting" });
       }
       console.log("✅ Meeting approval updated by details:", updatedMeeting._id);
+      console.log("✅ Approved by user ID stored in DB:", updatedMeeting.approvedBy);
+      console.log("✅ Full updated meeting:", JSON.stringify({
+        id: updatedMeeting._id,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
+      }));
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       res.json({
         success: true,
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
-        approvalReason: updatedMeeting.approvalReason
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
       });
     } catch (dbError) {
       console.error("MongoDB update failed:", dbError);
@@ -2383,7 +2411,8 @@ const getEmployeeDetails = async (req, res) => {
           meetingDetails: meeting.meetingDetails,
           location: meeting.location,
           approvalStatus: meeting.approvalStatus,
-          approvalReason: meeting.approvalReason
+          approvalReason: meeting.approvalReason,
+          approvedBy: meeting.approvedBy
         };
       });
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
@@ -2574,8 +2603,12 @@ const getEmployeeDetails = async (req, res) => {
         // Include incomplete reason
         approvalStatus: meeting.approvalStatus || void 0,
         // Meeting approval status
-        approvalReason: meeting.approvalReason || void 0
+        approvalReason: meeting.approvalReason || void 0,
         // Meeting approval reason
+        approvedBy: meeting.approvedBy || void 0,
+        // User ID who approved the meeting
+        approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0
+        // Name of user who approved
       };
     });
     const finalResult = {
@@ -2836,7 +2869,10 @@ const getAllEmployeesDetails = async (req, res) => {
         leadId: meeting.leadId,
         status: meeting.status,
         meetingDetails: meeting.meetingDetails,
-        location: meeting.location
+        location: meeting.location,
+        approvalStatus: meeting.approvalStatus,
+        approvalReason: meeting.approvalReason,
+        approvedBy: meeting.approvedBy
       }));
       console.log(`Found ${actualMeetings.length} total meetings in MongoDB`);
       if (actualMeetings.length === 0) {
@@ -2982,7 +3018,11 @@ const getAllEmployeesDetails = async (req, res) => {
           meetingStatus: meeting.status || "completed",
           externalMeetingStatus: meeting.externalMeetingStatus || "",
           incomplete: meeting.meetingDetails?.incomplete || false,
-          incompleteReason: meeting.meetingDetails?.incompleteReason || ""
+          incompleteReason: meeting.meetingDetails?.incompleteReason || "",
+          approvalStatus: meeting.approvalStatus || void 0,
+          approvalReason: meeting.approvalReason || void 0,
+          approvedBy: meeting.approvedBy || void 0,
+          approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0
         };
       });
       return {

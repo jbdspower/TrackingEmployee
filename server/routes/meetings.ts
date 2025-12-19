@@ -86,6 +86,7 @@ async function convertMeetingToMeetingLog(meeting: IMeeting): Promise<MeetingLog
     meetingDetails: meeting.meetingDetails,
     approvalStatus: meeting.approvalStatus, // Meeting approval status
     approvalReason: meeting.approvalReason, // Meeting approval reason
+    approvedBy: meeting.approvedBy, // User ID who approved the meeting
   };
 }
 
@@ -541,7 +542,7 @@ export const clearGeocodeCache: RequestHandler = async (req, res) => {
 export const updateMeetingApproval: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { approvalStatus, approvalReason } = req.body;
+    const { approvalStatus, approvalReason, approvedBy } = req.body;
 
     // Validate inputs
     if (!approvalStatus || !['ok', 'not_ok'].includes(approvalStatus)) {
@@ -552,17 +553,21 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
       return res.status(400).json({ error: "Approval reason is required" });
     }
 
-    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason });
+    console.log(`📝 Updating meeting approval ${id}:`, { approvalStatus, approvalReason, approvedBy });
+    console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
 
     try {
+      const updateData = { 
+        approvalStatus, 
+        approvalReason: approvalReason.trim(),
+        approvedBy: approvedBy !== undefined ? approvedBy : null
+      };
+      
+      console.log(`📝 Update data being sent to MongoDB:`, updateData);
+
       const updatedMeeting = await Meeting.findByIdAndUpdate(
         id,
-        { 
-          $set: { 
-            approvalStatus, 
-            approvalReason: approvalReason.trim() 
-          } 
-        },
+        { $set: updateData },
         { new: true, runValidators: true }
       );
 
@@ -571,13 +576,21 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
       }
 
       console.log("✅ Meeting approval updated:", updatedMeeting._id);
+      console.log("✅ Approved by user ID stored in DB:", updatedMeeting.approvedBy);
+      console.log("✅ Full updated meeting:", JSON.stringify({
+        id: updatedMeeting._id,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
+      }));
       
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       res.json({ 
         success: true, 
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
-        approvalReason: updatedMeeting.approvalReason
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
       });
     } catch (dbError) {
       console.error("MongoDB update failed:", dbError);
@@ -592,7 +605,7 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
 // Update meeting approval by composite details (when meetingId is not available)
 export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason } = req.body;
+    const { employeeId, date, companyName, meetingInTime, approvalStatus, approvalReason, approvedBy } = req.body;
 
     // Validate inputs
     if (!employeeId || !date || !companyName || !meetingInTime) {
@@ -613,7 +626,8 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       companyName, 
       meetingInTime,
       approvalStatus, 
-      approvalReason 
+      approvalReason,
+      approvedBy
     });
 
     try {
@@ -643,16 +657,20 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       }
 
       console.log(`✅ Found meeting by details: ${meeting._id}`);
+      console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
+
+      const updateData = { 
+        approvalStatus, 
+        approvalReason: approvalReason.trim(),
+        approvedBy: approvedBy !== undefined ? approvedBy : null
+      };
+      
+      console.log(`📝 Update data being sent to MongoDB:`, updateData);
 
       // Update the meeting
       const updatedMeeting = await Meeting.findByIdAndUpdate(
         meeting._id,
-        { 
-          $set: { 
-            approvalStatus, 
-            approvalReason: approvalReason.trim() 
-          } 
-        },
+        { $set: updateData },
         { new: true, runValidators: true }
       );
 
@@ -661,13 +679,21 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       }
 
       console.log("✅ Meeting approval updated by details:", updatedMeeting._id);
+      console.log("✅ Approved by user ID stored in DB:", updatedMeeting.approvedBy);
+      console.log("✅ Full updated meeting:", JSON.stringify({
+        id: updatedMeeting._id,
+        approvalStatus: updatedMeeting.approvalStatus,
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
+      }));
       
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
       res.json({ 
         success: true, 
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
-        approvalReason: updatedMeeting.approvalReason
+        approvalReason: updatedMeeting.approvalReason,
+        approvedBy: updatedMeeting.approvedBy
       });
     } catch (dbError) {
       console.error("MongoDB update failed:", dbError);

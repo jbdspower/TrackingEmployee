@@ -117,6 +117,7 @@ export interface MeetingLog {
   meetingDetails?: MeetingDetails;
   approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
   approvalReason?: string; // Reason for approval/rejection
+  approvedBy?: string | null; // userId who approved the meeting
 }
 
 // API Response types

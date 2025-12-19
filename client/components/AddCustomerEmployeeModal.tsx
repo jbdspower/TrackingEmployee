@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { CustomerEmployee, Customer } from "@shared/api";
 import { AlertCircle, CheckCircle, UserPlus } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface NewCustomerEmployeeData {
   customerName: string;
@@ -53,6 +55,8 @@ export function AddCustomerEmployeeModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createLead, setCreateLead] = useState(false);
+  const { toast } = useToast();
 
   // Auto-fill customer name when modal opens if defaultCustomerName is provided
   useEffect(() => {
@@ -166,6 +170,11 @@ export function AddCustomerEmployeeModal({
       // Then, call the parent's onAddEmployee callback (if needed for local database)
       await onAddEmployee(formData);
       
+      // If "Create Lead" checkbox is checked, create a lead
+      if (createLead) {
+        await handleCreateLead();
+      }
+      
       handleClose();
     } catch (error) {
       console.error("Error adding customer employee:", error);
@@ -173,6 +182,90 @@ export function AddCustomerEmployeeModal({
       throw error;
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateLead = async () => {
+    console.log("🚀 Creating lead from customer employee data");
+    
+    // Get token from localStorage
+    const token = localStorage.getItem("idToken");
+    
+    if (!token) {
+      toast({
+        title: "Authentication Error",
+        description: "No authentication token found. Please log in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get user ID from localStorage
+    const userStr = localStorage.getItem("user");
+    const userId = userStr ? JSON.parse(userStr)._id : "67daa55d9c4abb36045d5bfe";
+
+    try {
+      // Prepare lead payload with only available data
+      const leadPayload: any = {
+        CompanyName: formData.customerName,
+        Name: formData.customerEmployeeName,
+        CreatedBy: userId,
+        Id: `JBDSL-${Date.now().toString().slice(-4)}`, // Generate a simple ID
+      };
+
+      // Add optional fields only if they exist
+      if (formData.email) {
+        leadPayload.Email = formData.email;
+      }
+      if (formData.mobile) {
+        leadPayload.Mobile = formData.mobile;
+      }
+      if (formData.designation) {
+        leadPayload.Designation = formData.designation;
+      }
+      if (formData.department) {
+        leadPayload.Department = formData.department;
+      }
+
+      console.log("📤 Sending lead creation request:", leadPayload);
+
+      // Make API call to create lead
+      const response = await fetch(
+        `https://jbdspower.in/LeafNetServer/api/createLead?auth=${token}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(leadPayload),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Lead created successfully:", result);
+        
+        toast({
+          title: "Lead Created",
+          description: `Lead created successfully for ${formData.customerEmployeeName} at ${formData.customerName}`,
+        });
+      } else {
+        const errorText = await response.text();
+        console.error("❌ Failed to create lead:", response.status, errorText);
+        
+        toast({
+          title: "Failed to Create Lead",
+          description: `Error: ${response.status}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("❌ Error creating lead:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create lead. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -188,6 +281,7 @@ export function AddCustomerEmployeeModal({
       department: "",
     });
     setErrors({});
+    setCreateLead(false);
     onClose();
   };
 
@@ -374,6 +468,22 @@ export function AddCustomerEmployeeModal({
                 <span>{errors.department}</span>
               </div>
             )}
+          </div>
+
+          {/* Create Lead Checkbox */}
+          <div className="flex items-center space-x-2 pt-2 pb-2 border-t">
+            <Checkbox
+              id="createLead"
+              checked={createLead}
+              onCheckedChange={(checked) => setCreateLead(checked as boolean)}
+              disabled={isFormDisabled}
+            />
+            <Label
+              htmlFor="createLead"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+            >
+              Create Lead after adding employee
+            </Label>
           </div>
 
           {/* Action Buttons */}

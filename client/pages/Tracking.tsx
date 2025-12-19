@@ -632,91 +632,140 @@ const handleEndMeetingWithDetails = async (
       meetingDetails,
     );
 
-    // 🔹 MANDATORY: Check location permission before ending meeting
+    // 🔹 MANDATORY: Get fresh location with retry logic
     let endLocation = null;
-    try {
-      console.log("📍 Checking location permission for meeting end...");
-      
-      // Check if geolocation is supported
-      if (!navigator.geolocation) {
-        throw new Error("Geolocation is not supported by your browser");
-      }
-
-      // Check permission status
-      if (navigator.permissions) {
-        const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-        console.log("Location permission status:", permissionStatus.state);
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries && !endLocation) {
+      try {
+        console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting end...`);
         
-        if (permissionStatus.state === 'denied') {
+        // Show loading toast on first attempt
+        if (retryCount === 0) {
           toast({
-            title: "Location Permission Required",
-            description: "Please allow location access in your browser settings to end the meeting.",
+            title: "Getting Location",
+            description: "Please wait while we fetch your current location...",
+          });
+        }
+        
+        // Check if geolocation is supported
+        if (!navigator.geolocation) {
+          throw new Error("Geolocation is not supported by your browser");
+        }
+
+        // Check permission status
+        if (navigator.permissions) {
+          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+          console.log("Location permission status:", permissionStatus.state);
+          
+          if (permissionStatus.state === 'denied') {
+            toast({
+              title: "Location Permission Denied",
+              description: "Please enable location access in your browser settings and try again.",
+              variant: "destructive",
+            });
+            setIsEndingMeeting(null);
+            return;
+          }
+          
+          if (permissionStatus.state === 'prompt') {
+            toast({
+              title: "Location Permission Required",
+              description: "Please allow location access when prompted.",
+            });
+          }
+        }
+
+        // Attempt to get fresh location with increased timeout
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
+          
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            {
+              enableHighAccuracy: true,
+              maximumAge: 0,
+              timeout: timeoutDuration,
+            }
+          );
+        });
+
+        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        
+        // Get human-readable address from coordinates
+        try {
+          console.log("🗺️ Fetching address for meeting end location...");
+          const addressResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+            {
+              headers: {
+                'User-Agent': 'EmployeeTrackingApp/1.0'
+              }
+            }
+          );
+          
+          if (addressResponse.ok) {
+            const addressData = await addressResponse.json();
+            address = addressData.display_name || address;
+            console.log("✅ Meeting end address resolved:", address);
+          }
+        } catch (addressError) {
+          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+        }
+
+        endLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          address: address,
+          timestamp: new Date().toISOString(),
+        };
+        console.log("✅ Fresh end location obtained:", endLocation);
+        
+        // Success - show confirmation
+        toast({
+          title: "Location Obtained",
+          description: "Ending meeting...",
+        });
+        
+      } catch (locationError) {
+        retryCount++;
+        console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+        
+        if (retryCount < maxRetries) {
+          // Retry with user feedback
+          toast({
+            title: "Retrying Location",
+            description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+          });
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        } else {
+          // All retries exhausted
+          const errorMessage = locationError instanceof GeolocationPositionError
+            ? locationError.code === 1
+              ? "Location permission denied. Please enable location in your browser settings."
+              : locationError.code === 2
+              ? "Unable to determine your location. Please check your device's location settings."
+              : "Location request timed out. Please ensure location services are enabled and try again."
+            : "Failed to access location. Please check your location settings and try again.";
+          
+          toast({
+            title: "Location Required",
+            description: errorMessage,
             variant: "destructive",
           });
           setIsEndingMeeting(null);
           return;
         }
       }
-
-      // Attempt to get fresh location
-      console.log("📍 Fetching fresh location for meeting end...");
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          {
-            enableHighAccuracy: true,
-            maximumAge: 0,
-            timeout: 10000,
-          }
-        );
-      });
-
-      let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-      
-      // Get human-readable address from coordinates
-      try {
-        console.log("🗺️ Fetching address for meeting end location...");
-        const addressResponse = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-          {
-            headers: {
-              'User-Agent': 'EmployeeTrackingApp/1.0'
-            }
-          }
-        );
-        
-        if (addressResponse.ok) {
-          const addressData = await addressResponse.json();
-          address = addressData.display_name || address;
-          console.log("✅ Meeting end address resolved:", address);
-        }
-      } catch (addressError) {
-        console.warn("⚠️ Failed to get address, using coordinates:", addressError);
-      }
-
-      endLocation = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        address: address,
-        timestamp: new Date().toISOString(),
-      };
-      console.log("✅ Fresh end location obtained:", endLocation);
-    } catch (locationError) {
-      console.error("❌ Location access error:", locationError);
-      
-      // Show user-friendly error message and prevent meeting end
-      const errorMessage = locationError instanceof GeolocationPositionError
-        ? locationError.code === 1
-          ? "Location permission denied. Please allow location access to end the meeting."
-          : locationError.code === 2
-          ? "Unable to determine your location. Please check your device settings."
-          : "Location request timed out. Please try again."
-        : "Failed to access location. Please allow location permission to end the meeting.";
-      
+    }
+    
+    // Final check - ensure we have location
+    if (!endLocation) {
       toast({
         title: "Location Required",
-        description: errorMessage,
+        description: "Unable to get your location after multiple attempts. Please check your settings.",
         variant: "destructive",
       });
       setIsEndingMeeting(null);
@@ -865,95 +914,139 @@ const handleEndMeetingWithDetails = async (
 
     setIsStartingMeeting(true);
     try {
-      // 🔹 MANDATORY: Check location permission before starting meeting
-      let startLocation = {
-        lat: employee.location.lat,
-        lng: employee.location.lng,
-        address: employee.location.address,
-      };
-
-      try {
-        console.log("📍 Checking location permission for meeting start...");
-        
-        // Check if geolocation is supported
-        if (!navigator.geolocation) {
-          throw new Error("Geolocation is not supported by your browser");
-        }
-
-        // Check permission status
-        if (navigator.permissions) {
-          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-          console.log("Location permission status:", permissionStatus.state);
+      // 🔹 MANDATORY: Get fresh location with retry logic
+      let startLocation = null;
+      const maxRetries = 3;
+      let retryCount = 0;
+      
+      while (retryCount < maxRetries && !startLocation) {
+        try {
+          console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
           
-          if (permissionStatus.state === 'denied') {
+          // Show loading toast on first attempt
+          if (retryCount === 0) {
             toast({
-              title: "Location Permission Required",
-              description: "Please allow location access in your browser settings to start a meeting.",
+              title: "Getting Location",
+              description: "Please wait while we fetch your current location...",
+            });
+          }
+          
+          // Check if geolocation is supported
+          if (!navigator.geolocation) {
+            throw new Error("Geolocation is not supported by your browser");
+          }
+
+          // Check permission status
+          if (navigator.permissions) {
+            const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+            console.log("Location permission status:", permissionStatus.state);
+            
+            if (permissionStatus.state === 'denied') {
+              toast({
+                title: "Location Permission Denied",
+                description: "Please enable location access in your browser settings and try again.",
+                variant: "destructive",
+              });
+              setIsStartingMeeting(false);
+              return;
+            }
+            
+            if (permissionStatus.state === 'prompt') {
+              toast({
+                title: "Location Permission Required",
+                description: "Please allow location access when prompted.",
+              });
+            }
+          }
+
+          // Attempt to get fresh location with increased timeout
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
+            
+            navigator.geolocation.getCurrentPosition(
+              resolve,
+              reject,
+              {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: timeoutDuration,
+              }
+            );
+          });
+
+          let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+          
+          // Get human-readable address from coordinates
+          try {
+            console.log("🗺️ Fetching address for meeting start location...");
+            const addressResponse = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+              {
+                headers: {
+                  'User-Agent': 'EmployeeTrackingApp/1.0'
+                }
+              }
+            );
+            
+            if (addressResponse.ok) {
+              const addressData = await addressResponse.json();
+              address = addressData.display_name || address;
+              console.log("✅ Meeting start address resolved:", address);
+            }
+          } catch (addressError) {
+            console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+          }
+
+          startLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            address: address,
+          };
+          console.log("✅ Fresh start location obtained:", startLocation);
+          
+          // Success - show confirmation
+          toast({
+            title: "Location Obtained",
+            description: "Starting meeting...",
+          });
+          
+        } catch (locationError) {
+          retryCount++;
+          console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+          
+          if (retryCount < maxRetries) {
+            // Retry with user feedback
+            toast({
+              title: "Retrying Location",
+              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          } else {
+            // All retries exhausted
+            const errorMessage = locationError instanceof GeolocationPositionError
+              ? locationError.code === 1
+                ? "Location permission denied. Please enable location in your browser settings."
+                : locationError.code === 2
+                ? "Unable to determine your location. Please check your device's location settings."
+                : "Location request timed out. Please ensure location services are enabled and try again."
+              : "Failed to access location. Please check your location settings and try again.";
+            
+            toast({
+              title: "Location Required",
+              description: errorMessage,
               variant: "destructive",
             });
             setIsStartingMeeting(false);
             return;
           }
         }
-
-        // Attempt to get fresh location
-        console.log("📍 Fetching fresh location for meeting start...");
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            {
-              enableHighAccuracy: true,
-              maximumAge: 0,
-              timeout: 10000,
-            }
-          );
-        });
-
-        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-        
-        // Get human-readable address from coordinates
-        try {
-          console.log("🗺️ Fetching address for meeting start location...");
-          const addressResponse = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-            {
-              headers: {
-                'User-Agent': 'EmployeeTrackingApp/1.0'
-              }
-            }
-          );
-          
-          if (addressResponse.ok) {
-            const addressData = await addressResponse.json();
-            address = addressData.display_name || address;
-            console.log("✅ Meeting start address resolved:", address);
-          }
-        } catch (addressError) {
-          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
-        }
-
-        startLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          address: address,
-        };
-        console.log("✅ Fresh start location obtained:", startLocation);
-      } catch (locationError) {
-        console.error("❌ Location access error:", locationError);
-        
-        // Show user-friendly error message
-        const errorMessage = locationError instanceof GeolocationPositionError
-          ? locationError.code === 1
-            ? "Location permission denied. Please allow location access to start a meeting."
-            : locationError.code === 2
-            ? "Unable to determine your location. Please check your device settings."
-            : "Location request timed out. Please try again."
-          : "Failed to access location. Please allow location permission to start a meeting.";
-        
+      }
+      
+      // Final check - ensure we have location
+      if (!startLocation) {
         toast({
           title: "Location Required",
-          description: errorMessage,
+          description: "Unable to get your location after multiple attempts. Please check your settings.",
           variant: "destructive",
         });
         setIsStartingMeeting(false);
@@ -1040,95 +1133,139 @@ const handleEndMeetingWithDetails = async (
       const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
       console.log("📋 Storing follow-up data for meeting:", followUpData);
       
-      // 🔹 MANDATORY: Check location permission before starting meeting
-      let startLocation = {
-        lat: employee.location.lat,
-        lng: employee.location.lng,
-        address: employee.location.address,
-      };
-
-      try {
-        console.log("📍 Checking location permission for meeting start...");
-        
-        // Check if geolocation is supported
-        if (!navigator.geolocation) {
-          throw new Error("Geolocation is not supported by your browser");
-        }
-
-        // Check permission status
-        if (navigator.permissions) {
-          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-          console.log("Location permission status:", permissionStatus.state);
+      // 🔹 MANDATORY: Get fresh location with retry logic
+      let startLocation = null;
+      const maxRetries = 3;
+      let retryCount = 0;
+      
+      while (retryCount < maxRetries && !startLocation) {
+        try {
+          console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
           
-          if (permissionStatus.state === 'denied') {
+          // Show loading toast on first attempt
+          if (retryCount === 0) {
             toast({
-              title: "Location Permission Required",
-              description: "Please allow location access in your browser settings to start a meeting.",
+              title: "Getting Location",
+              description: "Please wait while we fetch your current location...",
+            });
+          }
+          
+          // Check if geolocation is supported
+          if (!navigator.geolocation) {
+            throw new Error("Geolocation is not supported by your browser");
+          }
+
+          // Check permission status
+          if (navigator.permissions) {
+            const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+            console.log("Location permission status:", permissionStatus.state);
+            
+            if (permissionStatus.state === 'denied') {
+              toast({
+                title: "Location Permission Denied",
+                description: "Please enable location access in your browser settings and try again.",
+                variant: "destructive",
+              });
+              setIsStartingMeeting(false);
+              return;
+            }
+            
+            if (permissionStatus.state === 'prompt') {
+              toast({
+                title: "Location Permission Required",
+                description: "Please allow location access when prompted.",
+              });
+            }
+          }
+
+          // Attempt to get fresh location with increased timeout
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
+            
+            navigator.geolocation.getCurrentPosition(
+              resolve,
+              reject,
+              {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: timeoutDuration,
+              }
+            );
+          });
+
+          let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+          
+          // Get human-readable address from coordinates
+          try {
+            console.log("🗺️ Fetching address for meeting start location...");
+            const addressResponse = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+              {
+                headers: {
+                  'User-Agent': 'EmployeeTrackingApp/1.0'
+                }
+              }
+            );
+            
+            if (addressResponse.ok) {
+              const addressData = await addressResponse.json();
+              address = addressData.display_name || address;
+              console.log("✅ Meeting start address resolved:", address);
+            }
+          } catch (addressError) {
+            console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+          }
+
+          startLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            address: address,
+          };
+          console.log("✅ Fresh start location obtained:", startLocation);
+          
+          // Success - show confirmation
+          toast({
+            title: "Location Obtained",
+            description: "Starting meeting...",
+          });
+          
+        } catch (locationError) {
+          retryCount++;
+          console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+          
+          if (retryCount < maxRetries) {
+            // Retry with user feedback
+            toast({
+              title: "Retrying Location",
+              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          } else {
+            // All retries exhausted
+            const errorMessage = locationError instanceof GeolocationPositionError
+              ? locationError.code === 1
+                ? "Location permission denied. Please enable location in your browser settings."
+                : locationError.code === 2
+                ? "Unable to determine your location. Please check your device's location settings."
+                : "Location request timed out. Please ensure location services are enabled and try again."
+              : "Failed to access location. Please check your location settings and try again.";
+            
+            toast({
+              title: "Location Required",
+              description: errorMessage,
               variant: "destructive",
             });
             setIsStartingMeeting(false);
             return;
           }
         }
-
-        // Attempt to get fresh location
-        console.log("📍 Fetching fresh location for meeting start...");
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            {
-              enableHighAccuracy: true,
-              maximumAge: 0,
-              timeout: 10000,
-            }
-          );
-        });
-
-        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-        
-        // Get human-readable address from coordinates
-        try {
-          console.log("🗺️ Fetching address for meeting start location...");
-          const addressResponse = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-            {
-              headers: {
-                'User-Agent': 'EmployeeTrackingApp/1.0'
-              }
-            }
-          );
-          
-          if (addressResponse.ok) {
-            const addressData = await addressResponse.json();
-            address = addressData.display_name || address;
-            console.log("✅ Meeting start address resolved:", address);
-          }
-        } catch (addressError) {
-          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
-        }
-
-        startLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          address: address,
-        };
-        console.log("✅ Fresh start location obtained:", startLocation);
-      } catch (locationError) {
-        console.error("❌ Location access error:", locationError);
-        
-        // Show user-friendly error message
-        const errorMessage = locationError instanceof GeolocationPositionError
-          ? locationError.code === 1
-            ? "Location permission denied. Please allow location access to start a meeting."
-            : locationError.code === 2
-            ? "Unable to determine your location. Please check your device settings."
-            : "Location request timed out. Please try again."
-          : "Failed to access location. Please allow location permission to start a meeting.";
-        
+      }
+      
+      // Final check - ensure we have location
+      if (!startLocation) {
         toast({
           title: "Location Required",
-          description: errorMessage,
+          description: "Unable to get your location after multiple attempts. Please check your settings.",
           variant: "destructive",
         });
         setIsStartingMeeting(false);

@@ -56,6 +56,7 @@ export interface IMeeting extends Document {
  externalMeetingStatus?: string; // Status from external follow-up API
  approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
  approvalReason?: string; // Reason for approval/rejection
+ approvedBy?: string | null; // userId who approved the meeting
  createdAt: Date;
  updatedAt: Date;
 }
@@ -168,6 +169,10 @@ const MeetingSchema = new Schema({
  },
  approvalReason: {
    type: String
+ },
+ approvedBy: {
+   type: String,
+   default: null // userId who approved the meeting
  }
 }, {
  timestamps: true,

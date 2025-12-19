@@ -98,6 +98,8 @@ interface EmployeeMeetingRecord {
   meetingId?: string;
   approvalStatus?: 'ok' | 'not_ok';
   approvalReason?: string;
+  approvedBy?: string;
+  approvedByName?: string;
 }
 
 interface DashboardFilters {
@@ -419,10 +421,18 @@ export default function Dashboard() {
         if (meetingRecords.length > 0) {
           console.log(`🔍 First meeting record structure:`, meetingRecords[0]);
           console.log(`🔍 Meeting ID present?`, !!meetingRecords[0].meetingId);
+          console.log(`🔍 Approval fields:`, {
+            approvalStatus: meetingRecords[0].approvalStatus,
+            approvalReason: meetingRecords[0].approvalReason,
+            approvedBy: meetingRecords[0].approvedBy,
+            approvedByName: meetingRecords[0].approvedByName
+          });
           console.log(`🔍 All meeting IDs:`, meetingRecords.map((m: any) => ({ 
             meetingId: m.meetingId, 
             hasId: !!m.meetingId,
-            company: m.companyName 
+            company: m.companyName,
+            approvedBy: m.approvedBy,
+            approvedByName: m.approvedByName
           })));
         } else {
           console.warn(`⚠️ No meeting records received from API`);
@@ -912,6 +922,12 @@ export default function Dashboard() {
     }));
 
     try {
+      // Get logged-in user ID from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const loggedInUserId = user?._id || null;
+
+      console.log(`👤 Logged-in user ID: ${loggedInUserId}`);
+
       let response;
       
       // If we have a meetingId, use the direct endpoint
@@ -922,6 +938,7 @@ export default function Dashboard() {
         response = await HttpClient.put(url, {
           approvalStatus: editData.approvalStatus,
           approvalReason: editData.approvalReason,
+          approvedBy: loggedInUserId, // Pass logged-in user ID
         });
       } else {
         // Otherwise, use composite key to find and update the meeting
@@ -935,6 +952,7 @@ export default function Dashboard() {
           meetingInTime: meetingRecord.meetingInTime,
           approvalStatus: editData.approvalStatus,
           approvalReason: editData.approvalReason,
+          approvedBy: loggedInUserId, // Pass logged-in user ID
         });
       }
 
@@ -1733,6 +1751,7 @@ export default function Dashboard() {
                                       <TableHead>Meeting Person</TableHead>
                                       <TableHead>Approval Status</TableHead>
                                       <TableHead>Approval Reason</TableHead>
+                                      <TableHead>Approved By</TableHead>
                                       <TableHead>Actions</TableHead>
                                       <TableHead>History</TableHead>
                                     </TableRow>
@@ -1871,6 +1890,13 @@ export default function Dashboard() {
                                                 </div>
                                               );
                                             })()}
+                                          </TableCell>
+
+                                          {/* Approved By */}
+                                          <TableCell>
+                                            <div className="text-xs text-muted-foreground">
+                                              {record.approvedByName || "-"}
+                                            </div>
                                           </TableCell>
 
                                           {/* Actions */}

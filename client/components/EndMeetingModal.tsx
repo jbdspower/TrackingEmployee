@@ -16,7 +16,7 @@ import {
   Customer,
   CustomerContact,
 } from "@shared/api";
-import { AlertCircle, CheckCircle, Clock, User, Building2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, User, Building2, UserPlus, Paperclip, X } from "lucide-react";
 import {
   CustomerEmployeeSelector,
   CustomerEmployeeSelectorRef,
@@ -25,6 +25,7 @@ import {
   AddCustomerEmployeeModal,
   NewCustomerEmployeeData,
 } from "./AddCustomerEmployeeModal";
+import { useToast } from "@/hooks/use-toast";
 
 interface EndMeetingModalProps {
   isOpen: boolean;
@@ -72,6 +73,7 @@ export function EndMeetingModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreatingLead, setIsCreatingLead] = useState(false);
 
   // Multiple customer selection state
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerContact[]>(
@@ -85,6 +87,12 @@ export function EndMeetingModal({
 
   // Ref for customer employee selector
   const customerSelectorRef = useRef<CustomerEmployeeSelectorRef>(null);
+  
+  // File attachment state
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const { toast } = useToast();
 
   // Prefill form with follow-up meeting data when modal opens
   useEffect(() => {
@@ -440,6 +448,120 @@ export function EndMeetingModal({
     }
   };
 
+  const handleCreateLead = async () => {
+    console.log("🚀 Creating lead from meeting data");
+    
+    // Validate that we have at least one customer selected
+    if (selectedCustomers.length === 0) {
+      toast({
+        title: "No Customer Selected",
+        description: "Please select at least one customer to create a lead.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get the first customer for lead creation
+    const customer = selectedCustomers[0];
+    
+    // Get token from localStorage
+    const token = localStorage.getItem("idToken");
+    
+    if (!token) {
+      toast({
+        title: "Authentication Error",
+        description: "No authentication token found. Please log in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get user ID from localStorage (assuming it's stored)
+    const userId = localStorage.getItem("userId") || "67daa55d9c4abb36045d5bfe";
+
+    setIsCreatingLead(true);
+    
+    try {
+      // Prepare lead payload
+      const leadPayload = {
+        CompanyName: customer.customerName,
+        Name: customer.customerEmployeeName,
+        Email: customer.customerEmail || "",
+        Mobile: customer.customerMobile || "",
+        Designation: customer.customerDesignation || "",
+        Department: customer.customerDepartment || "purchase",
+        CreatedBy: userId,
+        Id: `JBDSL-${Date.now().toString().slice(-4)}`, // Generate a simple ID
+      };
+
+      console.log("📤 Sending lead creation request:", leadPayload);
+
+      // Make API call to create lead
+      const response = await fetch(
+        `https://jbdspower.in/LeafNetServer/api/createLead?auth=${token}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(leadPayload),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Lead created successfully:", result);
+        
+        toast({
+          title: "Lead Created",
+          description: `Lead created successfully for ${customer.customerEmployeeName} at ${customer.customerName}`,
+        });
+      } else {
+        const errorText = await response.text();
+        console.error("❌ Failed to create lead:", response.status, errorText);
+        
+        toast({
+          title: "Failed to Create Lead",
+          description: `Error: ${response.status} - ${errorText.substring(0, 100)}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("❌ Error creating lead:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create lead. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingLead(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      setAttachedFiles(prev => [...prev, ...newFiles]);
+      console.log("📎 Files attached:", newFiles.map(f => f.name));
+      
+      toast({
+        title: "Files Attached",
+        description: `${newFiles.length} file(s) attached successfully`,
+      });
+    }
+    
+    // Reset input value to allow selecting the same file again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+    console.log("🗑️ File removed at index:", index);
+  };
+
   const handleClose = () => {
     if (isSubmitting || isLoading) {
       console.log("⚠️ Cannot close: Form is submitting or loading");
@@ -466,6 +588,7 @@ export function EndMeetingModal({
     setCurrentSelectedEmployee(null);
     setCurrentSelectedCustomer(null);
     setIsAddEmployeeOpen(false);
+    setAttachedFiles([]);
 
     // Reset the customer employee selector and clear any temporary employees
     if (customerSelectorRef.current) {
@@ -475,7 +598,7 @@ export function EndMeetingModal({
     onClose();
   };
 
-  const isFormDisabled = isSubmitting || isLoading;
+  const isFormDisabled = isSubmitting || isLoading || isCreatingLead;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -644,34 +767,122 @@ export function EndMeetingModal({
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end space-x-3 pt-4">
+          {/* File Attachment */}
+          <div className="space-y-2">
+            <Label className="text-sm flex items-center space-x-2">
+              <Paperclip className="h-4 w-4" />
+              <span>Attach Files (Optional)</span>
+            </Label>
+            
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              disabled={isFormDisabled}
+              className="hidden"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+            />
+            
             <Button
               type="button"
               variant="outline"
-              onClick={handleClose}
+              onClick={() => fileInputRef.current?.click()}
               disabled={isFormDisabled}
+              className="w-full"
             >
-              Cancel
+              <Paperclip className="h-4 w-4 mr-2" />
+              Choose Files
             </Button>
+
+            {/* Attached Files List */}
+            {attachedFiles.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <div className="text-xs text-muted-foreground">
+                  {attachedFiles.length} file(s) attached
+                </div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {attachedFiles.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-2 border rounded bg-muted/20"
+                    >
+                      <div className="flex items-center space-x-2 flex-1 min-w-0">
+                        <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs truncate" title={file.name}>
+                          {file.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                          ({(file.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveFile(index)}
+                        disabled={isFormDisabled}
+                        className="h-6 w-6 p-0 ml-2 flex-shrink-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-between items-center pt-4">
             <Button
-              type="submit"
-              variant="destructive"
-              disabled={isFormDisabled}
+              type="button"
+              variant="outline"
+              onClick={handleCreateLead}
+              disabled={isFormDisabled || selectedCustomers.length === 0}
               className="min-w-[120px]"
             >
-              {isSubmitting || isLoading ? (
+              {isCreatingLead ? (
                 <div className="flex items-center space-x-2">
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                  <span>Ending...</span>
+                  <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                  <span>Creating...</span>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>End Meeting</span>
+                  <UserPlus className="h-4 w-4" />
+                  <span>Create Lead</span>
                 </div>
               )}
             </Button>
+            
+            <div className="flex space-x-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={isFormDisabled}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={isFormDisabled}
+                className="min-w-[120px]"
+              >
+                {isSubmitting || isLoading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    <span>Ending...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>End Meeting</span>
+                  </div>
+                )}
+              </Button>
+            </div>
           </div>
         </form>
 
