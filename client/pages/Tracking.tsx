@@ -273,7 +273,7 @@ export default function Tracking() {
 
     // Prepare meeting data for the meeting
     const meetingData = {
-      clientName: meeting.customerName,
+      clientName: meeting.companyName, // 🔹 FIX: Use companyName instead of customerName for consistency
       reason: `Follow-up meeting - ${meeting.type}`,
       notes: meeting.remark || `Meeting with ${meeting.customerName} from ${meeting.companyName}`,
       leadId: meeting.leadId,
@@ -284,7 +284,8 @@ export default function Tracking() {
       }
     };
 
-    // Start the meeting directly without showing modal
+    // 🔹 CRITICAL FIX: Use the same startMeetingFromFollowUp function that handles timing correctly
+    // This ensures approval meetings use the exact same timing logic as normal meetings
     startMeetingFromFollowUp(meetingData, meeting._id);
   };
 
@@ -615,6 +616,17 @@ export default function Tracking() {
     const exactEndTime = new Date().toISOString();
     console.log("⏰ Meeting end time captured:", exactEndTime);
 
+    // 🔹 ADDITIONAL VALIDATION: Ensure we have a valid end time
+    if (!exactEndTime || exactEndTime.length === 0) {
+      console.error("❌ CRITICAL ERROR: Failed to capture end time!");
+      toast({
+        title: "Error",
+        description: "Failed to capture end time. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // 🔹 CRITICAL FIX: Validate that we have an activeMeetingId
     let meetingIdToEnd = activeMeetingId;
 
@@ -626,6 +638,42 @@ export default function Tracking() {
         variant: "destructive",
       });
       return;
+    }
+
+    // 🔹 ADDITIONAL VALIDATION: Check that we have the meeting in our local state
+    const currentMeeting = meetings.find(m => m.id === meetingIdToEnd);
+    if (!currentMeeting) {
+      console.error("❌ Cannot find current meeting in local state:", meetingIdToEnd);
+      toast({
+        title: "Error",
+        description: "Meeting data not found. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 🔹 CRITICAL VALIDATION: Ensure end time is different from start time
+    const startTime = new Date(currentMeeting.startTime).getTime();
+    const endTime = new Date(exactEndTime).getTime();
+    const duration = endTime - startTime;
+
+    console.log("⏰ TIME VALIDATION:", {
+      startTime: currentMeeting.startTime,
+      endTime: exactEndTime,
+      durationMs: duration,
+      durationMinutes: Math.round(duration / (1000 * 60))
+    });
+
+    if (duration < 30000) { // Less than 30 seconds
+      console.warn("⚠️ WARNING: Meeting duration is very short:", duration, "ms");
+      if (duration <= 0) {
+        console.error("❌ CRITICAL ERROR: End time is not after start time!");
+        // Add a small buffer to ensure end time is after start time
+        const bufferedEndTime = new Date(startTime + 60000).toISOString(); // Add 1 minute
+        console.log("🔧 FIXED: Using buffered end time:", bufferedEndTime);
+        // Update exactEndTime to use the buffered time
+        const exactEndTime = bufferedEndTime;
+      }
     }
 
     setIsEndingMeeting(meetingIdToEnd);

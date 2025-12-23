@@ -1185,11 +1185,35 @@ const updateMeeting = async (req, res) => {
     } else {
       console.log(`📎 No attachments in request`);
     }
-    if (updates.status === "completed" && !updates.endTime) {
-      updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
-      console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
-    } else if (updates.status === "completed" && updates.endTime) {
-      console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
+    if (updates.status === "completed") {
+      if (!updates.endTime) {
+        updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
+        console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
+        console.warn(`⚠️ WARNING: Client did not provide endTime, using server time instead`);
+      } else {
+        console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
+        try {
+          const currentMeeting = await Meeting.findById(id).lean();
+          if (currentMeeting && currentMeeting.startTime) {
+            if (updates.endTime === currentMeeting.startTime) {
+              console.error(`❌ CRITICAL ERROR: Client provided endTime is identical to startTime!`);
+              console.error(`   StartTime: ${currentMeeting.startTime}`);
+              console.error(`   EndTime: ${updates.endTime}`);
+              console.error(`   This will cause the timing issue! Using server time instead.`);
+              updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
+              console.log(`🔧 FIXED: Using server time instead: ${updates.endTime}`);
+            } else {
+              const startTime = new Date(currentMeeting.startTime).getTime();
+              const endTime = new Date(updates.endTime).getTime();
+              const duration = endTime - startTime;
+              console.log(`✅ VALIDATION PASSED: Times are different`);
+              console.log(`   Duration: ${Math.round(duration / (1e3 * 60))} minutes`);
+            }
+          }
+        } catch (validationError) {
+          console.warn("Could not validate meeting times:", validationError);
+        }
+      }
     }
     if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
       return res.status(400).json({ error: "Discussion details are required" });
@@ -2664,6 +2688,24 @@ const getEmployeeDetails = async (req, res) => {
       if (!meeting.id) {
         console.error(`❌ WARNING: Meeting has no ID!`, meeting);
       }
+      const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+      const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress";
+      console.log(`⏰ TIME DEBUG for ${meeting.clientName}:`, {
+        rawStartTime: meeting.startTime,
+        rawEndTime: meeting.endTime,
+        formattedInTime: meetingInTime,
+        formattedOutTime: meetingOutTime,
+        timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
+      });
+      if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
+        console.error(`❌ TIMING ISSUE DETECTED: Meeting in and out times are the same!`, {
+          meetingId: meeting.id,
+          clientName: meeting.clientName,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          formattedTimes: { in: meetingInTime, out: meetingOutTime }
+        });
+      }
       return {
         meetingId: meeting.id,
         // Include meeting ID for approval updates
@@ -2672,10 +2714,9 @@ const getEmployeeDetails = async (req, res) => {
         companyName: meeting.clientName || "Unknown Company",
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
         leadId: meeting.leadId || "",
-        meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+        meetingInTime,
         meetingInLocation: meeting.location?.address || "",
-        meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress",
-        // Show "In Progress" for active meetings
+        meetingOutTime,
         // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
         meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "" : "Meeting in progress",
         totalStayTime: calculateMeetingDuration(
@@ -3093,14 +3134,33 @@ const getAllEmployeesDetails = async (req, res) => {
         };
       });
       const meetingRecords = meetingsInRange.map((meeting) => {
+        const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+        const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress";
+        console.log(`⏰ TIME DEBUG for ${meeting.clientName} (${employee.name}):`, {
+          rawStartTime: meeting.startTime,
+          rawEndTime: meeting.endTime,
+          formattedInTime: meetingInTime,
+          formattedOutTime: meetingOutTime,
+          timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
+        });
+        if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
+          console.error(`❌ TIMING ISSUE DETECTED in getAllEmployeesDetails: Meeting in and out times are the same!`, {
+            employeeName: employee.name,
+            meetingId: meeting.id,
+            clientName: meeting.clientName,
+            startTime: meeting.startTime,
+            endTime: meeting.endTime,
+            formattedTimes: { in: meetingInTime, out: meetingOutTime }
+          });
+        }
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
           date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
           leadId: meeting.leadId || "",
-          meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+          meetingInTime,
           meetingInLocation: meeting.location?.address || "",
-          meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress",
+          meetingOutTime,
           meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "" : "Meeting in progress",
           totalStayTime: calculateMeetingDuration(
             meeting.startTime,

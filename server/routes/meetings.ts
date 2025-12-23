@@ -403,12 +403,41 @@ export const updateMeeting: RequestHandler = async (req, res) => {
     }
 
     // Handle meeting completion
-    if (updates.status === "completed" && !updates.endTime) {
-      // Only set endTime if not provided by client
-      updates.endTime = new Date().toISOString();
-      console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
-    } else if (updates.status === "completed" && updates.endTime) {
-      console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
+    if (updates.status === "completed") {
+      if (!updates.endTime) {
+        // Only set endTime if not provided by client
+        updates.endTime = new Date().toISOString();
+        console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
+        console.warn(`⚠️ WARNING: Client did not provide endTime, using server time instead`);
+      } else {
+        console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
+        
+        // 🔹 CRITICAL VALIDATION: Ensure endTime is not the same as startTime
+        try {
+          const currentMeeting = await Meeting.findById(id).lean();
+          if (currentMeeting && currentMeeting.startTime) {
+            if (updates.endTime === currentMeeting.startTime) {
+              console.error(`❌ CRITICAL ERROR: Client provided endTime is identical to startTime!`);
+              console.error(`   StartTime: ${currentMeeting.startTime}`);
+              console.error(`   EndTime: ${updates.endTime}`);
+              console.error(`   This will cause the timing issue! Using server time instead.`);
+              
+              // Use server time to prevent the timing issue
+              updates.endTime = new Date().toISOString();
+              console.log(`🔧 FIXED: Using server time instead: ${updates.endTime}`);
+            } else {
+              const startTime = new Date(currentMeeting.startTime).getTime();
+              const endTime = new Date(updates.endTime).getTime();
+              const duration = endTime - startTime;
+              
+              console.log(`✅ VALIDATION PASSED: Times are different`);
+              console.log(`   Duration: ${Math.round(duration / (1000 * 60))} minutes`);
+            }
+          }
+        } catch (validationError) {
+          console.warn("Could not validate meeting times:", validationError);
+        }
+      }
     }
 
     // Validate meeting details

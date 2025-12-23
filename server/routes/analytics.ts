@@ -675,6 +675,30 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       if (!meeting.id) {
         console.error(`❌ WARNING: Meeting has no ID!`, meeting);
       }
+
+      // 🔹 CRITICAL DEBUG: Log the exact times being used
+      const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+      const meetingOutTime = meeting.endTime
+        ? format(new Date(meeting.endTime), "HH:mm")
+        : "In Progress";
+      
+      console.log(`⏰ TIME DEBUG for ${meeting.clientName}:`, {
+        rawStartTime: meeting.startTime,
+        rawEndTime: meeting.endTime,
+        formattedInTime: meetingInTime,
+        formattedOutTime: meetingOutTime,
+        timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
+      });
+      
+      if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
+        console.error(`❌ TIMING ISSUE DETECTED: Meeting in and out times are the same!`, {
+          meetingId: meeting.id,
+          clientName: meeting.clientName,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          formattedTimes: { in: meetingInTime, out: meetingOutTime }
+        });
+      }
       
       return {
         meetingId: meeting.id, // Include meeting ID for approval updates
@@ -682,11 +706,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         companyName: meeting.clientName || "Unknown Company",
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
         leadId: meeting.leadId || "",
-        meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+        meetingInTime: meetingInTime,
         meetingInLocation: meeting.location?.address || "",
-        meetingOutTime: meeting.endTime
-          ? format(new Date(meeting.endTime), "HH:mm")
-          : "In Progress", // Show "In Progress" for active meetings
+        meetingOutTime: meetingOutTime,
         // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
         meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
           ? meeting.location.endLocation.address
@@ -1231,16 +1253,39 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
       // Generate meeting records
       const meetingRecords = meetingsInRange.map((meeting) => {
+        // 🔹 CRITICAL DEBUG: Log the exact times being used
+        const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+        const meetingOutTime = meeting.endTime
+          ? format(new Date(meeting.endTime), "HH:mm")
+          : "In Progress";
+        
+        console.log(`⏰ TIME DEBUG for ${meeting.clientName} (${employee.name}):`, {
+          rawStartTime: meeting.startTime,
+          rawEndTime: meeting.endTime,
+          formattedInTime: meetingInTime,
+          formattedOutTime: meetingOutTime,
+          timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
+        });
+        
+        if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
+          console.error(`❌ TIMING ISSUE DETECTED in getAllEmployeesDetails: Meeting in and out times are the same!`, {
+            employeeName: employee.name,
+            meetingId: meeting.id,
+            clientName: meeting.clientName,
+            startTime: meeting.startTime,
+            endTime: meeting.endTime,
+            formattedTimes: { in: meetingInTime, out: meetingOutTime }
+          });
+        }
+        
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
           date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
           leadId: meeting.leadId || "",
-          meetingInTime: format(new Date(meeting.startTime), "HH:mm"),
+          meetingInTime: meetingInTime,
           meetingInLocation: meeting.location?.address || "",
-          meetingOutTime: meeting.endTime
-            ? format(new Date(meeting.endTime), "HH:mm")
-            : "In Progress",
+          meetingOutTime: meetingOutTime,
           meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
             ? meeting.location.endLocation.address
             : (meeting.status === "completed" ? "" : "Meeting in progress"),
