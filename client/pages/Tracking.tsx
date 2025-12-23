@@ -611,6 +611,10 @@ export default function Tracking() {
       hasDiscussion: !!meetingDetails.discussion
     });
 
+    // 🔹 CRITICAL FIX: Capture the exact end time when user submits the form
+    const exactEndTime = new Date().toISOString();
+    console.log("⏰ Meeting end time captured:", exactEndTime);
+
     // 🔹 CRITICAL FIX: Validate that we have an activeMeetingId
     let meetingIdToEnd = activeMeetingId;
 
@@ -719,7 +723,7 @@ export default function Tracking() {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
             address: address,
-            timestamp: new Date().toISOString(),
+            timestamp: exactEndTime, // Use the captured end time, not current time
           };
           console.log("✅ Fresh end location obtained:", endLocation);
 
@@ -794,10 +798,10 @@ export default function Tracking() {
         status: currentMeeting.status
       });
 
-      // 🔹 PRESERVE ORIGINAL START TIME: Only send fields that should be updated
+      // 🔹 CRITICAL FIX: Use the exact end time captured when user clicked submit
       const updatePayload = {
         status: "completed",
-        endTime: new Date().toISOString(),
+        endTime: exactEndTime, // Use captured time, not new Date().toISOString()
         meetingDetails,
         endLocation, // Include end location
         // 🔹 CRITICAL: Do NOT include startTime in the update payload

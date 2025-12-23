@@ -1152,6 +1152,29 @@ const updateMeeting = async (req, res) => {
       console.warn("⚠️ Attempt to update startTime blocked - preserving original startTime");
       delete updates.startTime;
     }
+    if (updates.endTime && updates.status === "completed") {
+      console.log(`📋 Meeting completion - endTime: ${updates.endTime}`);
+      try {
+        const currentMeeting = await Meeting.findById(id).lean();
+        if (currentMeeting && currentMeeting.startTime) {
+          const startTime = new Date(currentMeeting.startTime).getTime();
+          const endTime = new Date(updates.endTime).getTime();
+          const timeDifference = endTime - startTime;
+          console.log(`⏰ Time validation:`, {
+            startTime: currentMeeting.startTime,
+            endTime: updates.endTime,
+            differenceMs: timeDifference,
+            differenceMinutes: Math.round(timeDifference / (1e3 * 60))
+          });
+          if (Math.abs(timeDifference) < 3e4) {
+            console.warn("⚠️ WARNING: Start and end times are very close together!");
+            console.warn("This might indicate a timing issue in the client or server.");
+          }
+        }
+      } catch (validationError) {
+        console.warn("Could not validate meeting times:", validationError);
+      }
+    }
     if (updates.meetingDetails?.attachments) {
       console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
       updates.meetingDetails.attachments.forEach((att, idx) => {
@@ -1164,7 +1187,9 @@ const updateMeeting = async (req, res) => {
     }
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
-      console.log(`⏰ Setting endTime to: ${updates.endTime}`);
+      console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
+    } else if (updates.status === "completed" && updates.endTime) {
+      console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
     }
     if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
       return res.status(400).json({ error: "Discussion details are required" });
