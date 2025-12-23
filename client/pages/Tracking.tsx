@@ -180,7 +180,7 @@ export default function Tracking() {
 
             if (activeMeetings.length > 0) {
               console.log("🔄 Found active meetings after refresh:", activeMeetings.map(m => ({ id: m.id, followUpId: m.followUpId })));
-              
+
               // Restore all active meetings with followUpIds
               const newStartedMeetingMap: Record<string, string> = {};
               activeMeetings.forEach((meeting: MeetingLog) => {
@@ -189,7 +189,7 @@ export default function Tracking() {
                   newStartedMeetingMap[meeting.followUpId] = meeting.id;
                 }
               });
-              
+
               // Update the map if we found any follow-up meetings
               if (Object.keys(newStartedMeetingMap).length > 0) {
                 setStartedMeetingMap(prev => ({
@@ -197,7 +197,7 @@ export default function Tracking() {
                   ...newStartedMeetingMap
                 }));
               }
-              
+
               // Set the first active meeting as the active meeting ID
               setActiveMeetingId(activeMeetings[0].id);
             } else {
@@ -251,7 +251,7 @@ export default function Tracking() {
     console.log("🚀 Attempting to start meeting from follow-up:", meeting.companyName);
     console.log("📋 Current meetings:", meetings.map(m => ({ id: m.id, status: m.status, client: m.clientName })));
     console.log("📊 Total meetings:", meetings.length);
-    
+
     // Check if there's already an active meeting
     const activeMeeting = meetings.find(
       (m) => m.status === "in-progress" || m.status === "started"
@@ -268,9 +268,9 @@ export default function Tracking() {
       });
       return;
     }
-    
+
     console.log("✅ No active meeting found, proceeding to start...");
-    
+
     // Prepare meeting data for the meeting
     const meetingData = {
       clientName: meeting.customerName,
@@ -336,22 +336,22 @@ export default function Tracking() {
 
   const handleEndMeetingFromFollowUp = async (followUpId: string, meetingId: string) => {
     console.log("🔴 handleEndMeetingFromFollowUp called with:", { followUpId, meetingId });
-    
+
     // 🔹 HYBRID APPROACH: Check BOTH local database AND external API
     console.log("📥 Fetching active meeting from local database AND external API...");
     toast({
       title: "Loading Meeting Data",
       description: "Searching for active meeting...",
     });
-    
+
     let finalMeetingId = meetingId;
     let activeMeetingData: MeetingLog | null = null;
-    
+
     try {
       // 🔹 STEP 1: Try local database first (fastest)
       if (!finalMeetingId || finalMeetingId === "") {
         console.log("🔍 Step 1: Checking local database...");
-        
+
         // Try by followUpId first
         if (followUpId) {
           try {
@@ -359,7 +359,7 @@ export default function Tracking() {
             const response = await HttpClient.get(
               `/api/meetings/active?followUpId=${followUpId}`
             );
-            
+
             if (response.ok) {
               activeMeetingData = await response.json();
               finalMeetingId = activeMeetingData.id;
@@ -372,7 +372,7 @@ export default function Tracking() {
             // Continue to next step - don't stop here
           }
         }
-        
+
         // Try by employeeId if not found
         if (!finalMeetingId && employeeId) {
           try {
@@ -380,7 +380,7 @@ export default function Tracking() {
             const response = await HttpClient.get(
               `/api/meetings/active?employeeId=${employeeId}`
             );
-            
+
             if (response.ok) {
               activeMeetingData = await response.json();
               finalMeetingId = activeMeetingData.id;
@@ -393,35 +393,35 @@ export default function Tracking() {
             // Continue to Step 2 - don't stop here
           }
         }
-        
+
         console.log("📊 Step 1 complete. finalMeetingId:", finalMeetingId || "not found");
       }
-      
+
       // 🔹 STEP 2: If not found in local database, check external API
       if (!finalMeetingId || finalMeetingId === "") {
         console.log("🔍 Step 2: Not found in local database, checking external API...");
-        
+
         if (employeeId) {
           try {
             const externalApiUrl = import.meta.env.VITE_EXTERNAL_LEAD_API || "https://jbdspower.in/LeafNetServer/api";
             const baseUrl = externalApiUrl.replace("/getAllLead", "");
             const url = `${baseUrl}/getFollowUpHistory?userId=${employeeId}`;
-            
+
             console.log("🔍 Querying external API:", url);
             const response = await fetch(url);
-            
+
             if (response.ok) {
               const followUps = await response.json();
               console.log("📥 External API returned", followUps.length, "follow-ups");
-              
+
               // Find the meeting with "meeting on-going" status
-              const ongoingMeeting = followUps.find((m: any) => 
-                m.meetingStatus === "meeting on-going" || 
+              const ongoingMeeting = followUps.find((m: any) =>
+                m.meetingStatus === "meeting on-going" ||
                 m.meetingStatus === "In Progress" ||
                 m.meetingStatus === "IN_PROGRESS" ||
                 m.meetingStatus === "Started"
               );
-              
+
               if (ongoingMeeting) {
                 console.log("✅ Found ongoing meeting in EXTERNAL API:", ongoingMeeting._id);
                 console.log("📋 External meeting data:", {
@@ -430,14 +430,14 @@ export default function Tracking() {
                   company: ongoingMeeting.companyName,
                   customer: ongoingMeeting.customerName
                 });
-                
+
                 // Now search local database for this meeting
                 let foundInLocalDB = false;
                 try {
                   const localResponse = await HttpClient.get(
                     `/api/meetings/active?followUpId=${ongoingMeeting._id}`
                   );
-                  
+
                   if (localResponse.ok) {
                     activeMeetingData = await localResponse.json();
                     finalMeetingId = activeMeetingData.id;
@@ -448,12 +448,12 @@ export default function Tracking() {
                   console.warn("⚠️ Error searching local database (404 expected):", error.message);
                   // Continue to auto-recovery
                 }
-                
+
                 // 🔹 AUTO-RECOVERY: If not found in local DB, create it from external API data
                 if (!foundInLocalDB && !finalMeetingId) {
                   console.warn("⚠️ External API shows ongoing meeting, but not found in local database");
                   console.warn("🔧 Creating meeting in local database from external API data...");
-                  
+
                   try {
                     if (!employee) {
                       console.error("❌ Cannot create meeting: No employee data");
@@ -471,7 +471,7 @@ export default function Tracking() {
                         leadId: ongoingMeeting.leadId || undefined,
                         externalMeetingStatus: ongoingMeeting.meetingStatus,
                       });
-                      
+
                       if (createResponse.ok) {
                         activeMeetingData = await createResponse.json();
                         finalMeetingId = activeMeetingData.id;
@@ -501,7 +501,7 @@ export default function Tracking() {
           }
         }
       }
-      
+
       // 🔹 STEP 3: If we still don't have a meeting ID, show error
       if (!finalMeetingId || finalMeetingId === "") {
         console.error("❌ No active meeting found in LOCAL DATABASE or EXTERNAL API!");
@@ -513,13 +513,13 @@ export default function Tracking() {
         });
         return;
       }
-      
+
       console.log("🎯 Final meeting ID:", finalMeetingId);
-      
+
       // 🔹 STEP 4: Update local state with the active meeting
       if (activeMeetingData) {
         console.log("🔄 Updating local state with meeting data...");
-        
+
         // Update meetings array if needed
         setMeetings(prev => {
           const exists = prev.find(m => m.id === activeMeetingData!.id);
@@ -530,7 +530,7 @@ export default function Tracking() {
           console.log("✓ Meeting already in local state");
           return prev;
         });
-        
+
         // Restore startedMeetingMap
         if (activeMeetingData.followUpId) {
           console.log("🔄 Restoring startedMeetingMap:", {
@@ -542,20 +542,20 @@ export default function Tracking() {
           }));
         }
       }
-      
+
       // 🔹 STEP 5: Get follow-up data for the modal (for pre-filling customer info)
       let followUpData = followUpDataMap[finalMeetingId];
-      
+
       if (!followUpData && followUpId) {
         followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
         console.log("📋 Found follow-up data from todaysFollowUpMeetings:", !!followUpData);
       }
-      
+
       if (!followUpData && activeMeetingData?.followUpId) {
         followUpData = todaysFollowUpMeetings.find(m => m._id === activeMeetingData.followUpId);
         console.log("📋 Found follow-up data by activeMeetingData.followUpId:", !!followUpData);
       }
-      
+
       if (followUpData) {
         console.log("✅ Setting follow-up data for modal:", {
           company: followUpData.companyName,
@@ -566,12 +566,12 @@ export default function Tracking() {
         console.warn("⚠️ No follow-up data found for meeting:", finalMeetingId);
         console.warn("Modal will open without pre-filled customer data");
       }
-      
+
       // 🔹 STEP 5: Open the modal
       console.log("🎉 Opening End Meeting modal with meeting ID:", finalMeetingId);
       setActiveMeetingId(finalMeetingId);
       setIsEndMeetingModalOpen(true);
-      
+
     } catch (error) {
       console.error("❌ Error in handleEndMeetingFromFollowUp:", error);
       toast({
@@ -601,303 +601,331 @@ export default function Tracking() {
     }
   };
 
-const handleEndMeetingWithDetails = async (
-  meetingDetails: MeetingDetails,
-) => {
-  console.log("🔴 handleEndMeetingWithDetails called with:", {
-    activeMeetingId,
-    meetingDetails,
-    hasCustomers: meetingDetails.customers?.length > 0,
-    hasDiscussion: !!meetingDetails.discussion
-  });
-  
-  // 🔹 CRITICAL FIX: Validate that we have an activeMeetingId
-  let meetingIdToEnd = activeMeetingId;
-  
-  if (!meetingIdToEnd) {
-    console.error("❌ Cannot end meeting: No activeMeetingId set!");
-    toast({
-      title: "Error",
-      description: "No active meeting found. Please try again.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  setIsEndingMeeting(meetingIdToEnd);
-  try {
-    console.log(
-      "Ending meeting with details:",
+  const handleEndMeetingWithDetails = async (
+    meetingDetails: MeetingDetails,
+  ) => {
+    console.log("🔴 handleEndMeetingWithDetails called with:", {
       activeMeetingId,
       meetingDetails,
-    );
+      hasCustomers: meetingDetails.customers?.length > 0,
+      hasDiscussion: !!meetingDetails.discussion
+    });
 
-    // 🔹 MANDATORY: Get fresh location with retry logic
-    let endLocation = null;
-    const maxRetries = 3;
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries && !endLocation) {
-      try {
-        console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting end...`);
-        
-        // Show loading toast on first attempt
-        if (retryCount === 0) {
-          toast({
-            title: "Getting Location",
-            description: "Please wait while we fetch your current location...",
-          });
-        }
-        
-        // Check if geolocation is supported
-        if (!navigator.geolocation) {
-          throw new Error("Geolocation is not supported by your browser");
-        }
+    // 🔹 CRITICAL FIX: Validate that we have an activeMeetingId
+    let meetingIdToEnd = activeMeetingId;
 
-        // Check permission status
-        if (navigator.permissions) {
-          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-          console.log("Location permission status:", permissionStatus.state);
-          
-          if (permissionStatus.state === 'denied') {
+    if (!meetingIdToEnd) {
+      console.error("❌ Cannot end meeting: No activeMeetingId set!");
+      toast({
+        title: "Error",
+        description: "No active meeting found. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsEndingMeeting(meetingIdToEnd);
+    try {
+      console.log(
+        "Ending meeting with details:",
+        activeMeetingId,
+        meetingDetails,
+      );
+
+      // 🔹 MANDATORY: Get fresh location with retry logic
+      let endLocation = null;
+      const maxRetries = 3;
+      let retryCount = 0;
+
+      while (retryCount < maxRetries && !endLocation) {
+        try {
+          console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting end...`);
+
+          // Show loading toast on first attempt
+          if (retryCount === 0) {
             toast({
-              title: "Location Permission Denied",
-              description: "Please enable location access in your browser settings and try again.",
+              title: "Getting Location",
+              description: "Please wait while we fetch your current location...",
+            });
+          }
+
+          // Check if geolocation is supported
+          if (!navigator.geolocation) {
+            throw new Error("Geolocation is not supported by your browser");
+          }
+
+          // Check permission status
+          if (navigator.permissions) {
+            const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+            console.log("Location permission status:", permissionStatus.state);
+
+            if (permissionStatus.state === 'denied') {
+              toast({
+                title: "Location Permission Denied",
+                description: "Please enable location access in your browser settings and try again.",
+                variant: "destructive",
+              });
+              setIsEndingMeeting(null);
+              return;
+            }
+
+            if (permissionStatus.state === 'prompt') {
+              toast({
+                title: "Location Permission Required",
+                description: "Please allow location access when prompted.",
+              });
+            }
+          }
+
+          // Attempt to get fresh location with increased timeout
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
+
+            navigator.geolocation.getCurrentPosition(
+              resolve,
+              reject,
+              {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: timeoutDuration,
+              }
+            );
+          });
+
+          let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+
+          // Get human-readable address from coordinates
+          try {
+            console.log("🗺️ Fetching address for meeting end location...");
+            const addressResponse = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
+              {
+                headers: {
+                  'User-Agent': 'EmployeeTrackingApp/1.0'
+                }
+              }
+            );
+
+            if (addressResponse.ok) {
+              const addressData = await addressResponse.json();
+              address = addressData.display_name || address;
+              console.log("✅ Meeting end address resolved:", address);
+            }
+          } catch (addressError) {
+            console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+          }
+
+          endLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            address: address,
+            timestamp: new Date().toISOString(),
+          };
+          console.log("✅ Fresh end location obtained:", endLocation);
+
+          // Success - show confirmation
+          toast({
+            title: "Location Obtained",
+            description: "Ending meeting...",
+          });
+
+        } catch (locationError) {
+          retryCount++;
+          console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+
+          if (retryCount < maxRetries) {
+            // Retry with user feedback
+            toast({
+              title: "Retrying Location",
+              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          } else {
+            // All retries exhausted
+            const errorMessage = locationError instanceof GeolocationPositionError
+              ? locationError.code === 1
+                ? "Location permission denied. Please enable location in your browser settings."
+                : locationError.code === 2
+                  ? "Unable to determine your location. Please check your device's location settings."
+                  : "Location request timed out. Please ensure location services are enabled and try again."
+              : "Failed to access location. Please check your location settings and try again.";
+
+            toast({
+              title: "Location Required",
+              description: errorMessage,
               variant: "destructive",
             });
             setIsEndingMeeting(null);
             return;
           }
-          
-          if (permissionStatus.state === 'prompt') {
-            toast({
-              title: "Location Permission Required",
-              description: "Please allow location access when prompted.",
-            });
-          }
-        }
-
-        // Attempt to get fresh location with increased timeout
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
-          
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            {
-              enableHighAccuracy: true,
-              maximumAge: 0,
-              timeout: timeoutDuration,
-            }
-          );
-        });
-
-        let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-        
-        // Get human-readable address from coordinates
-        try {
-          console.log("🗺️ Fetching address for meeting end location...");
-          const addressResponse = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-            {
-              headers: {
-                'User-Agent': 'EmployeeTrackingApp/1.0'
-              }
-            }
-          );
-          
-          if (addressResponse.ok) {
-            const addressData = await addressResponse.json();
-            address = addressData.display_name || address;
-            console.log("✅ Meeting end address resolved:", address);
-          }
-        } catch (addressError) {
-          console.warn("⚠️ Failed to get address, using coordinates:", addressError);
-        }
-
-        endLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          address: address,
-          timestamp: new Date().toISOString(),
-        };
-        console.log("✅ Fresh end location obtained:", endLocation);
-        
-        // Success - show confirmation
-        toast({
-          title: "Location Obtained",
-          description: "Ending meeting...",
-        });
-        
-      } catch (locationError) {
-        retryCount++;
-        console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
-        
-        if (retryCount < maxRetries) {
-          // Retry with user feedback
-          toast({
-            title: "Retrying Location",
-            description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
-          });
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
-        } else {
-          // All retries exhausted
-          const errorMessage = locationError instanceof GeolocationPositionError
-            ? locationError.code === 1
-              ? "Location permission denied. Please enable location in your browser settings."
-              : locationError.code === 2
-              ? "Unable to determine your location. Please check your device's location settings."
-              : "Location request timed out. Please ensure location services are enabled and try again."
-            : "Failed to access location. Please check your location settings and try again.";
-          
-          toast({
-            title: "Location Required",
-            description: errorMessage,
-            variant: "destructive",
-          });
-          setIsEndingMeeting(null);
-          return;
         }
       }
-    }
-    
-    // Final check - ensure we have location
-    if (!endLocation) {
-      toast({
-        title: "Location Required",
-        description: "Unable to get your location after multiple attempts. Please check your settings.",
-        variant: "destructive",
-      });
-      setIsEndingMeeting(null);
-      return;
-    }
 
-    console.log("📤 Sending PUT request to:", `/api/meetings/${meetingIdToEnd}`);
-    const response = await HttpClient.put(
-      `/api/meetings/${meetingIdToEnd}`,
-      {
+      // Final check - ensure we have location
+      if (!endLocation) {
+        toast({
+          title: "Location Required",
+          description: "Unable to get your location after multiple attempts. Please check your settings.",
+          variant: "destructive",
+        });
+        setIsEndingMeeting(null);
+        return;
+      }
+
+      console.log("📤 Sending PUT request to:", `/api/meetings/${meetingIdToEnd}`);
+      
+      // 🔹 CRITICAL FIX: Get the current meeting data to preserve startTime
+      const currentMeeting = meetings.find(m => m.id === meetingIdToEnd);
+      if (!currentMeeting) {
+        console.error("❌ Cannot find current meeting in local state:", meetingIdToEnd);
+        toast({
+          title: "Error",
+          description: "Meeting data not found. Please refresh and try again.",
+          variant: "destructive",
+        });
+        setIsEndingMeeting(null);
+        return;
+      }
+
+      console.log("📋 Current meeting data:", {
+        id: currentMeeting.id,
+        startTime: currentMeeting.startTime,
+        clientName: currentMeeting.clientName,
+        status: currentMeeting.status
+      });
+
+      // 🔹 PRESERVE ORIGINAL START TIME: Only send fields that should be updated
+      const updatePayload = {
         status: "completed",
         endTime: new Date().toISOString(),
         meetingDetails,
         endLocation, // Include end location
-      },
-    );
+        // 🔹 CRITICAL: Do NOT include startTime in the update payload
+        // The backend should preserve the original startTime from when the meeting was created
+      };
 
-    if (response.ok) {
-      console.log("Meeting ended successfully");
-
-      // Find the follow-up meeting that was started
-      const followUpMeetingId = Object.keys(startedMeetingMap).find(
-        key => startedMeetingMap[key] === meetingIdToEnd
+      console.log("📤 Update payload (preserving original startTime):", updatePayload);
+      
+      const response = await HttpClient.put(
+        `/api/meetings/${meetingIdToEnd}`,
+        updatePayload,
       );
 
-      // Update follow-up meeting status to "complete" in the backend
-      if (followUpMeetingId) {
-        try {
-          console.log("Updating follow-up status for:", followUpMeetingId);
-          
-          const followUpResponse = await fetch(
-      `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpMeetingId}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ meetingStatus: "complete" }),
-      }
-    );
+      if (response.ok) {
+        console.log("Meeting ended successfully");
 
-          if (followUpResponse.ok) {
-            console.log("Follow-up meeting status updated to 'complete'");
-          } else {
-            console.error("Failed to update follow-up status:", followUpResponse.status);
+        // Find the follow-up meeting that was started
+        const followUpMeetingId = Object.keys(startedMeetingMap).find(
+          key => startedMeetingMap[key] === meetingIdToEnd
+        );
+
+        // Update follow-up meeting status to "complete" in the backend
+        if (followUpMeetingId) {
+          try {
+            console.log("Updating follow-up status for:", followUpMeetingId);
+
+            const followUpResponse = await fetch(
+              `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpMeetingId}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ meetingStatus: "complete" }),
+              }
+            );
+
+            if (followUpResponse.ok) {
+              console.log("Follow-up meeting status updated to 'complete'");
+            } else {
+              console.error("Failed to update follow-up status:", followUpResponse.status);
+            }
+          } catch (followUpError) {
+            console.error("Error updating follow-up status:", followUpError);
           }
-        } catch (followUpError) {
-          console.error("Error updating follow-up status:", followUpError);
         }
-      }
 
-      // Rest of your existing code for history and state updates...
-      try {
-        const currentMeeting = meetings.find(m => m.id === meetingIdToEnd);
+        // Rest of your existing code for history and state updates...
+        try {
+          const currentMeeting = meetings.find(m => m.id === meetingIdToEnd);
 
-        console.log("Attempting to add meeting to history with details:", {
-          sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
-          employeeId,
-          meetingDetails,
-          leadId: currentMeeting?.leadId,
-          leadInfo: currentMeeting?.leadInfo,
-        });
-
-        const historyResponse = await HttpClient.post(
-          "/api/meeting-history",
-          {
+          console.log("Attempting to add meeting to history with details:", {
             sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
             employeeId,
             meetingDetails,
             leadId: currentMeeting?.leadId,
             leadInfo: currentMeeting?.leadInfo,
-          },
-        );
+          });
 
-        if (historyResponse.ok) {
-          const historyData = await historyResponse.json();
-          console.log("Meeting added to history successfully:", historyData);
-        } else {
-          const errorText = await historyResponse.text();
-          console.error("Failed to add meeting to history:", historyResponse.status, errorText);
-        }
-      } catch (historyError) {
-        console.error("Error adding meeting to history:", historyError);
-      }
+          const historyResponse = await HttpClient.post(
+            "/api/meeting-history",
+            {
+              sessionId: currentTrackingSession?.id || `manual_${Date.now()}`,
+              employeeId,
+              meetingDetails,
+              leadId: currentMeeting?.leadId,
+              leadInfo: currentMeeting?.leadInfo,
+            },
+          );
 
-      // Remove from started meeting map when meeting is ended
-      setStartedMeetingMap(prev => {
-        const newMap = { ...prev };
-        // Find and remove the follow-up ID that maps to this meeting ID
-        Object.keys(newMap).forEach(key => {
-          if (newMap[key] === meetingIdToEnd) {
-            delete newMap[key];
+          if (historyResponse.ok) {
+            const historyData = await historyResponse.json();
+            console.log("Meeting added to history successfully:", historyData);
+          } else {
+            const errorText = await historyResponse.text();
+            console.error("Failed to add meeting to history:", historyResponse.status, errorText);
           }
+        } catch (historyError) {
+          console.error("Error adding meeting to history:", historyError);
+        }
+
+        // Remove from started meeting map when meeting is ended
+        setStartedMeetingMap(prev => {
+          const newMap = { ...prev };
+          // Find and remove the follow-up ID that maps to this meeting ID
+          Object.keys(newMap).forEach(key => {
+            if (newMap[key] === meetingIdToEnd) {
+              delete newMap[key];
+            }
+          });
+          return newMap;
         });
-        return newMap;
-      });
 
-      // Remove from follow-up data map
-      setFollowUpDataMap(prev => {
-        const newMap = { ...prev };
-        delete newMap[meetingIdToEnd];
-        return newMap;
-      });
+        // Remove from follow-up data map
+        setFollowUpDataMap(prev => {
+          const newMap = { ...prev };
+          delete newMap[meetingIdToEnd];
+          return newMap;
+        });
 
-      // Remove from follow-up meeting IDs
-      setFollowUpMeetingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(meetingIdToEnd);
-        return newSet;
-      });
+        // Remove from follow-up meeting IDs
+        setFollowUpMeetingIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(meetingIdToEnd);
+          return newSet;
+        });
 
-      // Trigger refresh of Today's meetings to get updated status from API
-      setRefreshTodaysMeetings(prev => prev + 1);
+        // Trigger refresh of Today's meetings to get updated status from API
+        setRefreshTodaysMeetings(prev => prev + 1);
 
-      await HttpClient.put(`/api/employees/${employeeId}/status`, {
-        status: "active",
-      });
+        await HttpClient.put(`/api/employees/${employeeId}/status`, {
+          status: "active",
+        });
 
-      await Promise.all([fetchMeetings(), fetchEmployee()]);
-    } else {
-      const errorText = await response.text();
-      console.error("Failed to end meeting:", response.status, errorText);
-      throw new Error(`Failed to end meeting: ${errorText}`);
+        await Promise.all([fetchMeetings(), fetchEmployee()]);
+      } else {
+        const errorText = await response.text();
+        console.error("Failed to end meeting:", response.status, errorText);
+        throw new Error(`Failed to end meeting: ${errorText}`);
+      }
+    } catch (error) {
+      console.error("Error ending meeting:", error);
+      throw error;
+    } finally {
+      setIsEndingMeeting(null);
+      setActiveMeetingId(null);
     }
-  } catch (error) {
-    console.error("Error ending meeting:", error);
-    throw error;
-  } finally {
-    setIsEndingMeeting(null);
-    setActiveMeetingId(null);
-  }
-};
+  };
 
   const startMeeting = async (meetingData: {
     clientName: string;
@@ -912,17 +940,21 @@ const handleEndMeetingWithDetails = async (
   }) => {
     if (!employee) return;
 
+    // 🔹 CRITICAL FIX: Capture the exact start time when user clicks "Start Meeting"
+    const exactStartTime = new Date().toISOString();
+    console.log("⏰ Meeting start time captured:", exactStartTime);
+
     setIsStartingMeeting(true);
     try {
       // 🔹 MANDATORY: Get fresh location with retry logic
       let startLocation = null;
       const maxRetries = 3;
       let retryCount = 0;
-      
+
       while (retryCount < maxRetries && !startLocation) {
         try {
           console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
-          
+
           // Show loading toast on first attempt
           if (retryCount === 0) {
             toast({
@@ -930,7 +962,7 @@ const handleEndMeetingWithDetails = async (
               description: "Please wait while we fetch your current location...",
             });
           }
-          
+
           // Check if geolocation is supported
           if (!navigator.geolocation) {
             throw new Error("Geolocation is not supported by your browser");
@@ -940,7 +972,7 @@ const handleEndMeetingWithDetails = async (
           if (navigator.permissions) {
             const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
             console.log("Location permission status:", permissionStatus.state);
-            
+
             if (permissionStatus.state === 'denied') {
               toast({
                 title: "Location Permission Denied",
@@ -950,7 +982,7 @@ const handleEndMeetingWithDetails = async (
               setIsStartingMeeting(false);
               return;
             }
-            
+
             if (permissionStatus.state === 'prompt') {
               toast({
                 title: "Location Permission Required",
@@ -962,7 +994,7 @@ const handleEndMeetingWithDetails = async (
           // Attempt to get fresh location with increased timeout
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
-            
+
             navigator.geolocation.getCurrentPosition(
               resolve,
               reject,
@@ -975,7 +1007,7 @@ const handleEndMeetingWithDetails = async (
           });
 
           let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-          
+
           // Get human-readable address from coordinates
           try {
             console.log("🗺️ Fetching address for meeting start location...");
@@ -987,7 +1019,7 @@ const handleEndMeetingWithDetails = async (
                 }
               }
             );
-            
+
             if (addressResponse.ok) {
               const addressData = await addressResponse.json();
               address = addressData.display_name || address;
@@ -1003,17 +1035,17 @@ const handleEndMeetingWithDetails = async (
             address: address,
           };
           console.log("✅ Fresh start location obtained:", startLocation);
-          
+
           // Success - show confirmation
           toast({
             title: "Location Obtained",
             description: "Starting meeting...",
           });
-          
+
         } catch (locationError) {
           retryCount++;
           console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
-          
+
           if (retryCount < maxRetries) {
             // Retry with user feedback
             toast({
@@ -1027,10 +1059,10 @@ const handleEndMeetingWithDetails = async (
               ? locationError.code === 1
                 ? "Location permission denied. Please enable location in your browser settings."
                 : locationError.code === 2
-                ? "Unable to determine your location. Please check your device's location settings."
-                : "Location request timed out. Please ensure location services are enabled and try again."
+                  ? "Unable to determine your location. Please check your device's location settings."
+                  : "Location request timed out. Please ensure location services are enabled and try again."
               : "Failed to access location. Please check your location settings and try again.";
-            
+
             toast({
               title: "Location Required",
               description: errorMessage,
@@ -1041,7 +1073,7 @@ const handleEndMeetingWithDetails = async (
           }
         }
       }
-      
+
       // Final check - ensure we have location
       if (!startLocation) {
         toast({
@@ -1060,36 +1092,51 @@ const handleEndMeetingWithDetails = async (
         notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
+        startTime: exactStartTime, // 🔹 CRITICAL: Send the exact time when user clicked start
       });
 
       if (response.ok) {
         const createdMeeting = await response.json();
-        
-        console.log("✅ Meeting created successfully:", createdMeeting.id);
-        
+
+        console.log("✅ Meeting created successfully:", {
+          id: createdMeeting.id,
+          clientName: createdMeeting.clientName,
+          status: createdMeeting.status,
+          startTime: createdMeeting.startTime,
+          location: createdMeeting.location
+        });
+
         // IMMEDIATELY add the meeting to the local state to prevent race conditions
         setMeetings(prev => {
-          console.log("📝 Adding meeting to state:", createdMeeting.id);
-          return [...prev, createdMeeting];
+          console.log("📝 Adding meeting to state:", {
+            id: createdMeeting.id,
+            clientName: createdMeeting.clientName,
+            status: createdMeeting.status
+          });
+          console.log("📊 Previous meetings count:", prev.length);
+          const newMeetings = [createdMeeting, ...prev];
+          console.log("📊 New meetings count:", newMeetings.length);
+          return newMeetings;
         });
-        
-        // DON'T fetch meetings after starting - it will replace the state and lose the meeting
-        // The meeting is already added to state above, no need to fetch
-        // setTimeout(() => {
-        //   console.log("🔄 Fetching meetings after delay to sync with server...");
-        //   fetchMeetings();
-        // }, 1000);
+
+        // Update employee status to "meeting"
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
-        fetchEmployee();
-        setIsStartMeetingModalOpen(false);
         
+        // Refresh employee data to show updated status
+        fetchEmployee();
+        
+        // Close the modal
+        setIsStartMeetingModalOpen(false);
+
         // Show success toast
         toast({
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started`,
         });
+        
+        console.log("🎉 Meeting started successfully - UI should now show End Meeting button");
       } else {
         // Handle error response
         const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
@@ -1127,21 +1174,25 @@ const handleEndMeetingWithDetails = async (
   ) => {
     if (!employee) return;
 
+    // 🔹 CRITICAL FIX: Capture the exact start time when user clicks "Start Meeting"
+    const exactStartTime = new Date().toISOString();
+    console.log("⏰ Follow-up meeting start time captured:", exactStartTime);
+
     setIsStartingMeeting(true);
     try {
       // Find and store the full follow-up data before starting the meeting
       const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
       console.log("📋 Storing follow-up data for meeting:", followUpData);
-      
+
       // 🔹 MANDATORY: Get fresh location with retry logic
       let startLocation = null;
       const maxRetries = 3;
       let retryCount = 0;
-      
+
       while (retryCount < maxRetries && !startLocation) {
         try {
           console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
-          
+
           // Show loading toast on first attempt
           if (retryCount === 0) {
             toast({
@@ -1149,7 +1200,7 @@ const handleEndMeetingWithDetails = async (
               description: "Please wait while we fetch your current location...",
             });
           }
-          
+
           // Check if geolocation is supported
           if (!navigator.geolocation) {
             throw new Error("Geolocation is not supported by your browser");
@@ -1159,7 +1210,7 @@ const handleEndMeetingWithDetails = async (
           if (navigator.permissions) {
             const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
             console.log("Location permission status:", permissionStatus.state);
-            
+
             if (permissionStatus.state === 'denied') {
               toast({
                 title: "Location Permission Denied",
@@ -1169,7 +1220,7 @@ const handleEndMeetingWithDetails = async (
               setIsStartingMeeting(false);
               return;
             }
-            
+
             if (permissionStatus.state === 'prompt') {
               toast({
                 title: "Location Permission Required",
@@ -1181,7 +1232,7 @@ const handleEndMeetingWithDetails = async (
           // Attempt to get fresh location with increased timeout
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
-            
+
             navigator.geolocation.getCurrentPosition(
               resolve,
               reject,
@@ -1194,7 +1245,7 @@ const handleEndMeetingWithDetails = async (
           });
 
           let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-          
+
           // Get human-readable address from coordinates
           try {
             console.log("🗺️ Fetching address for meeting start location...");
@@ -1206,7 +1257,7 @@ const handleEndMeetingWithDetails = async (
                 }
               }
             );
-            
+
             if (addressResponse.ok) {
               const addressData = await addressResponse.json();
               address = addressData.display_name || address;
@@ -1222,17 +1273,17 @@ const handleEndMeetingWithDetails = async (
             address: address,
           };
           console.log("✅ Fresh start location obtained:", startLocation);
-          
+
           // Success - show confirmation
           toast({
             title: "Location Obtained",
             description: "Starting meeting...",
           });
-          
+
         } catch (locationError) {
           retryCount++;
           console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
-          
+
           if (retryCount < maxRetries) {
             // Retry with user feedback
             toast({
@@ -1246,10 +1297,10 @@ const handleEndMeetingWithDetails = async (
               ? locationError.code === 1
                 ? "Location permission denied. Please enable location in your browser settings."
                 : locationError.code === 2
-                ? "Unable to determine your location. Please check your device's location settings."
-                : "Location request timed out. Please ensure location services are enabled and try again."
+                  ? "Unable to determine your location. Please check your device's location settings."
+                  : "Location request timed out. Please ensure location services are enabled and try again."
               : "Failed to access location. Please check your location settings and try again.";
-            
+
             toast({
               title: "Location Required",
               description: errorMessage,
@@ -1260,7 +1311,7 @@ const handleEndMeetingWithDetails = async (
           }
         }
       }
-      
+
       // Final check - ensure we have location
       if (!startLocation) {
         toast({
@@ -1272,6 +1323,17 @@ const handleEndMeetingWithDetails = async (
         return;
       }
 
+      console.log("🚀 Creating follow-up meeting with payload:", {
+        employeeId: employee.id,
+        location: startLocation,
+        clientName: meetingData.clientName,
+        notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
+        leadId: meetingData.leadId,
+        leadInfo: meetingData.leadInfo,
+        followUpId: followUpId,
+        externalMeetingStatus: "meeting on-going"
+      });
+
       const response = await HttpClient.post("/api/meetings", {
         employeeId: employee.id,
         location: startLocation,
@@ -1281,25 +1343,55 @@ const handleEndMeetingWithDetails = async (
         leadInfo: meetingData.leadInfo,
         followUpId: followUpId, // 🔹 Store the follow-up meeting ID
         externalMeetingStatus: "meeting on-going", // Initial status from external API
+        startTime: exactStartTime, // 🔹 CRITICAL: Send the exact time when user clicked start
       });
 
       if (response.ok) {
         const createdMeeting = await response.json();
-        
-        console.log("✅ Meeting created successfully:", createdMeeting.id);
-        
+
+        console.log("✅ Follow-up meeting created successfully:", {
+          id: createdMeeting.id,
+          clientName: createdMeeting.clientName,
+          status: createdMeeting.status,
+          startTime: createdMeeting.startTime,
+          location: createdMeeting.location,
+          followUpId: createdMeeting.followUpId
+        });
+
+        // 🔹 CRITICAL: Ensure the meeting has the correct structure for display
+        const meetingForState = {
+          ...createdMeeting,
+          status: "in-progress", // Ensure status is set correctly
+          startTime: createdMeeting.startTime || new Date().toISOString(),
+          location: {
+            ...createdMeeting.location,
+            address: createdMeeting.location.address || startLocation.address
+          }
+        };
+
         // IMMEDIATELY add the meeting to the local state to prevent race conditions
         setMeetings(prev => {
-          console.log("📝 Adding meeting to state:", createdMeeting.id);
-          return [...prev, createdMeeting];
+          console.log("📝 Adding follow-up meeting to state:", meetingForState.id);
+          console.log("📝 Meeting details for state:", {
+            id: meetingForState.id,
+            clientName: meetingForState.clientName,
+            status: meetingForState.status,
+            startTime: meetingForState.startTime,
+            location: meetingForState.location
+          });
+          return [meetingForState, ...prev];
         });
-        
+
         // Track the mapping of follow-up ID to created meeting ID
-        setStartedMeetingMap(prev => ({
-          ...prev,
-          [followUpId]: createdMeeting.id
-        }));
-        
+        setStartedMeetingMap(prev => {
+          const newMap = {
+            ...prev,
+            [followUpId]: createdMeeting.id
+          };
+          console.log("🗺️ Updated startedMeetingMap:", newMap);
+          return newMap;
+        });
+
         // Store the follow-up data mapped by meeting ID for later retrieval
         if (followUpData) {
           setFollowUpDataMap(prev => ({
@@ -1311,57 +1403,58 @@ const handleEndMeetingWithDetails = async (
 
         // Notify backend/external API that follow-up meeting has started (meeting on-going)
         try {
-  const resp = await fetch(
-    `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        meetingStatus: "meeting on-going",
-      }),
-    }
-  );
+          const resp = await fetch(
+            `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                meetingStatus: "meeting on-going",
+              }),
+            }
+          );
 
-  if (resp.ok) {
-    console.log(
-      "Updated follow-up meetingStatus to 'meeting on-going' for:",
-      followUpId
-    );
-  } else {
-    console.warn("Failed to update follow-up meetingStatus:", resp.status);
-  }
-} catch (err) {
-  console.error(
-    "Failed to update follow-up meetingStatus to meeting on-going:",
-    err
-  );
-}
+          if (resp.ok) {
+            console.log(
+              "✅ Updated follow-up meetingStatus to 'meeting on-going' for:",
+              followUpId
+            );
+          } else {
+            console.warn("⚠️ Failed to update follow-up meetingStatus:", resp.status);
+          }
+        } catch (err) {
+          console.error(
+            "❌ Failed to update follow-up meetingStatus to meeting on-going:",
+            err
+          );
+        }
 
+        // Update employee status to "meeting" - same as regular meetings
+        try {
+          await axios.put(`/api/employees/${employeeId}/status`, {
+            status: "meeting",
+          });
+          console.log("✅ Employee status updated to 'meeting'");
+        } catch (statusError) {
+          console.error("❌ Failed to update employee status:", statusError);
+        }
 
-        // Track this meeting as coming from a follow-up
-        setFollowUpMeetingIds(prev => new Set([...prev, createdMeeting.id]));
-
-        // DON'T fetch meetings after starting - it will replace the state and lose the meeting
-        // The meeting is already added to state above, no need to fetch
-        // setTimeout(() => {
-        //   console.log("🔄 Fetching meetings after delay to sync with server...");
-        //   fetchMeetings();
-        // }, 1000);
-        await axios.put(`/api/employees/${employeeId}/status`, {
-          status: "meeting",
-        });
+        // Refresh employee data to show updated status
         fetchEmployee();
-        
-        // Show success toast - don't open Start modal
+
+        // Show success toast - same as regular meetings
         toast({
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started`,
         });
+
+        console.log("🎉 Follow-up meeting started successfully - should now appear in Recent Meetings");
       } else {
         // Handle error response
         const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
+        console.error("❌ Failed to create follow-up meeting:", errorData);
         toast({
           title: "Cannot Start Meeting",
           description: errorData.error || "Failed to start meeting",
@@ -1369,7 +1462,7 @@ const handleEndMeetingWithDetails = async (
         });
       }
     } catch (error) {
-      console.error("Error starting meeting:", error);
+      console.error("❌ Error starting follow-up meeting:", error);
       toast({
         title: "Error",
         description: "Failed to start meeting",
@@ -1387,22 +1480,29 @@ const handleEndMeetingWithDetails = async (
     );
 
     if (activeMeeting) {
+      console.log("Blocked: Active meeting exists:", {
+        id: activeMeeting.id,
+        clientName: activeMeeting.clientName,
+        status: activeMeeting.status,
+        startTime: activeMeeting.startTime
+      });
+      
       toast({
         title: "Cannot Start Meeting",
-        description: "You already have an active meeting. Please complete it before starting a new one.",
+        description: `You already have an active meeting with ${activeMeeting.clientName}. Please complete it before starting a new one.`,
         variant: "destructive",
       });
-      console.log("Blocked: Active meeting exists:", activeMeeting.id);
       return;
     }
 
+    console.log("✅ No active meeting found, opening start meeting modal");
     setIsStartMeetingModalOpen(true);
   };
 
   const handleTrackingSessionStart = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
     console.log("📍 Tracking session started:", session);
-    
+
     // 🔹 Save tracking session to server
     try {
       const response = await HttpClient.post("/api/tracking-sessions", {
@@ -1429,7 +1529,7 @@ const handleEndMeetingWithDetails = async (
   const handleTrackingSessionEnd = async (session: TrackingSession) => {
     setCurrentTrackingSession(session);
     console.log("📍 Tracking session ended:", session);
-    
+
     // 🔹 Update tracking session on server with end data
     try {
       const response = await HttpClient.put(`/api/tracking-sessions/${session.id}`, {
@@ -1748,23 +1848,34 @@ const handleEndMeetingWithDetails = async (
                   )}
                 </div>
 
-                {/* End Meeting Button - Shows when employee is in meeting */}
-                {employee.status === "meeting" && (
-                  <div className="pt-4 pb-2">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="w-full"
-                      onClick={handleEndMeetingAttempt}
-                      disabled={isEndingMeeting !== null}
-                    >
-                      <Clock className="h-4 w-4 mr-2" />
-                      {isEndingMeeting
-                        ? "Ending Meeting..."
-                        : "End Current Meeting"}
-                    </Button>
-                  </div>
-                )}
+                {/* End Meeting Button - Shows when there's an active meeting */}
+                {(() => {
+                  // Check if there's an active meeting in the meetings array
+                  const activeMeeting = meetings.find(
+                    (m) => m.status === "in-progress" || m.status === "started"
+                  );
+                  
+                  // Show End Meeting button if there's an active meeting OR employee status is "meeting"
+                  if (activeMeeting || employee.status === "meeting") {
+                    return (
+                      <div className="pt-4 pb-2">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="w-full"
+                          onClick={handleEndMeetingAttempt}
+                          disabled={isEndingMeeting !== null}
+                        >
+                          <Clock className="h-4 w-4 mr-2" />
+                          {isEndingMeeting
+                            ? "Ending Meeting..."
+                            : "End Current Meeting"}
+                        </Button>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 <div className="grid grid-cols-2 gap-2 pt-4">
                   <Button
@@ -1803,26 +1914,39 @@ const handleEndMeetingWithDetails = async (
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span>Current Location</span>
-                  {employee.status === "meeting" ? (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleEndMeetingAttempt}
-                      disabled={isEndingMeeting !== null}
-                    >
-                      <Clock className="h-4 w-4 mr-2" />
-                      {isEndingMeeting ? "Ending..." : "End Meeting"}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openStartMeetingModal}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Start Meeting
-                    </Button>
-                  )}
+                  {(() => {
+                    // Check if there's an active meeting in the meetings array
+                    const activeMeeting = meetings.find(
+                      (m) => m.status === "in-progress" || m.status === "started"
+                    );
+                    
+                    // Show End Meeting button if there's an active meeting OR employee status is "meeting"
+                    if (activeMeeting || employee.status === "meeting") {
+                      return (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={handleEndMeetingAttempt}
+                          disabled={isEndingMeeting !== null}
+                        >
+                          <Clock className="h-4 w-4 mr-2" />
+                          {isEndingMeeting ? "Ending..." : "End Meeting"}
+                        </Button>
+                      );
+                    } else {
+                      // Show Start Meeting button only if no active meeting exists
+                      return (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={openStartMeetingModal}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Start Meeting
+                        </Button>
+                      );
+                    }
+                  })()}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1906,7 +2030,7 @@ const handleEndMeetingWithDetails = async (
                 <CardTitle className="flex items-center justify-between">
                   <span>Recent Meetings</span>
                   <div className="flex items-center space-x-2">
-                    <Badge variant="secondary">{meetings.filter(m => !followUpMeetingIds.has(m.id)).length}</Badge>
+                    <Badge variant="secondary">{meetings.length}</Badge>
                     <Button
                       variant="outline"
                       size="sm"
@@ -1919,24 +2043,40 @@ const handleEndMeetingWithDetails = async (
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {meetings.filter(m => !followUpMeetingIds.has(m.id)).length === 0 ? (
+                {meetings.length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">
                     No recent meetings
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {meetings.filter(m => !followUpMeetingIds.has(m.id)).map((meeting) => (
+                    {meetings
+                      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()) // Sort by most recent first
+                      .map((meeting) => {
+                        console.log("🔍 Rendering meeting:", {
+                          id: meeting.id,
+                          clientName: meeting.clientName,
+                          status: meeting.status,
+                          startTime: meeting.startTime,
+                          location: meeting.location,
+                          followUpId: meeting.followUpId
+                        });
+                        
+                        return (
                       <div
                         key={meeting.id}
-                        className={`border rounded-lg p-3 space-y-2 ${
-                          meeting.status === "in-progress"
-                            ? "border-warning bg-warning/5"
-                            : "border-border"
-                        }`}
+                        className={`border rounded-lg p-3 space-y-2 ${meeting.status === "in-progress"
+                          ? "border-warning bg-warning/5"
+                          : "border-border"
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium">
                             {meeting.clientName || "Unknown Client"}
+                            {meeting.followUpId && (
+                              <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                Follow-up
+                              </span>
+                            )}
                           </h4>
                           <div className="flex items-center space-x-2">
                             <Badge
@@ -1969,14 +2109,14 @@ const handleEndMeetingWithDetails = async (
                         </div>
                         <p className="text-sm text-muted-foreground flex items-center">
                           <MapPin className="h-3 w-3 mr-1" />
-                          {meeting.location.address}
+                          {meeting.location?.address || "Location not available"}
                         </p>
                         <div className="space-y-1">
                           <p className="text-sm text-muted-foreground flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
                             <span className="font-medium">Started:</span>
                             <span className="ml-1">
-                              {new Date(meeting.startTime).toLocaleString()}
+                              {meeting.startTime ? new Date(meeting.startTime).toLocaleString() : "Time not available"}
                             </span>
                           </p>
                           {meeting.endTime && (
@@ -1993,12 +2133,13 @@ const handleEndMeetingWithDetails = async (
                               <Clock className="h-3 w-3 mr-1" />
                               <span className="font-medium">Duration:</span>
                               <span className="ml-1">
-                                {Math.round(
-                                  (Date.now() -
-                                    new Date(meeting.startTime).getTime()) /
-                                    (1000 * 60),
-                                )}{" "}
-                                minutes
+                                {(() => {
+                                  const durationMs = Date.now() - new Date(meeting.startTime).getTime();
+                                  const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                  const hours = Math.floor(totalMinutes / 60);
+                                  const minutes = totalMinutes % 60;
+                                  return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                })()}
                               </span>
                             </p>
                           )}
@@ -2008,12 +2149,13 @@ const handleEndMeetingWithDetails = async (
                                 <Clock className="h-3 w-3 mr-1" />
                                 <span className="font-medium">Duration:</span>
                                 <span className="ml-1">
-                                  {Math.round(
-                                    (new Date(meeting.endTime).getTime() -
-                                      new Date(meeting.startTime).getTime()) /
-                                      (1000 * 60),
-                                  )}{" "}
-                                  minutes
+                                  {(() => {
+                                    const durationMs = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
+                                    const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                    const hours = Math.floor(totalMinutes / 60);
+                                    const minutes = totalMinutes % 60;
+                                    return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                  })()}
                                 </span>
                               </p>
                             )}
@@ -2022,7 +2164,8 @@ const handleEndMeetingWithDetails = async (
                           <p className="text-sm">{meeting.notes}</p>
                         )}
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 )}
               </CardContent>

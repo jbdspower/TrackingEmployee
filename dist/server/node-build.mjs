@@ -975,10 +975,10 @@ const getMeetings = async (req, res) => {
       );
       if (meetingLogs.length === 0 && employeeId) {
         console.warn("⚠️ No meetings found for query, checking all statuses...");
-        const allMeetings2 = await Meeting.find({ employeeId }).lean();
+        const allMeetings = await Meeting.find({ employeeId }).lean();
         console.log(
           "📋 All meetings for this employee:",
-          allMeetings2.map((m) => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
+          allMeetings.map((m) => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
         );
       }
       res.json(response2);
@@ -1052,11 +1052,18 @@ const getMeeting = async (req, res) => {
 };
 const createMeeting = async (req, res) => {
   try {
-    const { employeeId, location, clientName, notes, leadId, leadInfo, followUpId, externalMeetingStatus } = req.body;
+    const { employeeId, location, clientName, notes, leadId, leadInfo, followUpId, externalMeetingStatus, startTime } = req.body;
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
     }
     const address = await reverseGeocode$1(location.lat, location.lng);
+    const meetingStartTime = startTime || (/* @__PURE__ */ new Date()).toISOString();
+    console.log("📅 Meeting start time:", {
+      clientProvided: !!startTime,
+      startTime: meetingStartTime,
+      serverTime: (/* @__PURE__ */ new Date()).toISOString(),
+      timeDifference: startTime ? (/* @__PURE__ */ new Date()).getTime() - new Date(startTime).getTime() + "ms" : "N/A"
+    });
     const meetingData = {
       employeeId,
       location: {
@@ -1064,7 +1071,8 @@ const createMeeting = async (req, res) => {
         address,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       },
-      startTime: (/* @__PURE__ */ new Date()).toISOString(),
+      startTime: meetingStartTime,
+      // 🔹 Use the exact time when user clicked start
       clientName,
       notes,
       status: "in-progress",
@@ -1140,6 +1148,10 @@ const updateMeeting = async (req, res) => {
     const updates = req.body;
     console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
     console.log(`📍 End location in request:`, updates.endLocation);
+    if (updates.startTime) {
+      console.warn("⚠️ Attempt to update startTime blocked - preserving original startTime");
+      delete updates.startTime;
+    }
     if (updates.meetingDetails?.attachments) {
       console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
       updates.meetingDetails.attachments.forEach((att, idx) => {
@@ -1152,6 +1164,7 @@ const updateMeeting = async (req, res) => {
     }
     if (updates.status === "completed" && !updates.endTime) {
       updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
+      console.log(`⏰ Setting endTime to: ${updates.endTime}`);
     }
     if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
       return res.status(400).json({ error: "Discussion details are required" });
@@ -1170,6 +1183,17 @@ const updateMeeting = async (req, res) => {
       console.warn("⚠️ Meeting completed but no endLocation provided in request!");
     }
     try {
+      const currentMeeting = await Meeting.findById(id);
+      if (!currentMeeting) {
+        return res.status(404).json({ error: "Meeting not found in database" });
+      }
+      console.log("📋 Current meeting before update:", {
+        id: currentMeeting._id,
+        startTime: currentMeeting.startTime,
+        endTime: currentMeeting.endTime,
+        status: currentMeeting.status,
+        clientName: currentMeeting.clientName
+      });
       const updatedMeeting = await Meeting.findByIdAndUpdate(
         id,
         { $set: updates },
@@ -1177,6 +1201,20 @@ const updateMeeting = async (req, res) => {
       );
       if (!updatedMeeting) {
         return res.status(404).json({ error: "Meeting not found in database" });
+      }
+      console.log("📋 Meeting after update:", {
+        id: updatedMeeting._id,
+        startTime: updatedMeeting.startTime,
+        endTime: updatedMeeting.endTime,
+        status: updatedMeeting.status,
+        clientName: updatedMeeting.clientName
+      });
+      if (currentMeeting.startTime !== updatedMeeting.startTime) {
+        console.error("❌ CRITICAL ERROR: startTime was changed during update!");
+        console.error("Original startTime:", currentMeeting.startTime);
+        console.error("New startTime:", updatedMeeting.startTime);
+      } else {
+        console.log("✅ VERIFIED: startTime preserved correctly");
       }
       console.log("Meeting updated in MongoDB:", updatedMeeting._id);
       if (updatedMeeting.location?.endLocation) {
@@ -1254,9 +1292,10 @@ const getActiveMeeting = async (req, res) => {
       const activeMeeting = await Meeting.findOne(query).sort({ startTime: -1 }).lean();
       if (!activeMeeting) {
         console.log("⚠️ No active meeting found with query:", JSON.stringify(query, null, 2));
+        let allMeetings = [];
         if (employeeId) {
-          const allMeetings2 = await Meeting.find({ employeeId }).lean();
-          console.log("📋 All meetings for employee:", allMeetings2.map((m) => ({
+          allMeetings = await Meeting.find({ employeeId }).lean();
+          console.log("📋 All meetings for employee:", allMeetings.map((m) => ({
             id: m._id,
             status: m.status,
             followUpId: m.followUpId,
