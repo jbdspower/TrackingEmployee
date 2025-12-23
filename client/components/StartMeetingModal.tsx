@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import { Clock, MapPin, User, Loader2, AlertCircle, FileText, Plus, Building2 } 
 import { Customer, Lead } from "@shared/api";
 import { BasicSelect, BasicSelectOption } from "@/components/ui/basic-select";
 import { HttpClient } from "@/lib/httpClient";
-import { useToast } from "@/hooks/use-toast";
+import { getCurrentTimeIST } from "@/lib/timeUtils";
 
 interface StartMeetingModalProps {
   isOpen: boolean;
@@ -363,7 +364,7 @@ export function StartMeetingModal({
       reason,
       notes: notes.trim(),
       leadId: selectedLead || undefined,
-      leadInfo: selectedLeadInfo
+      leadInfo: selectedLeadInfo || {}
     });
 
     // Clear errors and submit
@@ -374,7 +375,7 @@ export function StartMeetingModal({
       notes: notes.trim(),
       leadId: selectedLead || undefined,
       leadInfo: selectedLeadInfo ? {
-        id: selectedLeadInfo.Id,
+        id: selectedLeadInfo?.Id || {},
         companyName: selectedLeadInfo.CompanyName,
         contactName: selectedLeadInfo.Name,
       } : undefined,
@@ -733,7 +734,7 @@ export function StartMeetingModal({
             </div>
             <div className="flex items-center space-x-2">
               <Clock className="h-4 w-4 text-primary" />
-              <span>Start Time: {new Date().toLocaleString()}</span>
+              <span>Start Time: {getCurrentTimeIST()}</span>
             </div>
           </div>
         </div>

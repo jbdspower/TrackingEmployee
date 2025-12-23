@@ -114,11 +114,14 @@ const LocationSchema$1 = new Schema({
   endLocation: { type: CoordinateSchema },
   timestamp: { type: String, required: true }
 });
-const LeadInfoSchema$1 = new Schema({
-  id: { type: String, required: true },
-  companyName: { type: String, required: true },
-  contactName: { type: String, required: true }
-});
+const LeadInfoSchema$1 = new Schema(
+  {
+    id: { type: String },
+    companyName: { type: String },
+    contactName: { type: String }
+  }
+  // { _id: false } // optional but recommended
+);
 const MeetingSchema = new Schema({
   employeeId: {
     type: String,
@@ -156,10 +159,15 @@ const MeetingSchema = new Schema({
     type: String,
     index: true
   },
-  leadInfo: LeadInfoSchema$1,
-  followUpId: {
-    type: String,
-    index: true
+  //  leadInfo: LeadInfoSchema,
+  //  followUpId: {
+  //    type: String,
+  //    index: true
+  //  },
+  leadInfo: {
+    type: LeadInfoSchema$1,
+    default: null
+    // ✅ IMPORTANT
   },
   meetingDetails: MeetingDetailsSchema$1,
   externalMeetingStatus: {
@@ -1051,20 +1059,27 @@ const getMeeting = async (req, res) => {
   }
 };
 const createMeeting = async (req, res) => {
+  console.log("bodyy before try of start:", req.body);
   try {
-    const { employeeId, location, clientName, notes, leadId, leadInfo, followUpId, externalMeetingStatus, startTime } = req.body;
+    const {
+      employeeId,
+      location,
+      clientName,
+      notes,
+      leadId,
+      leadInfo,
+      followUpId,
+      externalMeetingStatus,
+      startTime
+    } = req.body;
+    console.log("bodyy of start:", req.body);
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
     }
     const address = await reverseGeocode$1(location.lat, location.lng);
-    const meetingStartTime = startTime || (/* @__PURE__ */ new Date()).toISOString();
-    console.log("📅 Meeting start time:", {
-      clientProvided: !!startTime,
-      startTime: meetingStartTime,
-      serverTime: (/* @__PURE__ */ new Date()).toISOString(),
-      timeDifference: startTime ? (/* @__PURE__ */ new Date()).getTime() - new Date(startTime).getTime() + "ms" : "N/A"
-    });
-    const meetingData = {
+    const meetingStartTime = startTime ?? (/* @__PURE__ */ new Date()).toISOString();
+    const sanitizedLeadInfo = leadInfo && Object.keys(leadInfo).length > 0 ? leadInfo : void 0;
+    const meeting = await Meeting.create({
       employeeId,
       location: {
         ...location,
@@ -1072,232 +1087,65 @@ const createMeeting = async (req, res) => {
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       },
       startTime: meetingStartTime,
-      // 🔹 Use the exact time when user clicked start
       clientName,
       notes,
       status: "in-progress",
-      leadId: leadId || void 0,
-      leadInfo: leadInfo || void 0,
-      followUpId: followUpId || void 0,
-      // 🔹 Store follow-up meeting ID
-      externalMeetingStatus: externalMeetingStatus || void 0
-      // 🔹 NEW: Store external meeting status
-    };
-    try {
-      const newMeeting = new Meeting(meetingData);
-      const savedMeeting = await newMeeting.save();
-      const meetingLog2 = await convertMeetingToMeetingLog(savedMeeting);
-      console.log("✅ Meeting saved to MongoDB:", {
-        id: savedMeeting._id,
-        employeeId: savedMeeting.employeeId,
-        followUpId: savedMeeting.followUpId,
-        status: savedMeeting.status,
-        clientName: savedMeeting.clientName
-      });
-      try {
-        const verification = await Meeting.findById(savedMeeting._id);
-        if (verification) {
-          console.log("✅ VERIFIED: Meeting exists in database");
-          console.log("✅ VERIFIED followUpId:", verification.followUpId);
-          console.log("✅ VERIFIED status:", verification.status);
-          if (verification.followUpId) {
-            const byFollowUpId = await Meeting.findOne({
-              followUpId: verification.followUpId,
-              status: { $in: ["in-progress", "started"] }
-            });
-            if (byFollowUpId) {
-              console.log("✅ VERIFIED: Can find meeting by followUpId");
-            } else {
-              console.error("❌ VERIFICATION FAILED: Cannot find meeting by followUpId!");
-            }
-          }
-        } else {
-          console.error("❌ VERIFICATION FAILED: Meeting not found after save!");
-        }
-      } catch (verifyError) {
-        console.error("❌ VERIFICATION ERROR:", verifyError);
-      }
-      res.status(201).json(meetingLog2);
-      return;
-    } catch (dbError) {
-      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
-    }
-    const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const meetingLog = {
-      id: meetingId,
-      employeeId: meetingData.employeeId,
-      location: meetingData.location,
-      startTime: meetingData.startTime,
-      clientName: meetingData.clientName,
-      notes: meetingData.notes,
-      status: meetingData.status,
-      leadId: meetingData.leadId,
-      leadInfo: meetingData.leadInfo
-    };
-    inMemoryMeetings.push(meetingLog);
-    console.log("Meeting saved to memory:", meetingId);
+      leadId,
+      leadInfo: sanitizedLeadInfo || void 0,
+      followUpId,
+      externalMeetingStatus
+    });
+    console.log("✅ START MEETING:", {
+      id: meeting._id,
+      startTime: meeting.startTime
+    });
+    const meetingLog = await convertMeetingToMeetingLog(meeting);
     res.status(201).json(meetingLog);
   } catch (error) {
-    console.error("Error creating meeting:", error);
-    res.status(500).json({ error: "Failed to create meeting" });
+    console.error("❌ Error starting meeting:", error);
+    res.status(500).json({ error: "Failed to start meeting" });
   }
 };
 const updateMeeting = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
-    console.log(`📍 End location in request:`, updates.endLocation);
-    if (updates.startTime) {
-      console.warn("⚠️ Attempt to update startTime blocked - preserving original startTime");
-      delete updates.startTime;
+    if (!id) {
+      return res.status(400).json({ error: "Meeting ID is required" });
     }
-    if (updates.endTime && updates.status === "completed") {
-      console.log(`📋 Meeting completion - endTime: ${updates.endTime}`);
-      try {
-        const currentMeeting = await Meeting.findById(id).lean();
-        if (currentMeeting && currentMeeting.startTime) {
-          const startTime = new Date(currentMeeting.startTime).getTime();
-          const endTime = new Date(updates.endTime).getTime();
-          const timeDifference = endTime - startTime;
-          console.log(`⏰ Time validation:`, {
-            startTime: currentMeeting.startTime,
-            endTime: updates.endTime,
-            differenceMs: timeDifference,
-            differenceMinutes: Math.round(timeDifference / (1e3 * 60))
-          });
-          if (Math.abs(timeDifference) < 3e4) {
-            console.warn("⚠️ WARNING: Start and end times are very close together!");
-            console.warn("This might indicate a timing issue in the client or server.");
-          }
-        }
-      } catch (validationError) {
-        console.warn("Could not validate meeting times:", validationError);
-      }
-    }
-    if (updates.meetingDetails?.attachments) {
-      console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
-      updates.meetingDetails.attachments.forEach((att, idx) => {
-        const size = att.length;
-        const type = att.match(/data:([^;]+);/)?.[1] || "unknown";
-        console.log(`   File ${idx + 1}: ${type}, ${(size / 1024).toFixed(2)} KB`);
-      });
-    } else {
-      console.log(`📎 No attachments in request`);
-    }
-    if (updates.status === "completed") {
-      if (!updates.endTime) {
-        updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
-        console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
-        console.warn(`⚠️ WARNING: Client did not provide endTime, using server time instead`);
-      } else {
-        console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
-        try {
-          const currentMeeting = await Meeting.findById(id).lean();
-          if (currentMeeting && currentMeeting.startTime) {
-            if (updates.endTime === currentMeeting.startTime) {
-              console.error(`❌ CRITICAL ERROR: Client provided endTime is identical to startTime!`);
-              console.error(`   StartTime: ${currentMeeting.startTime}`);
-              console.error(`   EndTime: ${updates.endTime}`);
-              console.error(`   This will cause the timing issue! Using server time instead.`);
-              updates.endTime = (/* @__PURE__ */ new Date()).toISOString();
-              console.log(`🔧 FIXED: Using server time instead: ${updates.endTime}`);
-            } else {
-              const startTime = new Date(currentMeeting.startTime).getTime();
-              const endTime = new Date(updates.endTime).getTime();
-              const duration = endTime - startTime;
-              console.log(`✅ VALIDATION PASSED: Times are different`);
-              console.log(`   Duration: ${Math.round(duration / (1e3 * 60))} minutes`);
-            }
-          }
-        } catch (validationError) {
-          console.warn("Could not validate meeting times:", validationError);
-        }
-      }
-    }
-    if (updates.meetingDetails && !updates.meetingDetails.discussion?.trim()) {
-      return res.status(400).json({ error: "Discussion details are required" });
-    }
-    if (updates.status === "completed" && updates.endLocation) {
-      console.log("📍 Capturing end location for meeting:", JSON.stringify(updates.endLocation, null, 2));
-      updates["location.endLocation"] = {
-        lat: updates.endLocation.lat,
-        lng: updates.endLocation.lng,
-        address: updates.endLocation.address || `${updates.endLocation.lat.toFixed(6)}, ${updates.endLocation.lng.toFixed(6)}`,
-        timestamp: updates.endLocation.timestamp || (/* @__PURE__ */ new Date()).toISOString()
-      };
-      console.log("✅ End location formatted:", JSON.stringify(updates["location.endLocation"], null, 2));
-      delete updates.endLocation;
-    } else if (updates.status === "completed") {
-      console.warn("⚠️ Meeting completed but no endLocation provided in request!");
-    }
-    try {
-      const currentMeeting = await Meeting.findById(id);
-      if (!currentMeeting) {
-        return res.status(404).json({ error: "Meeting not found in database" });
-      }
-      console.log("📋 Current meeting before update:", {
-        id: currentMeeting._id,
-        startTime: currentMeeting.startTime,
-        endTime: currentMeeting.endTime,
-        status: currentMeeting.status,
-        clientName: currentMeeting.clientName
-      });
-      const updatedMeeting = await Meeting.findByIdAndUpdate(
-        id,
-        { $set: updates },
-        { new: true, runValidators: true }
-      );
-      if (!updatedMeeting) {
-        return res.status(404).json({ error: "Meeting not found in database" });
-      }
-      console.log("📋 Meeting after update:", {
-        id: updatedMeeting._id,
-        startTime: updatedMeeting.startTime,
-        endTime: updatedMeeting.endTime,
-        status: updatedMeeting.status,
-        clientName: updatedMeeting.clientName
-      });
-      if (currentMeeting.startTime !== updatedMeeting.startTime) {
-        console.error("❌ CRITICAL ERROR: startTime was changed during update!");
-        console.error("Original startTime:", currentMeeting.startTime);
-        console.error("New startTime:", updatedMeeting.startTime);
-      } else {
-        console.log("✅ VERIFIED: startTime preserved correctly");
-      }
-      console.log("Meeting updated in MongoDB:", updatedMeeting._id);
-      if (updatedMeeting.location?.endLocation) {
-        console.log("✅ End location saved:", updatedMeeting.location.endLocation);
-      }
-      if (updatedMeeting.meetingDetails?.attachments) {
-        console.log(`✅ Attachments stored: ${updatedMeeting.meetingDetails.attachments.length} files`);
-      } else {
-        console.log(`⚠️ No attachments in stored meeting`);
-      }
-      const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
-      if (meetingLog.meetingDetails?.attachments) {
-        console.log(`✅ Attachments in response: ${meetingLog.meetingDetails.attachments.length} files`);
-      } else {
-        console.log(`⚠️ No attachments in response`);
-      }
-      res.json(meetingLog);
-      return;
-    } catch (dbError) {
-      console.warn("MongoDB update failed, falling back to in-memory storage:", dbError);
-    }
-    const meetingIndex = inMemoryMeetings.findIndex((meeting) => meeting.id === id);
-    if (meetingIndex === -1) {
+    const meeting = await Meeting.findById(id);
+    if (!meeting) {
       return res.status(404).json({ error: "Meeting not found" });
     }
-    inMemoryMeetings[meetingIndex] = {
-      ...inMemoryMeetings[meetingIndex],
-      ...updates
-    };
-    console.log("Meeting updated in memory:", id);
-    res.json(inMemoryMeetings[meetingIndex]);
+    delete updates.startTime;
+    delete updates.status;
+    meeting.status = "completed";
+    meeting.endTime = updates.endTime || (/* @__PURE__ */ new Date()).toISOString();
+    if (updates.meetingDetails) {
+      meeting.meetingDetails = updates.meetingDetails;
+    }
+    if (updates.externalMeetingStatus) {
+      meeting.externalMeetingStatus = updates.externalMeetingStatus;
+    }
+    if (updates.endLocation) {
+      meeting.location.endLocation = {
+        lat: updates.endLocation.lat,
+        lng: updates.endLocation.lng,
+        address: updates.endLocation.address || `${updates.endLocation.lat}, ${updates.endLocation.lng}`,
+        timestamp: updates.endLocation.timestamp || (/* @__PURE__ */ new Date()).toISOString()
+      };
+    }
+    await meeting.save();
+    console.log("✅ END MEETING:", {
+      id: meeting._id,
+      startTime: meeting.startTime,
+      endTime: meeting.endTime
+    });
+    const meetingLog = await convertMeetingToMeetingLog(meeting);
+    res.status(200).json(meetingLog);
   } catch (error) {
-    console.error("Error updating meeting:", error);
-    res.status(500).json({ error: "Failed to update meeting" });
+    console.error("❌ Error ending meeting:", error);
+    res.status(500).json({ error: "Failed to end meeting" });
   }
 };
 const deleteMeeting = async (req, res) => {
@@ -2688,8 +2536,8 @@ const getEmployeeDetails = async (req, res) => {
       if (!meeting.id) {
         console.error(`❌ WARNING: Meeting has no ID!`, meeting);
       }
-      const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
-      const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress";
+      const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
+      const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
       console.log(`⏰ TIME DEBUG for ${meeting.clientName}:`, {
         rawStartTime: meeting.startTime,
         rawEndTime: meeting.endTime,
@@ -2715,10 +2563,11 @@ const getEmployeeDetails = async (req, res) => {
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
         leadId: meeting.leadId || "",
         meetingInTime,
-        meetingInLocation: meeting.location?.address || "",
+        // 🔹 FIX: Always show meeting location when meeting started
+        meetingInLocation: meeting.location?.address || "Location loading...",
         meetingOutTime,
-        // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
-        meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "" : "Meeting in progress",
+        // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
+        meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "Meeting completed" : "Meeting in progress",
         totalStayTime: calculateMeetingDuration(
           meeting.startTime,
           meeting.endTime
@@ -3134,8 +2983,8 @@ const getAllEmployeesDetails = async (req, res) => {
         };
       });
       const meetingRecords = meetingsInRange.map((meeting) => {
-        const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
-        const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm") : "In Progress";
+        const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
+        const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
         console.log(`⏰ TIME DEBUG for ${meeting.clientName} (${employee.name}):`, {
           rawStartTime: meeting.startTime,
           rawEndTime: meeting.endTime,
@@ -3159,9 +3008,11 @@ const getAllEmployeesDetails = async (req, res) => {
           date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
           leadId: meeting.leadId || "",
           meetingInTime,
-          meetingInLocation: meeting.location?.address || "",
+          // 🔹 FIX: Always show meeting location when meeting started
+          meetingInLocation: meeting.location?.address || "Location loading...",
           meetingOutTime,
-          meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "" : "Meeting in progress",
+          // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
+          meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "Meeting completed" : "Meeting in progress",
           totalStayTime: calculateMeetingDuration(
             meeting.startTime,
             meeting.endTime

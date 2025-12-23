@@ -111,11 +111,22 @@ const LocationSchema = new Schema({
 
 
 // Lead info schema
-const LeadInfoSchema = new Schema({
- id: { type: String, required: true },
- companyName: { type: String, required: true },
- contactName: { type: String, required: true }
-});
+// const LeadInfoSchema = new Schema({
+//  id: { type: String, required: true },
+//  companyName: { type: String, required: true },
+//  contactName: { type: String, required: true }
+// });
+
+// Lead info schema (FULLY OPTIONAL)
+const LeadInfoSchema = new Schema(
+  {
+    id: {type: String },
+    companyName: { type: String },
+    contactName: { type: String}
+  },
+  // { _id: false } // optional but recommended
+);
+
 
 
 // Main meeting schema
@@ -156,11 +167,15 @@ const MeetingSchema = new Schema({
    type: String,
    index: true
  },
- leadInfo: LeadInfoSchema,
- followUpId: {
-   type: String,
-   index: true
- },
+//  leadInfo: LeadInfoSchema,
+//  followUpId: {
+//    type: String,
+//    index: true
+//  },
+leadInfo: {
+  type: LeadInfoSchema,
+  default: null // ✅ IMPORTANT
+},
  meetingDetails: MeetingDetailsSchema,
  externalMeetingStatus: {
    type: String

@@ -15,6 +15,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { isToday, parseISO } from "date-fns";
+import { isTodayIST } from "@/lib/timeUtils";
 import { useToast } from "@/hooks/use-toast";
 
 export interface FollowUpMeeting {
@@ -133,14 +134,15 @@ export function TodaysMeetings({
       const data: FollowUpMeeting[] = await response.json();
       console.log("All meetings fetched:", data.length);
 
-      // Filter only approved meetings that are for today
+      // Filter only approved meetings that are for today (IST)
       const approvedTodaysMeetings = data.filter((meeting) => {
         const meetingDate = meeting.followupDate || meeting.date;
         if (!meetingDate) return false;
 
         try {
           const date = parseISO(meetingDate);
-          return isToday(date) && meeting.status === "Approved";
+          // Use IST-aware today check
+          return isTodayIST(date.toISOString()) && meeting.status === "Approved";
         } catch (error) {
           console.warn("Invalid date format for meeting:", meeting._id);
           return false;

@@ -35,6 +35,7 @@ import {
   History,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { formatTimeIST, formatTimeOnlyIST } from "@/lib/timeUtils";
 import axios from "axios";
 
 export default function Tracking() {
@@ -2168,7 +2169,7 @@ export default function Tracking() {
                             <Calendar className="h-3 w-3 mr-1" />
                             <span className="font-medium">Started:</span>
                             <span className="ml-1">
-                              {meeting.startTime ? new Date(meeting.startTime).toLocaleString() : "Time not available"}
+                              {meeting.startTime ? formatTimeIST(meeting.startTime) : "Time not available"}
                             </span>
                           </p>
                           {meeting.endTime && (
@@ -2176,7 +2177,7 @@ export default function Tracking() {
                               <Clock className="h-3 w-3 mr-1" />
                               <span className="font-medium">Ended:</span>
                               <span className="ml-1">
-                                {new Date(meeting.endTime).toLocaleString()}
+                                {formatTimeIST(meeting.endTime)}
                               </span>
                             </p>
                           )}
