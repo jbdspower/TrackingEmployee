@@ -707,12 +707,13 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
         leadId: meeting.leadId || "",
         meetingInTime: meetingInTime,
-        meetingInLocation: meeting.location?.address || "",
+        // 🔹 FIX: Always show meeting location when meeting started
+        meetingInLocation: meeting.location?.address || "Location loading...",
         meetingOutTime: meetingOutTime,
-        // 🔹 FIX: Only show end location if meeting has ended, use endLocation field
+        // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
         meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
           ? meeting.location.endLocation.address
-          : (meeting.status === "completed" ? "" : "Meeting in progress"),
+          : (meeting.status === "completed" ? "Meeting completed" : "Meeting in progress"),
         totalStayTime: calculateMeetingDuration(
           meeting.startTime,
           meeting.endTime,
@@ -1284,11 +1285,13 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
           leadId: meeting.leadId || "",
           meetingInTime: meetingInTime,
-          meetingInLocation: meeting.location?.address || "",
+          // 🔹 FIX: Always show meeting location when meeting started
+          meetingInLocation: meeting.location?.address || "Location loading...",
           meetingOutTime: meetingOutTime,
+          // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
           meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
             ? meeting.location.endLocation.address
-            : (meeting.status === "completed" ? "" : "Meeting in progress"),
+            : (meeting.status === "completed" ? "Meeting completed" : "Meeting in progress"),
           totalStayTime: calculateMeetingDuration(
             meeting.startTime,
             meeting.endTime,

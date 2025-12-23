@@ -360,7 +360,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       delete updates.startTime;
     }
     
-    // 🔹 ADDITIONAL PROTECTION: Ensure endTime is never set to startTime
+    // 🔹 ADDITIONAL PROTECTION: Ensure endTime is never set to startTime for today's meetings
     if (updates.endTime && updates.status === "completed") {
       console.log(`📋 Meeting completion - endTime: ${updates.endTime}`);
       
@@ -379,8 +379,13 @@ export const updateMeeting: RequestHandler = async (req, res) => {
             differenceMinutes: Math.round(timeDifference / (1000 * 60))
           });
           
-          // Warn if times are suspiciously close (less than 30 seconds apart)
-          if (Math.abs(timeDifference) < 30000) {
+          // For Today's Meetings specifically: ensure endTime is at least 1 minute after startTime
+          if (timeDifference <= 0) {
+            console.error("❌ CRITICAL: End time must be after start time!");
+            updates.endTime = new Date(startTime + 60000).toISOString(); // Add 1 minute minimum
+            console.log(`🔧 FIXED: Adjusted endTime to be 1 minute after startTime: ${updates.endTime}`);
+          } else if (timeDifference < 30000) {
+            // Warn if times are suspiciously close (less than 30 seconds apart)
             console.warn("⚠️ WARNING: Start and end times are very close together!");
             console.warn("This might indicate a timing issue in the client or server.");
           }
