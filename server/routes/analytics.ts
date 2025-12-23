@@ -676,10 +676,11 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         console.error(`❌ WARNING: Meeting has no ID!`, meeting);
       }
 
-      // 🔹 CRITICAL DEBUG: Log the exact times being used
-      const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+      // 🔹 CRITICAL DEBUG: Log the exact times being used (already in IST from server)
+      // Parse IST timestamps and format them
+      const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
       const meetingOutTime = meeting.endTime
-        ? format(new Date(meeting.endTime), "HH:mm")
+        ? format(new Date(meeting.endTime), "HH:mm:ss")
         : "In Progress";
       
       console.log(`⏰ TIME DEBUG for ${meeting.clientName}:`, {
@@ -1254,10 +1255,11 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
       // Generate meeting records
       const meetingRecords = meetingsInRange.map((meeting) => {
-        // 🔹 CRITICAL DEBUG: Log the exact times being used
-        const meetingInTime = format(new Date(meeting.startTime), "HH:mm");
+        // 🔹 CRITICAL DEBUG: Log the exact times being used (already in IST from server)
+        // Parse IST timestamps and format them
+        const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
         const meetingOutTime = meeting.endTime
-          ? format(new Date(meeting.endTime), "HH:mm")
+          ? format(new Date(meeting.endTime), "HH:mm:ss")
           : "In Progress";
         
         console.log(`⏰ TIME DEBUG for ${meeting.clientName} (${employee.name}):`, {

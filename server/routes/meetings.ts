@@ -11,6 +11,22 @@ import { Meeting, IMeeting } from "../models";
 // Initialize cache with 1 hour TTL
 const geocodeCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
+// 🔹 Helper function to convert UTC to IST (UTC+5:30)
+function convertToIST(utcTime: string): string {
+  const date = new Date(utcTime);
+  // IST is UTC+5:30
+  const istTime = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+  return istTime.toISOString();
+}
+
+// 🔹 Helper function to get current time in IST
+function getCurrentTimeIST(): string {
+  const now = new Date();
+  // IST is UTC+5:30
+  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  return istTime.toISOString();
+}
+
 // Helper function for reverse geocoding
 // Rate limiting for Nominatim API (max 1 request per second)
 let lastGeocodingTime = 0;
@@ -248,14 +264,16 @@ export const createMeeting: RequestHandler = async (req, res) => {
     // Get human-readable address
     const address = await reverseGeocode(location.lat, location.lng);
 
-    // 🔹 CRITICAL FIX: Use client-provided startTime if available, otherwise use server time
-    const meetingStartTime = startTime || new Date().toISOString();
+    // 🔹 CRITICAL FIX: Use client-provided startTime if available, otherwise use server time in IST
+    const utcStartTime = startTime || new Date().toISOString();
+    const meetingStartTime = convertToIST(utcStartTime);
     
-    console.log("📅 Meeting start time:", {
+    console.log("📅 Meeting start time (IST):", {
       clientProvided: !!startTime,
-      startTime: meetingStartTime,
-      serverTime: new Date().toISOString(),
-      timeDifference: startTime ? (new Date().getTime() - new Date(startTime).getTime()) + "ms" : "N/A"
+      utcTime: utcStartTime,
+      istTime: meetingStartTime,
+      currentUTC: new Date().toISOString(),
+      currentIST: getCurrentTimeIST()
     });
 
     const meetingData = {
@@ -410,12 +428,15 @@ export const updateMeeting: RequestHandler = async (req, res) => {
     // Handle meeting completion
     if (updates.status === "completed") {
       if (!updates.endTime) {
-        // Only set endTime if not provided by client
-        updates.endTime = new Date().toISOString();
-        console.log(`⏰ Setting endTime to current server time: ${updates.endTime}`);
+        // Only set endTime if not provided by client - convert to IST
+        const utcEndTime = new Date().toISOString();
+        updates.endTime = convertToIST(utcEndTime);
+        console.log(`⏰ Setting endTime to current server time (IST): ${updates.endTime}`);
         console.warn(`⚠️ WARNING: Client did not provide endTime, using server time instead`);
       } else {
-        console.log(`⏰ Using client-provided endTime: ${updates.endTime}`);
+        // Convert client-provided endTime to IST
+        updates.endTime = convertToIST(updates.endTime);
+        console.log(`⏰ Using client-provided endTime (converted to IST): ${updates.endTime}`);
         
         // 🔹 CRITICAL VALIDATION: Ensure endTime is not the same as startTime
         try {
