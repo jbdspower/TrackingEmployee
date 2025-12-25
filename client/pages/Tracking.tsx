@@ -872,6 +872,34 @@ export default function Tracking() {
           key => startedMeetingMap[key] === meetingIdToEnd
         );
 
+        // 🔹 IMMEDIATE UI UPDATE: Optimistically update local state first
+        if (followUpMeetingId) {
+          console.log("🔄 Optimistically updating local meeting status to complete for:", followUpMeetingId);
+          
+          // Update todaysFollowUpMeetings immediately for instant UI feedback
+          setTodaysFollowUpMeetings(prev => {
+            const updated = prev.map(meeting => 
+              meeting._id === followUpMeetingId 
+                ? { ...meeting, meetingStatus: "complete" as const }
+                : meeting
+            );
+            console.log("✅ Optimistic update applied. Meeting should now show as Complete");
+            console.log("📋 Updated meetings:", updated.map(m => ({ id: m._id, company: m.companyName, status: m.meetingStatus })));
+            return updated;
+          });
+        }
+
+        // 🔹 IMMEDIATE STATE CLEANUP: Clear the started meeting map immediately for instant UI feedback
+        if (followUpMeetingId) {
+          console.log("🔄 Clearing startedMeetingMap for instant UI update:", followUpMeetingId);
+          setStartedMeetingMap(prev => {
+            const newMap = { ...prev };
+            delete newMap[followUpMeetingId];
+            console.log("✅ StartedMeetingMap cleared. Button should now show Complete");
+            return newMap;
+          });
+        }
+
         // Update follow-up meeting status to "complete" in the backend
         if (followUpMeetingId) {
           try {
@@ -889,12 +917,44 @@ export default function Tracking() {
             );
 
             if (followUpResponse.ok) {
-              console.log("Follow-up meeting status updated to 'complete'");
+              console.log("✅ Follow-up meeting status updated to 'complete' in external API");
             } else {
-              console.error("Failed to update follow-up status:", followUpResponse.status);
+              console.error("❌ Failed to update follow-up status:", followUpResponse.status);
+              
+              // 🔹 ROLLBACK: If external API fails, revert the optimistic update
+              console.log("🔄 Rolling back optimistic update due to API failure");
+              setTodaysFollowUpMeetings(prev => 
+                prev.map(meeting => 
+                  meeting._id === followUpMeetingId 
+                    ? { ...meeting, meetingStatus: "In Progress" as const } // Revert to previous status
+                    : meeting
+                )
+              );
+              
+              // 🔹 ROLLBACK: Restore startedMeetingMap
+              setStartedMeetingMap(prev => ({
+                ...prev,
+                [followUpMeetingId]: meetingIdToEnd
+              }));
             }
           } catch (followUpError) {
-            console.error("Error updating follow-up status:", followUpError);
+            console.error("❌ Error updating follow-up status:", followUpError);
+            
+            // 🔹 ROLLBACK: If external API fails, revert the optimistic update
+            console.log("🔄 Rolling back optimistic update due to API error");
+            setTodaysFollowUpMeetings(prev => 
+              prev.map(meeting => 
+                meeting._id === followUpMeetingId 
+                  ? { ...meeting, meetingStatus: "In Progress" as const } // Revert to previous status
+                  : meeting
+              )
+            );
+            
+            // 🔹 ROLLBACK: Restore startedMeetingMap
+            setStartedMeetingMap(prev => ({
+              ...prev,
+              [followUpMeetingId]: meetingIdToEnd
+            }));
           }
         }
 
@@ -932,17 +992,18 @@ export default function Tracking() {
           console.error("Error adding meeting to history:", historyError);
         }
 
-        // Remove from started meeting map when meeting is ended
-        setStartedMeetingMap(prev => {
-          const newMap = { ...prev };
-          // Find and remove the follow-up ID that maps to this meeting ID
-          Object.keys(newMap).forEach(key => {
-            if (newMap[key] === meetingIdToEnd) {
-              delete newMap[key];
-            }
-          });
-          return newMap;
-        });
+        // Remove from started meeting map when meeting is ended (MOVED TO IMMEDIATE UPDATE ABOVE)
+        // This is now handled immediately after the meeting ends for instant UI feedback
+        // setStartedMeetingMap(prev => {
+        //   const newMap = { ...prev };
+        //   // Find and remove the follow-up ID that maps to this meeting ID
+        //   Object.keys(newMap).forEach(key => {
+        //     if (newMap[key] === meetingIdToEnd) {
+        //       delete newMap[key];
+        //     }
+        //   });
+        //   return newMap;
+        // });
 
         // Remove from follow-up data map
         setFollowUpDataMap(prev => {
@@ -959,7 +1020,10 @@ export default function Tracking() {
         });
 
         // Trigger refresh of Today's meetings to get updated status from API
-        setRefreshTodaysMeetings(prev => prev + 1);
+        // 🔹 DELAY: Give time for optimistic update to be visible before API refresh
+        setTimeout(() => {
+          setRefreshTodaysMeetings(prev => prev + 1);
+        }, 500); // 500ms delay to show optimistic update
 
         await HttpClient.put(`/api/employees/${employeeId}/status`, {
           status: "active",
@@ -2247,6 +2311,7 @@ export default function Tracking() {
               onMeetingsFetched={handleTodaysMeetingsFetched}
               refreshTrigger={refreshTodaysMeetings}
               hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
+              todaysFollowUpMeetings={todaysFollowUpMeetings}
             />
           </div>
         </div>

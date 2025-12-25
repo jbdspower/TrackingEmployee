@@ -59,6 +59,7 @@ interface TodaysMeetingsProps {
   onMeetingsFetched?: (meetings: FollowUpMeeting[]) => void;
   refreshTrigger?: number;
   hasActiveMeeting?: boolean; // indicates if there's an active meeting anywhere
+  todaysFollowUpMeetings?: FollowUpMeeting[]; // 🔹 NEW: Accept updated meetings from parent
 }
 
 export function TodaysMeetings({
@@ -69,6 +70,7 @@ export function TodaysMeetings({
   onMeetingsFetched,
   refreshTrigger,
   hasActiveMeeting = false,
+  todaysFollowUpMeetings: parentTodaysFollowUpMeetings, // 🔹 NEW: Receive updated meetings from parent
 }: TodaysMeetingsProps) {
   const [meetings, setMeetings] = useState<FollowUpMeeting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +80,9 @@ export function TodaysMeetings({
   const [localActiveFollowUpId, setLocalActiveFollowUpId] = useState<string | null>(null);
 
   const { toast } = useToast();
+
+  // 🔹 NEW: Use parent's updated meetings if available, otherwise use local state
+  const effectiveMeetings = parentTodaysFollowUpMeetings || meetings;
 
   // Keep localActiveFollowUpId in sync with startedMeetingMap / hasActiveMeeting
   useEffect(() => {
@@ -173,7 +178,10 @@ export function TodaysMeetings({
         console.log("⚠️ No active meetings found in API. Checking startedMeetingMap...");
       }
       
-      setMeetings(approvedTodaysMeetings);
+      // 🔹 NEW: Only update local state if no parent data is provided
+      if (!parentTodaysFollowUpMeetings) {
+        setMeetings(approvedTodaysMeetings);
+      }
 
       if (onMeetingsFetched) {
         onMeetingsFetched(approvedTodaysMeetings);
@@ -192,13 +200,18 @@ export function TodaysMeetings({
   
 
   // Helper: completed?
-  const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
-    return (
-      meeting.meetingStatus === "complete" ||
-      meeting.meetingStatus === "Completed" ||
-      meeting.meetingStatus === "COMPLETED"
-    );
-  };
+const isMeetingComplete = (meeting: FollowUpMeeting): boolean => {
+  // Backend source of truth
+  if (meeting.status?.toLowerCase() === "completed") return true;
+
+  // Legacy / external API values
+  return (
+    meeting.meetingStatus === "complete" ||
+    meeting.meetingStatus === "Completed" ||
+    meeting.meetingStatus === "COMPLETED"
+  );
+};
+
 
   // Helper: active / in progress from backend
   const isMeetingActiveFromStatus = (meeting: FollowUpMeeting): boolean => {
@@ -215,7 +228,7 @@ export function TodaysMeetings({
     hasActiveMeeting ||
     !!localActiveFollowUpId ||
     (startedMeetingMap && Object.keys(startedMeetingMap).length > 0) ||
-    meetings.some((m) => isMeetingActiveFromStatus(m));
+    effectiveMeetings.some((m) => isMeetingActiveFromStatus(m));
 
   const handleStartMeetingClick = (meeting: FollowUpMeeting) => {
     console.log(
@@ -325,12 +338,12 @@ export function TodaysMeetings({
         <CardTitle className="flex items-center justify-between">
           <span>Today's Approved Meetings</span>
           <Badge variant="secondary">
-            {meetings.length} {meetings.length === 1 ? "meeting" : "meetings"}
+            {effectiveMeetings.length} {effectiveMeetings.length === 1 ? "meeting" : "meetings"}
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        {meetings.length === 0 ? (
+        {effectiveMeetings.length === 0 ? (
           <div className="text-center py-8 px-4">
             <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
             <h4 className="font-medium mb-1">No approved meetings for today</h4>
@@ -340,7 +353,7 @@ export function TodaysMeetings({
           </div>
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
-            {meetings.map((meeting) => {
+            {effectiveMeetings.map((meeting) => {
               // Check if this meeting is active
               const hasValidMeetingId = startedMeetingMap && !!startedMeetingMap[meeting._id];
               const isLocallyActive = localActiveFollowUpId === meeting._id;

@@ -40,7 +40,7 @@ const GEOCODING_DELAY = 1000; // 1 second
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
-  
+
   const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   const cachedAddress = geocodeCache.get<string>(cacheKey);
   if (cachedAddress) {
@@ -142,7 +142,7 @@ export const getMeetings: RequestHandler = async (req, res) => {
         const totalCount = await Meeting.countDocuments({ employeeId });
         console.log(`📊 Total meetings in DB for employee ${employeeId}:`, totalCount);
       }
-      
+
       const mongoMeetings = await Meeting.find(query)
         .sort({ startTime: -1 })
         .limit(parseInt(limit as string))
@@ -158,19 +158,19 @@ export const getMeetings: RequestHandler = async (req, res) => {
         total: meetingLogs.length,
       };
 
-      console.log(`✅ Found ${meetingLogs.length} meetings matching query:`, 
+      console.log(`✅ Found ${meetingLogs.length} meetings matching query:`,
         meetingLogs.map(m => ({ id: m.id, status: m.status, followUpId: m.followUpId, client: m.clientName }))
       );
-      
+
       // 🔹 DEBUG: If no meetings found but we expected some
       if (meetingLogs.length === 0 && employeeId) {
         console.warn("⚠️ No meetings found for query, checking all statuses...");
         const allMeetings = await Meeting.find({ employeeId }).lean();
-        console.log("📋 All meetings for this employee:", 
+        console.log("📋 All meetings for this employee:",
           allMeetings.map(m => ({ id: m._id, status: m.status, followUpId: m.followUpId }))
         );
       }
-      
+
       res.json(response);
       return;
     } catch (dbError) {
@@ -272,7 +272,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 
 //     // 🔹 CRITICAL FIX: Store times in UTC, don't convert to IST on server
 //     const meetingStartTime = startTime || new Date().toISOString();
-    
+
 //     console.log("📅 Meeting start time (UTC):", {
 //       clientProvided: !!startTime,
 //       utcTime: meetingStartTime,
@@ -311,7 +311,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 //         status: savedMeeting.status,
 //         clientName: savedMeeting.clientName
 //       });
-      
+
 //       // 🔹 VERIFICATION: Immediately query to confirm it was saved
 //       try {
 //         const verification = await Meeting.findById(savedMeeting._id);
@@ -319,7 +319,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 //           console.log("✅ VERIFIED: Meeting exists in database");
 //           console.log("✅ VERIFIED followUpId:", verification.followUpId);
 //           console.log("✅ VERIFIED status:", verification.status);
-          
+
 //           // Also verify we can find it by followUpId
 //           if (verification.followUpId) {
 //             const byFollowUpId = await Meeting.findOne({ 
@@ -338,7 +338,7 @@ export const getMeeting: RequestHandler = async (req, res) => {
 //       } catch (verifyError) {
 //         console.error("❌ VERIFICATION ERROR:", verifyError);
 //       }
-      
+
 //       res.status(201).json(meetingLog);
 //       return;
 //     } catch (dbError) {
@@ -385,8 +385,8 @@ export const createMeeting: RequestHandler = async (req, res) => {
       externalMeetingStatus,
       startTime,
     } = req.body;
-  console.log("bodyy of start:", req.body);
-  
+    console.log("bodyy of start:", req.body);
+
     if (!employeeId || !location) {
       return res.status(400).json({ error: "Employee ID and location are required" });
     }
@@ -396,7 +396,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
     // 🔒 START TIME — SET ONCE
     const meetingStartTime = startTime ?? new Date().toISOString();
     const sanitizedLeadInfo =
-  leadInfo && Object.keys(leadInfo).length > 0 ? leadInfo : undefined;
+      leadInfo && Object.keys(leadInfo).length > 0 ? leadInfo : undefined;
 
 
     const meeting = await Meeting.create({
@@ -410,8 +410,9 @@ export const createMeeting: RequestHandler = async (req, res) => {
       clientName,
       notes,
       status: "in-progress",
+      meetingStatus: "in-progress", // Initialize meetingStatus
       leadId,
-      leadInfo: sanitizedLeadInfo||undefined,
+      leadInfo: sanitizedLeadInfo || undefined,
       followUpId,
       externalMeetingStatus,
     });
@@ -434,22 +435,87 @@ export const updateMeeting: RequestHandler = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    if (!id) {
-      return res.status(400).json({ error: "Meeting ID is required" });
+    let meeting = null;
+
+    // 1️⃣ Try by ID (normal flow)
+    if (id && id !== "undefined" && id !== "null") {
+      try {
+        meeting = await Meeting.findById(id);
+        console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
+      } catch (error) {
+        console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+      }
     }
 
-    // 🔍 Fetch existing meeting
-    const meeting = await Meeting.findById(id);
+    // 2️⃣ FALLBACK — tab was closed, find active meeting by employeeId
     if (!meeting) {
-      return res.status(404).json({ error: "Meeting not found" });
+      const { employeeId, followUpId } = req.body;
+
+      if (!employeeId) {
+        return res.status(400).json({ error: "employeeId required to end meeting" });
+      }
+
+      console.log(`🔍 Searching for active meeting - employeeId: ${employeeId}, followUpId: ${followUpId}`);
+
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      // Build query to find active meeting
+      const query: any = {
+        employeeId,
+        status: { $in: ["in-progress", "started"] },
+        startTime: { $gte: startOfToday.toISOString() },
+      };
+
+      // Add followUpId to query if provided for more specific matching
+      if (followUpId) {
+        query.followUpId = followUpId;
+      }
+
+      // Exclude already completed meetings
+      query.$or = [
+        { meetingStatus: { $exists: false } },
+        { meetingStatus: { $ne: "complete" } }
+      ];
+
+      console.log("🔍 Active meeting query:", JSON.stringify(query, null, 2));
+
+      meeting = await Meeting.findOne(query).sort({ startTime: -1 });
+      
+      if (meeting) {
+        console.log(`✅ Found active meeting by fallback search: ${meeting._id}`);
+      } else {
+        console.log("❌ No active meeting found with fallback search");
+        
+        // Debug: Check what meetings exist for this employee today
+        const allTodayMeetings = await Meeting.find({
+          employeeId,
+          startTime: { $gte: startOfToday.toISOString() }
+        }).lean();
+        
+        console.log("📋 All meetings for employee today:", allTodayMeetings.map(m => ({
+          id: m._id,
+          status: m.status,
+          meetingStatus: m.meetingStatus,
+          followUpId: m.followUpId,
+          startTime: m.startTime
+        })));
+      }
     }
 
-    // 🔒 ABSOLUTE PROTECTION
+    if (!meeting) {
+      return res.status(404).json({ error: "No active meeting found to end" });
+    }
+
+    console.log(`📝 Ending meeting: ${meeting._id}`);
+
+    // 🔒 ABSOLUTE PROTECTION - never allow these to be overwritten
     delete updates.startTime;
     delete updates.status;
 
-    // ✅ Deterministic end
+    // ✅ Set completion status deterministically
     meeting.status = "completed";
+    meeting.meetingStatus = "complete";
     meeting.endTime = updates.endTime || new Date().toISOString();
 
     // Optional fields (only if provided)
@@ -473,10 +539,21 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       };
     }
 
+    // 🔒 FINAL CONSISTENCY GUARANTEE
+    if (meeting.status === "completed") {
+      meeting.meetingStatus = "complete";
+    }
+
+    if (meeting.meetingStatus === "complete") {
+      meeting.status = "completed";
+    }
+
     await meeting.save();
 
-    console.log("✅ END MEETING:", {
+    console.log("✅ END MEETING SAVED:", {
       id: meeting._id,
+      status: meeting.status,
+      meetingStatus: meeting.meetingStatus,
       startTime: meeting.startTime,
       endTime: meeting.endTime,
     });
@@ -497,17 +574,17 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
 //     console.log(`📝 Updating meeting ${id} with status: ${updates.status}`);
 //     console.log(`📍 End location in request:`, updates.endLocation);
-    
+
 //     // 🔹 CRITICAL FIX: Never allow startTime to be overwritten
 //     if (updates.startTime) {
 //       console.warn("⚠️ Attempt to update startTime blocked - preserving original startTime");
 //       delete updates.startTime;
 //     }
-    
+
 //     // 🔹 ADDITIONAL PROTECTION: Ensure endTime is never set to startTime for today's meetings
 //     if (updates.endTime && updates.status === "completed") {
 //       console.log(`📋 Meeting completion - endTime: ${updates.endTime}`);
-      
+
 //       // Validate that endTime is different from startTime (if we can access it)
 //       try {
 //         const currentMeeting = await Meeting.findById(id).lean();
@@ -515,14 +592,14 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //           const startTime = new Date(currentMeeting.startTime).getTime();
 //           const endTime = new Date(updates.endTime).getTime();
 //           const timeDifference = endTime - startTime;
-          
+
 //           console.log(`⏰ Time validation:`, {
 //             startTime: currentMeeting.startTime,
 //             endTime: updates.endTime,
 //             differenceMs: timeDifference,
 //             differenceMinutes: Math.round(timeDifference / (1000 * 60))
 //           });
-          
+
 //           // For Today's Meetings specifically: ensure endTime is at least 1 minute after startTime
 //           if (timeDifference <= 0) {
 //             console.error("❌ CRITICAL: End time must be after start time!");
@@ -538,7 +615,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //         console.warn("Could not validate meeting times:", validationError);
 //       }
 //     }
-    
+
 //     // Log attachments info
 //     if (updates.meetingDetails?.attachments) {
 //       console.log(`📎 Attachments received: ${updates.meetingDetails.attachments.length} files`);
@@ -563,7 +640,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //         // Keep client-provided endTime as UTC
 //         console.log(`⏰ Using client-provided endTime (UTC): ${updates.endTime}`);
 //         console.log(`⏰ IST display: ${formatTimeForIST(updates.endTime)}`);
-        
+
 //         // 🔹 CRITICAL VALIDATION: Ensure endTime is not the same as startTime
 //         try {
 //           const currentMeeting = await Meeting.findById(id).lean();
@@ -573,7 +650,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //               console.error(`   StartTime: ${currentMeeting.startTime}`);
 //               console.error(`   EndTime: ${updates.endTime}`);
 //               console.error(`   This will cause the timing issue! Using server time instead.`);
-              
+
 //               // Use server time to prevent the timing issue
 //               updates.endTime = new Date().toISOString();
 //               console.log(`🔧 FIXED: Using server time instead: ${updates.endTime}`);
@@ -581,7 +658,7 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //               const startTime = new Date(currentMeeting.startTime).getTime();
 //               const endTime = new Date(updates.endTime).getTime();
 //               const duration = endTime - startTime;
-              
+
 //               console.log(`✅ VALIDATION PASSED: Times are different`);
 //               console.log(`   Duration: ${Math.round(duration / (1000 * 60))} minutes`);
 //             }
@@ -661,23 +738,23 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 //       if (updatedMeeting.location?.endLocation) {
 //         console.log("✅ End location saved:", updatedMeeting.location.endLocation);
 //       }
-      
+
 //       // Log attachments storage
 //       if (updatedMeeting.meetingDetails?.attachments) {
 //         console.log(`✅ Attachments stored: ${updatedMeeting.meetingDetails.attachments.length} files`);
 //       } else {
 //         console.log(`⚠️ No attachments in stored meeting`);
 //       }
-      
+
 //       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
-      
+
 //       // Verify attachments in response
 //       if (meetingLog.meetingDetails?.attachments) {
 //         console.log(`✅ Attachments in response: ${meetingLog.meetingDetails.attachments.length} files`);
 //       } else {
 //         console.log(`⚠️ No attachments in response`);
 //       }
-      
+
 //       res.json(meetingLog);
 //       return;
 //     } catch (dbError) {
@@ -732,8 +809,8 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
     const { employeeId, followUpId } = req.query;
 
     if (!employeeId && !followUpId) {
-      return res.status(400).json({ 
-        error: "Either employeeId or followUpId is required" 
+      return res.status(400).json({
+        error: "Either employeeId or followUpId is required"
       });
     }
 
@@ -743,7 +820,11 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
     try {
       // Build query to find active meetings
       const query: any = {
-        status: { $in: ["in-progress", "started"] }
+        status: { $in: ["in-progress", "started"] },
+        $or: [
+          { meetingStatus: { $exists: false } },
+          { meetingStatus: { $ne: "complete" } }
+        ]
       };
 
       if (followUpId) {
@@ -762,7 +843,7 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
 
       if (!activeMeeting) {
         console.log("⚠️ No active meeting found with query:", JSON.stringify(query, null, 2));
-        
+
         // 🔹 DEBUG: Check what meetings exist for this employee
         let allMeetings: any[] = [];
         if (employeeId) {
@@ -774,10 +855,14 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
             startTime: m.startTime
           })));
         }
-        
+
         // 🔹 DEBUG: Check if there are ANY active meetings
-        const anyActiveMeetings = await Meeting.find({ 
-          status: { $in: ["in-progress", "started"] } 
+        const anyActiveMeetings = await Meeting.find({
+          status: { $in: ["in-progress", "started"] },
+          $or: [
+            { meetingStatus: { $exists: false } },
+            { meetingStatus: { $ne: "complete" } }
+          ]
         }).lean();
         console.log("📋 All active meetings in database:", anyActiveMeetings.map(m => ({
           id: m._id,
@@ -785,8 +870,8 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
           followUpId: m.followUpId,
           status: m.status
         })));
-        
-        return res.status(404).json({ 
+
+        return res.status(404).json({
           error: "No active meeting found",
           employeeId,
           followUpId,
@@ -835,8 +920,8 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
     const { approvalStatus, approvalReason, approvedBy } = req.body;
 
     // Validate inputs
-    if (!approvalStatus || !['ok', 'not_ok'].includes(approvalStatus)) {
-      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    if (!approvalStatus || !['ok', 'not_ok', 'pending'].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok or pending) is required" });
     }
 
     if (!approvalReason || !approvalReason.trim()) {
@@ -847,12 +932,12 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
     console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
 
     try {
-      const updateData = { 
-        approvalStatus, 
+      const updateData = {
+        approvalStatus,
         approvalReason: approvalReason.trim(),
         approvedBy: approvedBy !== undefined ? approvedBy : null
       };
-      
+
       console.log(`📝 Update data being sent to MongoDB:`, updateData);
 
       const updatedMeeting = await Meeting.findByIdAndUpdate(
@@ -873,10 +958,10 @@ export const updateMeetingApproval: RequestHandler = async (req, res) => {
         approvalReason: updatedMeeting.approvalReason,
         approvedBy: updatedMeeting.approvedBy
       }));
-      
+
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
         approvalReason: updatedMeeting.approvalReason,
@@ -902,20 +987,20 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       return res.status(400).json({ error: "Employee ID, date, company name, and meeting time are required" });
     }
 
-    if (!approvalStatus || !['ok', 'not_ok'].includes(approvalStatus)) {
-      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    if (!approvalStatus || !['ok', 'not_ok', 'pending'].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok or pending) is required" });
     }
 
     if (!approvalReason || !approvalReason.trim()) {
       return res.status(400).json({ error: "Approval reason is required" });
     }
 
-    console.log(`📝 Updating meeting approval by details:`, { 
-      employeeId, 
-      date, 
-      companyName, 
+    console.log(`📝 Updating meeting approval by details:`, {
+      employeeId,
+      date,
+      companyName,
       meetingInTime,
-      approvalStatus, 
+      approvalStatus,
       approvalReason,
       approvedBy
     });
@@ -924,7 +1009,7 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       // Parse the date and time to create a date range for the query
       const startOfDayDate = new Date(date);
       startOfDayDate.setHours(0, 0, 0, 0);
-      
+
       const endOfDayDate = new Date(date);
       endOfDayDate.setHours(23, 59, 59, 999);
 
@@ -934,13 +1019,14 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
         clientName: companyName,
         startTime: {
           $gte: startOfDayDate.toISOString(),
-          $lte: endOfDayDate.toISOString()
-        }
+          $lte: endOfDayDate.toISOString(),
+        },
+        meetingStatus: { $ne: "complete" }
       }).lean();
 
       if (!meeting) {
         console.error("❌ Meeting not found with details:", { employeeId, date, companyName });
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: "Meeting not found",
           details: { employeeId, date, companyName, meetingInTime }
         });
@@ -949,12 +1035,12 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
       console.log(`✅ Found meeting by details: ${meeting._id}`);
       console.log(`📝 approvedBy value type:`, typeof approvedBy, `value:`, approvedBy);
 
-      const updateData = { 
-        approvalStatus, 
+      const updateData = {
+        approvalStatus,
         approvalReason: approvalReason.trim(),
         approvedBy: approvedBy !== undefined ? approvedBy : null
       };
-      
+
       console.log(`📝 Update data being sent to MongoDB:`, updateData);
 
       // Update the meeting
@@ -976,10 +1062,10 @@ export const updateMeetingApprovalByDetails: RequestHandler = async (req, res) =
         approvalReason: updatedMeeting.approvalReason,
         approvedBy: updatedMeeting.approvedBy
       }));
-      
+
       const meetingLog = await convertMeetingToMeetingLog(updatedMeeting);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         meeting: meetingLog,
         approvalStatus: updatedMeeting.approvalStatus,
         approvalReason: updatedMeeting.approvalReason,

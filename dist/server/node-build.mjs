@@ -169,13 +169,21 @@ const MeetingSchema = new Schema({
     default: null
     // ✅ IMPORTANT
   },
+  followUpId: {
+    type: String,
+    index: true
+  },
   meetingDetails: MeetingDetailsSchema$1,
   externalMeetingStatus: {
     type: String
   },
+  meetingStatus: {
+    type: String,
+    index: true
+  },
   approvalStatus: {
     type: String,
-    enum: ["ok", "not_ok"],
+    enum: ["ok", "not_ok", "pending"],
     index: true
   },
   approvalReason: {
@@ -1090,6 +1098,8 @@ const createMeeting = async (req, res) => {
       clientName,
       notes,
       status: "in-progress",
+      meetingStatus: "in-progress",
+      // Initialize meetingStatus
       leadId,
       leadInfo: sanitizedLeadInfo || void 0,
       followUpId,
@@ -1110,16 +1120,62 @@ const updateMeeting = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    if (!id) {
-      return res.status(400).json({ error: "Meeting ID is required" });
+    let meeting = null;
+    if (id && id !== "undefined" && id !== "null") {
+      try {
+        meeting = await Meeting.findById(id);
+        console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
+      } catch (error) {
+        console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+      }
     }
-    const meeting = await Meeting.findById(id);
     if (!meeting) {
-      return res.status(404).json({ error: "Meeting not found" });
+      const { employeeId, followUpId } = req.body;
+      if (!employeeId) {
+        return res.status(400).json({ error: "employeeId required to end meeting" });
+      }
+      console.log(`🔍 Searching for active meeting - employeeId: ${employeeId}, followUpId: ${followUpId}`);
+      const startOfToday = /* @__PURE__ */ new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const query = {
+        employeeId,
+        status: { $in: ["in-progress", "started"] },
+        startTime: { $gte: startOfToday.toISOString() }
+      };
+      if (followUpId) {
+        query.followUpId = followUpId;
+      }
+      query.$or = [
+        { meetingStatus: { $exists: false } },
+        { meetingStatus: { $ne: "complete" } }
+      ];
+      console.log("🔍 Active meeting query:", JSON.stringify(query, null, 2));
+      meeting = await Meeting.findOne(query).sort({ startTime: -1 });
+      if (meeting) {
+        console.log(`✅ Found active meeting by fallback search: ${meeting._id}`);
+      } else {
+        console.log("❌ No active meeting found with fallback search");
+        const allTodayMeetings = await Meeting.find({
+          employeeId,
+          startTime: { $gte: startOfToday.toISOString() }
+        }).lean();
+        console.log("📋 All meetings for employee today:", allTodayMeetings.map((m) => ({
+          id: m._id,
+          status: m.status,
+          meetingStatus: m.meetingStatus,
+          followUpId: m.followUpId,
+          startTime: m.startTime
+        })));
+      }
     }
+    if (!meeting) {
+      return res.status(404).json({ error: "No active meeting found to end" });
+    }
+    console.log(`📝 Ending meeting: ${meeting._id}`);
     delete updates.startTime;
     delete updates.status;
     meeting.status = "completed";
+    meeting.meetingStatus = "complete";
     meeting.endTime = updates.endTime || (/* @__PURE__ */ new Date()).toISOString();
     if (updates.meetingDetails) {
       meeting.meetingDetails = updates.meetingDetails;
@@ -1135,9 +1191,17 @@ const updateMeeting = async (req, res) => {
         timestamp: updates.endLocation.timestamp || (/* @__PURE__ */ new Date()).toISOString()
       };
     }
+    if (meeting.status === "completed") {
+      meeting.meetingStatus = "complete";
+    }
+    if (meeting.meetingStatus === "complete") {
+      meeting.status = "completed";
+    }
     await meeting.save();
-    console.log("✅ END MEETING:", {
+    console.log("✅ END MEETING SAVED:", {
       id: meeting._id,
+      status: meeting.status,
+      meetingStatus: meeting.meetingStatus,
       startTime: meeting.startTime,
       endTime: meeting.endTime
     });
@@ -1178,7 +1242,11 @@ const getActiveMeeting = async (req, res) => {
     console.log("🔍 Searching for active meeting:", { employeeId, followUpId });
     try {
       const query = {
-        status: { $in: ["in-progress", "started"] }
+        status: { $in: ["in-progress", "started"] },
+        $or: [
+          { meetingStatus: { $exists: false } },
+          { meetingStatus: { $ne: "complete" } }
+        ]
       };
       if (followUpId) {
         query.followUpId = followUpId;
@@ -1200,7 +1268,11 @@ const getActiveMeeting = async (req, res) => {
           })));
         }
         const anyActiveMeetings = await Meeting.find({
-          status: { $in: ["in-progress", "started"] }
+          status: { $in: ["in-progress", "started"] },
+          $or: [
+            { meetingStatus: { $exists: false } },
+            { meetingStatus: { $ne: "complete" } }
+          ]
         }).lean();
         console.log("📋 All active meetings in database:", anyActiveMeetings.map((m) => ({
           id: m._id,
@@ -1240,8 +1312,8 @@ const updateMeetingApproval = async (req, res) => {
   try {
     const { id } = req.params;
     const { approvalStatus, approvalReason, approvedBy } = req.body;
-    if (!approvalStatus || !["ok", "not_ok"].includes(approvalStatus)) {
-      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    if (!approvalStatus || !["ok", "not_ok", "pending"].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok or pending) is required" });
     }
     if (!approvalReason || !approvalReason.trim()) {
       return res.status(400).json({ error: "Approval reason is required" });
@@ -1294,8 +1366,8 @@ const updateMeetingApprovalByDetails = async (req, res) => {
     if (!employeeId || !date || !companyName || !meetingInTime) {
       return res.status(400).json({ error: "Employee ID, date, company name, and meeting time are required" });
     }
-    if (!approvalStatus || !["ok", "not_ok"].includes(approvalStatus)) {
-      return res.status(400).json({ error: "Valid approval status (ok/not_ok) is required" });
+    if (!approvalStatus || !["ok", "not_ok", "pending"].includes(approvalStatus)) {
+      return res.status(400).json({ error: "Valid approval status (ok/not_ok or pending) is required" });
     }
     if (!approvalReason || !approvalReason.trim()) {
       return res.status(400).json({ error: "Approval reason is required" });
@@ -1320,7 +1392,8 @@ const updateMeetingApprovalByDetails = async (req, res) => {
         startTime: {
           $gte: startOfDayDate.toISOString(),
           $lte: endOfDayDate.toISOString()
-        }
+        },
+        meetingStatus: { $ne: "complete" }
       }).lean();
       if (!meeting) {
         console.error("❌ Meeting not found with details:", { employeeId, date, companyName });

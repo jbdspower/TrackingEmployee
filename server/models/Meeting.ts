@@ -55,7 +55,8 @@ export interface IMeeting extends Document {
  followUpId?: string; // Follow-up meeting ID from external API
  meetingDetails?: MeetingDetails;
  externalMeetingStatus?: string; // Status from external follow-up API
- approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+ meetingStatus?: string; // Meeting completion status (complete/incomplete)
+ approvalStatus?: 'ok' | 'not_ok' | 'pending'; // Meeting approval status
  approvalReason?: string; // Reason for approval/rejection
  approvedBy?: string | null; // userId who approved the meeting
  attachments?: string[]; // Array of attachment file URLs/paths
@@ -176,13 +177,21 @@ leadInfo: {
   type: LeadInfoSchema,
   default: null // ✅ IMPORTANT
 },
+ followUpId: {
+   type: String,
+   index: true
+ },
  meetingDetails: MeetingDetailsSchema,
  externalMeetingStatus: {
    type: String
  },
+ meetingStatus: {
+   type: String,
+   index: true
+ },
  approvalStatus: {
    type: String,
-   enum: ['ok', 'not_ok'],
+   enum: ['ok', 'not_ok', 'pending'],
    index: true
  },
  approvalReason: {

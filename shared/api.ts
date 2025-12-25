@@ -84,7 +84,7 @@ export interface CustomerContact {
 
 // Enhanced meeting data with multiple customer contacts
 export interface MeetingDetails {
-  incomplete: boolean;
+  incomplete?: boolean;
   customers: CustomerContact[]; // Array of customer contacts
   discussion: string; // mandatory
   attachments?: string[]; // Array of attachment file URLs/paths
@@ -116,7 +116,7 @@ export interface MeetingLog {
   };
   followUpId?: string; // Follow-up meeting ID from external API
   meetingDetails?: MeetingDetails;
-  approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+  approvalStatus?: 'ok' | 'not_ok' | 'pending'; // Meeting approval status
   approvalReason?: string; // Reason for approval/rejection
   approvedBy?: string | null; // userId who approved the meeting
   attachments?: string[]; // Array of attachment file URLs/paths

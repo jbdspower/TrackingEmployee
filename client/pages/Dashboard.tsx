@@ -96,7 +96,7 @@ interface EmployeeMeetingRecord {
   discussion: string;
   meetingPerson: string;
   meetingId?: string;
-  approvalStatus?: 'ok' | 'not_ok';
+  approvalStatus?: 'ok' | 'not_ok' | 'pending';
   approvalReason?: string;
   approvedBy?: string;
   approvedByName?: string;
@@ -172,7 +172,7 @@ export default function Dashboard() {
     Record<
       string,
       {
-        approvalStatus: 'ok' | 'not_ok' | '';
+        approvalStatus: 'ok' | 'not_ok' | 'pending' | '';
         approvalReason: string;
         isEditing: boolean;
         isSaving: boolean;
@@ -819,6 +819,7 @@ export default function Dashboard() {
   const approvalOptions = [
     { value: "ok", label: "OK" },
     { value: "not_ok", label: "Not OK" },
+    { value: "pending", label: "Pending"}
   ];
 
   // Generate a unique key for a meeting record (fallback when meetingId is not available)
@@ -862,7 +863,7 @@ export default function Dashboard() {
     });
   };
 
-  const handleMeetingApprovalStatusChange = (meetingKey: string, status: 'ok' | 'not_ok') => {
+  const handleMeetingApprovalStatusChange = (meetingKey: string, status: 'ok' | 'not_ok' | 'pending') => {
     setMeetingApprovalEdits((prev) => ({
       ...prev,
       [meetingKey]: {
@@ -970,7 +971,7 @@ export default function Dashboard() {
             return recordKey === meetingKey
               ? {
                   ...record,
-                  approvalStatus: editData.approvalStatus as 'ok' | 'not_ok',
+                  approvalStatus: editData.approvalStatus as 'ok' | 'not_ok' | 'pending',
                   approvalReason: editData.approvalReason,
                 }
               : record;
@@ -1820,7 +1821,7 @@ export default function Dashboard() {
                                                   onValueChange={(value) =>
                                                     handleMeetingApprovalStatusChange(
                                                       meetingKey,
-                                                      value as 'ok' | 'not_ok',
+                                                      value as 'ok' | 'not_ok' | 'pending',
                                                     )
                                                   }
                                                 >
