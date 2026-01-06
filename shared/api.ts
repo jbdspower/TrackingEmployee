@@ -402,3 +402,17 @@ export interface GetAttendanceResponse {
   count: number;
   data: AttendanceRecord[];
 }
+
+// Today's meetings summary for duty completion
+export interface TodaysMeetingsSummary {
+  totalMeetings: number;
+  completedMeetings: number;
+  totalDutyHours: number;
+  attendanceStatus: string;
+  badgeClass: string;
+}
+
+export interface TodaysMeetingsResponse {
+  meetings: MeetingLog[];
+  summary: TodaysMeetingsSummary;
+}

@@ -8,6 +8,36 @@ import axios from "axios";
 import NodeCache from "node-cache";
 import { isToday, format, endOfDay, startOfDay, parseISO, endOfMonth, startOfMonth, endOfWeek, startOfWeek, subDays } from "date-fns";
 import { fileURLToPath } from "url";
+async function createIndexes() {
+  try {
+    console.log("🔄 Creating database indexes...");
+    const db = mongoose.connection.db;
+    if (!db) {
+      console.log("❌ No database connection available");
+      return;
+    }
+    await db.collection("meetings").createIndex({ employeeId: 1 });
+    await db.collection("meetings").createIndex({ startTime: -1 });
+    await db.collection("meetings").createIndex({ employeeId: 1, startTime: -1 });
+    await db.collection("meetings").createIndex({ leadId: 1 });
+    await db.collection("meetings").createIndex({ status: 1 });
+    console.log("✅ Meeting indexes created");
+    await db.collection("attendances").createIndex({ employeeId: 1, date: 1 }, { unique: true });
+    await db.collection("attendances").createIndex({ date: 1 });
+    await db.collection("attendances").createIndex({ employeeId: 1 });
+    console.log("✅ Attendance indexes created");
+    await db.collection("trackingsessions").createIndex({ employeeId: 1, startTime: -1 });
+    await db.collection("trackingsessions").createIndex({ startTime: -1 });
+    await db.collection("trackingsessions").createIndex({ status: 1 });
+    console.log("✅ TrackingSession indexes created");
+    await db.collection("meetinghistories").createIndex({ employeeId: 1, meetingDate: -1 });
+    await db.collection("meetinghistories").createIndex({ leadId: 1 });
+    console.log("✅ MeetingHistory indexes created");
+    console.log("🎉 All database indexes created successfully");
+  } catch (error) {
+    console.error("❌ Error creating indexes:", error.message);
+  }
+}
 dotenv.config();
 const dbConfig = {
   MONGODB_URI: process.env.MONGODB_URI || "mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/",
@@ -30,13 +60,19 @@ class Database {
       return;
     }
     try {
-      console.log("���� Database: Connecting to MongoDB...");
-      console.log("📦 Database: URI:", dbConfig.MONGODB_URI);
+      console.log("🔄 Database: Connecting to MongoDB...");
       await mongoose.connect(dbConfig.MONGODB_URI, {
-        dbName: dbConfig.DB_NAME
+        dbName: dbConfig.DB_NAME,
+        maxPoolSize: 50,
+        // Increased connection pool
+        serverSelectionTimeoutMS: 1e4,
+        socketTimeoutMS: 45e3,
+        retryWrites: true,
+        retryReads: true
       });
       this.isConnected = true;
       console.log("✅ Database: Successfully connected to MongoDB");
+      await createIndexes();
       mongoose.connection.on("error", (error) => {
         console.error("❌ Database: MongoDB connection error:", error);
         this.isConnected = false;
@@ -2156,6 +2192,66 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+class CacheService {
+  constructor() {
+    this.cache = new NodeCache({
+      stdTTL: 300,
+      // 5 minutes default TTL
+      checkperiod: 60
+    });
+    this.externalApiUrl = "https://jbdspower.in/LeafNetServer/api/user";
+  }
+  get(key) {
+    return this.cache.get(key);
+  }
+  set(key, value, ttl = 300) {
+    return this.cache.set(key, value, ttl);
+  }
+  del(keys) {
+    return this.cache.del(keys);
+  }
+  flush() {
+    return this.cache.flushAll();
+  }
+  // External API fetch function
+  async fetchExternalUsers() {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1e4);
+      const response = await fetch(this.externalApiUrl, {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        }
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const users = await response.json();
+      console.log(`External API: ${users.length} users fetched`);
+      return users;
+    } catch (error) {
+      console.error("Error fetching external users:", error);
+      return [];
+    }
+  }
+  // Cache external users for 10 minutes
+  async getExternalUsers() {
+    const cacheKey = "external_users";
+    let users = this.get(cacheKey);
+    if (!users) {
+      console.log("Cache miss: fetching external users");
+      users = await this.fetchExternalUsers();
+      this.set(cacheKey, users, 600);
+    } else {
+      console.log("Cache hit: using cached external users");
+    }
+    return users;
+  }
+}
+const cacheService = new CacheService();
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
 async function fetchExternalUsers() {
   try {
@@ -2421,150 +2517,113 @@ const getEmployeeAnalytics = async (req, res) => {
 const getEmployeeDetails = async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const { dateRange = "today", startDate, endDate } = req.query;
+    const {
+      dateRange = "today",
+      startDate,
+      endDate,
+      page = "1",
+      limit = "20",
+      type = "meetings"
+      // "meetings" or "days"
+    } = req.query;
+    const startTime = Date.now();
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const skip = (pageNum - 1) * limitNum;
     const { start, end } = getDateRange(
       dateRange,
       startDate,
       endDate
     );
-    console.log(`Employee details date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
-    console.log(`Employee ${employeeId} calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
-    let actualMeetings = [];
-    try {
-      const mongoMeetings = await Meeting.find({ employeeId }).lean();
-      actualMeetings = mongoMeetings.map((meeting) => {
-        if (!meeting._id) {
-          console.error(`❌ Meeting from MongoDB has no _id:`, meeting);
-        }
-        return {
-          id: meeting._id ? meeting._id.toString() : void 0,
-          employeeId: meeting.employeeId,
-          startTime: meeting.startTime,
-          endTime: meeting.endTime,
-          clientName: meeting.clientName,
-          leadId: meeting.leadId,
-          status: meeting.status,
-          meetingDetails: meeting.meetingDetails,
-          location: meeting.location,
-          approvalStatus: meeting.approvalStatus,
-          approvalReason: meeting.approvalReason,
-          approvedBy: meeting.approvedBy
-        };
-      });
-      console.log(`Found ${actualMeetings.length} total meetings in MongoDB for employee ${employeeId}`);
-      if (actualMeetings.length > 0) {
-        console.log(`📋 Meeting IDs from MongoDB:`, actualMeetings.map((m) => ({ id: m.id, hasId: !!m.id })));
-      }
-      console.log(`Employee details date range: ${start.toISOString()} to ${end.toISOString()}`);
-      if (actualMeetings.length === 0) {
-        const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
-        actualMeetings = (inMemoryMeetings2 || []).filter((meeting) => meeting.employeeId === employeeId);
-        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory for employee ${employeeId}`);
-      }
-    } catch (dbError) {
-      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
-      actualMeetings = (inMemoryMeetings2 || []).filter((meeting) => meeting.employeeId === employeeId);
-    }
-    const employeeMeetings = actualMeetings.filter((meeting) => {
-      const meetingDate = new Date(meeting.startTime);
-      const meetingTime = meetingDate.getTime();
-      const startTime = start.getTime();
-      const endTime = end.getTime();
-      const inDateRange = meetingTime >= startTime && meetingTime <= endTime;
-      if (inDateRange) {
-        console.log(`✅ Employee meeting ${meeting.id} included: ${meeting.startTime} (${meeting.clientName || "No client"}) [Status: ${meeting.status}]`);
-      } else {
-        console.log(`❌ Employee meeting ${meeting.id} excluded: ${meeting.startTime} (outside ${start.toISOString()} to ${end.toISOString()}) [Status: ${meeting.status}]`);
-      }
-      return inDateRange;
-    });
-    console.log(`Filtered to ${employeeMeetings.length} meetings in date range for employee ${employeeId}`);
-    if (employeeMeetings.length > 0) {
-      console.log(`📋 Filtered meeting IDs:`, employeeMeetings.map((m) => ({
-        id: m.id,
-        hasId: !!m.id,
-        client: m.clientName
-      })));
-    }
-    let trackingSessions2 = [];
-    try {
-      const { TrackingSession: TrackingSession2 } = await import("./index-BZmtEn10.js");
-      const mongoSessions = await TrackingSession2.find({
+    console.log(`📊 Employee details for ${employeeId} - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}`);
+    const [
+      externalUsers,
+      meetingsData,
+      meetingsCount,
+      trackingSessionsData,
+      attendanceRecords
+    ] = await Promise.allSettled([
+      // Get external users from cache
+      cacheService.getExternalUsers(),
+      // Fetch meetings with date range filter and pagination
+      Meeting.find({
         employeeId,
-        startTime: { $gte: start.toISOString(), $lte: end.toISOString() }
-      }).lean();
-      trackingSessions2 = mongoSessions.map((session) => ({
-        id: session.id,
-        employeeId: session.employeeId,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        startLocation: session.startLocation,
-        endLocation: session.endLocation,
-        status: session.status,
-        duration: session.duration
-      }));
-      console.log(`Found ${trackingSessions2.length} tracking sessions for employee ${employeeId}`);
-    } catch (dbError) {
-      console.warn("Failed to fetch tracking sessions:", dbError);
-    }
-    const dateGroups = employeeMeetings.reduce(
-      (groups, meeting) => {
-        const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
-        if (!groups[date]) groups[date] = [];
-        groups[date].push(meeting);
-        return groups;
-      },
-      {}
-    );
-    const sessionDateGroups = trackingSessions2.reduce(
-      (groups, session) => {
-        const date = format(new Date(session.startTime), "yyyy-MM-dd");
-        if (!groups[date]) groups[date] = [];
-        groups[date].push(session);
-        return groups;
-      },
-      {}
-    );
-    const allDates = /* @__PURE__ */ new Set([
-      ...Object.keys(dateGroups),
-      ...Object.keys(sessionDateGroups)
-    ]);
-    let attendanceRecords = [];
-    try {
-      const mongoAttendance = await Attendance.find({
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }).select("startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy").sort({ startTime: -1 }).skip(skip).limit(limitNum).lean().exec(),
+      // Get total count of meetings for pagination
+      Meeting.countDocuments({
+        employeeId,
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }),
+      // Fetch tracking sessions with date range filter (no pagination needed for day grouping)
+      TrackingSession.find({
+        employeeId,
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }).select("startTime endTime startLocation endLocation status duration").lean().exec(),
+      // Fetch attendance records
+      Attendance.find({
         employeeId,
         date: {
           $gte: format(start, "yyyy-MM-dd"),
           $lte: format(end, "yyyy-MM-dd")
         }
-      }).lean();
-      attendanceRecords = mongoAttendance.map((att) => ({
-        date: att.date,
-        attendenceCreated: att.attendenceCreated,
-        attendanceStatus: att.attendanceStatus,
-        attendanceReason: att.attendanceReason
-      }));
-      console.log(`Found ${attendanceRecords.length} attendance records for employee ${employeeId}`);
-    } catch (dbError) {
-      console.warn("Failed to fetch attendance records:", dbError);
-    }
-    const externalUsers = await fetchExternalUsers();
-    const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
+      }).select("date attendanceStatus attendanceReason attendenceCreated").lean().exec()
+    ]);
+    const externalUsersResult = externalUsers.status === "fulfilled" ? externalUsers.value : [];
+    const meetingsDataResult = meetingsData.status === "fulfilled" ? meetingsData.value : [];
+    const meetingsCountResult = meetingsCount.status === "fulfilled" ? meetingsCount.value : 0;
+    const trackingSessionsResult = trackingSessionsData.status === "fulfilled" ? trackingSessionsData.value : [];
+    const attendanceRecordsResult = attendanceRecords.status === "fulfilled" ? attendanceRecords.value : [];
+    if (externalUsers.status === "rejected") console.error("Error fetching external users:", externalUsers.reason);
+    if (meetingsData.status === "rejected") console.error("Error fetching meetings:", meetingsData.reason);
+    if (meetingsCount.status === "rejected") console.error("Error counting meetings:", meetingsCount.reason);
+    if (trackingSessionsData.status === "rejected") console.error("Error fetching tracking sessions:", trackingSessionsData.reason);
+    if (attendanceRecords.status === "rejected") console.error("Error fetching attendance:", attendanceRecords.reason);
+    const meetings2 = meetingsDataResult;
+    const trackingSessions2 = trackingSessionsResult;
+    console.log(`📈 Fetched data: ${meetings2.length} meetings (total: ${meetingsCountResult}), ${trackingSessions2.length} sessions, ${attendanceRecordsResult.length} attendance records`);
+    const userMap = new Map(externalUsersResult.map((user) => [user._id, user.name]));
+    const dateGroups = /* @__PURE__ */ new Map();
+    meetings2.forEach((meeting) => {
+      const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
+      if (!dateGroups.has(date)) {
+        dateGroups.set(date, []);
+      }
+      dateGroups.get(date).push(meeting);
+    });
+    const sessionDateGroups = /* @__PURE__ */ new Map();
+    trackingSessions2.forEach((session) => {
+      const date = format(new Date(session.startTime), "yyyy-MM-dd");
+      if (!sessionDateGroups.has(date)) {
+        sessionDateGroups.set(date, []);
+      }
+      sessionDateGroups.get(date).push(session);
+    });
+    const allDates = /* @__PURE__ */ new Set([
+      ...Array.from(dateGroups.keys()),
+      ...Array.from(sessionDateGroups.keys())
+    ]);
     const dayRecords = Array.from(allDates).map((date) => {
-      const meetings2 = dateGroups[date] || [];
-      const sessions = sessionDateGroups[date] || [];
-      const totalMeetings = meetings2.length;
-      const totalMeetingHours = meetings2.reduce((total, meeting) => {
+      const meetings22 = dateGroups.get(date) || [];
+      const sessions = sessionDateGroups.get(date) || [];
+      const totalMeetings = meetings22.length;
+      const totalMeetingHours = meetings22.reduce((total, meeting) => {
         return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
       }, 0);
-      const sortedMeetings = [...meetings2].sort(
+      const sortedMeetings = [...meetings22].sort(
         (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
       );
       const firstMeeting = sortedMeetings[0];
       const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
-      const firstSession = sessions[0];
-      const lastSession = sessions[sessions.length - 1];
       const startLocationTime = firstMeeting?.startTime || "";
       const startLocationAddress = firstMeeting?.location?.address || "";
       const outLocationTime = lastMeeting?.endTime || "";
@@ -2574,13 +2633,8 @@ const getEmployeeDetails = async (req, res) => {
         const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1e3 * 60 * 60);
         totalDutyHours = Math.max(0, dutyDuration);
       }
-      const attendance = attendanceRecords.find((att) => att.date === date);
+      const attendance = attendanceRecordsResult.find((att) => att.date === date);
       const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
-      console.log(`Day record for ${date}:`);
-      console.log(`  - Meetings: ${totalMeetings}, Meeting hours: ${totalMeetingHours.toFixed(2)}h`);
-      console.log(`  - ✅ Start Location Time: ${startLocationTime || "N/A"} (from FIRST MEETING START)`);
-      console.log(`  - ✅ Out Location Time: ${outLocationTime || "N/A"} (from LAST MEETING END)`);
-      console.log(`  - Tracking sessions: ${sessions.length}, Attendance added by: ${attendanceAddedBy || "N/A"}`);
       return {
         date,
         totalMeetings,
@@ -2592,94 +2646,64 @@ const getEmployeeDetails = async (req, res) => {
         meetingTime: totalMeetingHours,
         travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
         attendanceAddedBy
-        // 🔹 NEW: Person who added the attendance
       };
     });
-    const meetingRecords = employeeMeetings.map((meeting) => {
-      console.log(`📋 Generating meeting record for meeting ${meeting.id}:`, {
-        id: meeting.id,
-        hasId: !!meeting.id,
-        status: meeting.status,
-        clientName: meeting.clientName,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime || "N/A (active meeting)",
-        hasDetails: !!meeting.meetingDetails,
-        approvalStatus: meeting.approvalStatus || "Not reviewed"
-      });
-      if (!meeting.id) {
-        console.error(`❌ WARNING: Meeting has no ID!`, meeting);
-      }
+    const meetingRecords = meetings2.map((meeting) => {
       const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
       const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
-      console.log(`⏰ TIME DEBUG for ${meeting.clientName}:`, {
-        rawStartTime: meeting.startTime,
-        rawEndTime: meeting.endTime,
-        formattedInTime: meetingInTime,
-        formattedOutTime: meetingOutTime,
-        timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
-      });
-      if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
-        console.error(`❌ TIMING ISSUE DETECTED: Meeting in and out times are the same!`, {
-          meetingId: meeting.id,
-          clientName: meeting.clientName,
-          startTime: meeting.startTime,
-          endTime: meeting.endTime,
-          formattedTimes: { in: meetingInTime, out: meetingOutTime }
-        });
-      }
       return {
-        meetingId: meeting.id,
-        // Include meeting ID for approval updates
+        meetingId: meeting._id?.toString() || meeting.id,
         employeeName: "",
         // Will be filled by client
         companyName: meeting.clientName || "Unknown Company",
         date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
         leadId: meeting.leadId || "",
         meetingInTime,
-        // 🔹 FIX: Always show meeting location when meeting started
         meetingInLocation: meeting.location?.address || "Location loading...",
         meetingOutTime,
-        // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
         meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "Meeting completed" : "Meeting in progress",
-        totalStayTime: calculateMeetingDuration(
-          meeting.startTime,
-          meeting.endTime
-        ),
+        totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
         discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
         meetingPerson: meeting.meetingDetails?.customers?.length > 0 ? meeting.meetingDetails.customers.map((customer) => customer.customerEmployeeName).join(", ") : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
         meetingStatus: meeting.status || "completed",
-        // Internal meeting status
         externalMeetingStatus: meeting.externalMeetingStatus || "",
-        // 🔹 NEW: Status from external follow-up API
         incomplete: meeting.meetingDetails?.incomplete || false,
-        // Include incomplete flag
         incompleteReason: meeting.meetingDetails?.incompleteReason || "",
-        // Include incomplete reason
         approvalStatus: meeting.approvalStatus || void 0,
-        // Meeting approval status
         approvalReason: meeting.approvalReason || void 0,
-        // Meeting approval reason
         approvedBy: meeting.approvedBy || void 0,
-        // User ID who approved the meeting
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0,
-        // Name of user who approved
         attachments: meeting.meetingDetails?.attachments || meeting.attachments || []
-        // Attachment files
       };
     });
-    const finalResult = {
-      dayRecords: dayRecords.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ),
-      meetingRecords: meetingRecords.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      )
+    const totalPages = Math.ceil(meetingsCountResult / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPreviousPage = pageNum > 1;
+    const result = {
+      pagination: {
+        currentPage: pageNum,
+        pageSize: limitNum,
+        totalItems: meetingsCountResult,
+        totalPages,
+        hasNextPage,
+        hasPreviousPage,
+        nextPage: hasNextPage ? pageNum + 1 : null,
+        previousPage: hasPreviousPage ? pageNum - 1 : null
+      },
+      dayRecords: dayRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      meetingRecords: meetingRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     };
-    console.log(`Employee details result: ${finalResult.dayRecords.length} day records, ${finalResult.meetingRecords.length} meeting records`);
-    res.json(finalResult);
+    const endTime = Date.now();
+    console.log(`✅ Employee details fetched in ${endTime - startTime}ms`);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching employee details:", error);
-    res.status(500).json({ error: "Failed to fetch employee details" });
+    console.error("Error details:", error.message);
+    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      error: "Failed to fetch employee details",
+      message: error.message
+    });
   }
 };
 const getLeadHistory = async (req, res) => {
@@ -2900,137 +2924,143 @@ const getAttendance = async (req, res) => {
 };
 const getAllEmployeesDetails = async (req, res) => {
   try {
-    const { dateRange = "today", startDate, endDate } = req.query;
+    const {
+      dateRange = "today",
+      startDate,
+      endDate,
+      page = "1",
+      limit = "10",
+      search = "",
+      sortBy = "employeeName",
+      sortOrder = "asc"
+    } = req.query;
+    const startTime = Date.now();
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const skip = (pageNum - 1) * limitNum;
     const { start, end } = getDateRange(
       dateRange,
       startDate,
       endDate
     );
-    console.log(`All employees details date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
-    console.log(`Calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
-    const externalUsers = await fetchExternalUsers();
-    const employees = externalUsers.map(
-      (user, index) => mapExternalUserToEmployee(user, index)
-    );
-    console.log(`Processing ${employees.length} employees`);
-    let actualMeetings = [];
-    try {
-      const mongoMeetings = await Meeting.find({}).lean();
-      actualMeetings = mongoMeetings.map((meeting) => ({
-        id: meeting._id.toString(),
-        employeeId: meeting.employeeId,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime,
-        clientName: meeting.clientName,
-        leadId: meeting.leadId,
-        status: meeting.status,
-        meetingDetails: meeting.meetingDetails,
-        location: meeting.location,
-        approvalStatus: meeting.approvalStatus,
-        approvalReason: meeting.approvalReason,
-        approvedBy: meeting.approvedBy
-      }));
-      console.log(`Found ${actualMeetings.length} total meetings in MongoDB`);
-      if (actualMeetings.length === 0) {
-        const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
-        actualMeetings = inMemoryMeetings2 || [];
-        console.log(`Fallback: Using ${actualMeetings.length} meetings from memory`);
+    console.log(`📊 All employees details - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}, Search: "${search}"`);
+    const externalUsers = await cacheService.getExternalUsers();
+    let employees = externalUsers.map((user, index) => mapExternalUserToEmployee(user, index));
+    if (search) {
+      const searchLower = search.toLowerCase();
+      employees = employees.filter(
+        (emp) => emp.name.toLowerCase().includes(searchLower) || emp.email.toLowerCase().includes(searchLower) || emp.designation?.toLowerCase().includes(searchLower) || emp.department?.toLowerCase().includes(searchLower)
+      );
+    }
+    const sortDirection = sortOrder === "desc" ? -1 : 1;
+    employees.sort((a, b) => {
+      switch (sortBy) {
+        case "employeeName":
+          return sortDirection * a.name.localeCompare(b.name);
+        case "email":
+          return sortDirection * (a.email || "").localeCompare(b.email || "");
+        case "designation":
+          return sortDirection * (a.designation || "").localeCompare(b.designation || "");
+        case "department":
+          return sortDirection * (a.department || "").localeCompare(b.department || "");
+        default:
+          return sortDirection * a.name.localeCompare(b.name);
       }
-    } catch (dbError) {
-      console.warn("MongoDB query failed, falling back to in-memory meetings:", dbError);
-      const { inMemoryMeetings: inMemoryMeetings2 } = await Promise.resolve().then(() => meetings);
-      actualMeetings = inMemoryMeetings2 || [];
-    }
-    let trackingSessions2 = [];
-    try {
-      const { TrackingSession: TrackingSession2 } = await import("./index-BZmtEn10.js");
-      const mongoSessions = await TrackingSession2.find({
-        startTime: { $gte: start.toISOString(), $lte: end.toISOString() }
-      }).lean();
-      trackingSessions2 = mongoSessions.map((session) => ({
-        id: session.id,
-        employeeId: session.employeeId,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        startLocation: session.startLocation,
-        endLocation: session.endLocation,
-        status: session.status,
-        duration: session.duration
-      }));
-      console.log(`Found ${trackingSessions2.length} tracking sessions`);
-    } catch (dbError) {
-      console.warn("Failed to fetch tracking sessions:", dbError);
-    }
-    let attendanceRecords = [];
-    try {
-      const mongoAttendance = await Attendance.find({
+    });
+    const totalEmployees = employees.length;
+    const totalPages = Math.ceil(totalEmployees / limitNum);
+    const paginatedEmployees = employees.slice(skip, skip + limitNum);
+    console.log(`👥 Processing ${paginatedEmployees.length} employees (${skip + 1} to ${skip + paginatedEmployees.length} of ${totalEmployees})`);
+    const employeeIds = paginatedEmployees.map((emp) => emp.id);
+    const [
+      allMeetings,
+      allTrackingSessions,
+      allAttendanceRecords
+    ] = await Promise.all([
+      // Fetch meetings for date range and employee IDs
+      Meeting.find({
+        employeeId: { $in: employeeIds },
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }).select("employeeId startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy").lean().exec(),
+      // Fetch tracking sessions for date range and employee IDs
+      TrackingSession.find({
+        employeeId: { $in: employeeIds },
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }).select("employeeId startTime endTime startLocation endLocation status duration").lean().exec(),
+      // Fetch attendance records for date range and employee IDs
+      Attendance.find({
+        employeeId: { $in: employeeIds },
         date: {
           $gte: format(start, "yyyy-MM-dd"),
           $lte: format(end, "yyyy-MM-dd")
         }
-      }).lean();
-      attendanceRecords = mongoAttendance.map((att) => ({
-        employeeId: att.employeeId,
-        date: att.date,
-        attendenceCreated: att.attendenceCreated,
-        attendanceStatus: att.attendanceStatus,
-        attendanceReason: att.attendanceReason
-      }));
-      console.log(`Found ${attendanceRecords.length} attendance records`);
-    } catch (dbError) {
-      console.warn("Failed to fetch attendance records:", dbError);
-    }
+      }).select("employeeId date attendanceStatus attendanceReason attendenceCreated").lean().exec()
+    ]);
+    console.log(`📈 Bulk data fetched: ${allMeetings.length} meetings, ${allTrackingSessions.length} sessions, ${allAttendanceRecords.length} attendance records`);
+    const meetingsByEmployee = /* @__PURE__ */ new Map();
+    allMeetings.forEach((meeting) => {
+      if (!meetingsByEmployee.has(meeting.employeeId)) {
+        meetingsByEmployee.set(meeting.employeeId, []);
+      }
+      meetingsByEmployee.get(meeting.employeeId).push(meeting);
+    });
+    const sessionsByEmployee = /* @__PURE__ */ new Map();
+    allTrackingSessions.forEach((session) => {
+      if (!sessionsByEmployee.has(session.employeeId)) {
+        sessionsByEmployee.set(session.employeeId, []);
+      }
+      sessionsByEmployee.get(session.employeeId).push(session);
+    });
+    const attendanceByEmployee = /* @__PURE__ */ new Map();
+    allAttendanceRecords.forEach((att) => {
+      const key = `${att.employeeId}-${att.date}`;
+      attendanceByEmployee.set(key, att);
+    });
     const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
-    const allEmployeesData = employees.map((employee) => {
-      const employeeMeetings = actualMeetings.filter(
-        (meeting) => meeting.employeeId === employee.id
-      );
-      const meetingsInRange = employeeMeetings.filter((meeting) => {
-        const meetingDate = new Date(meeting.startTime);
-        const meetingTime = meetingDate.getTime();
-        const startTime = start.getTime();
-        const endTime = end.getTime();
-        return meetingTime >= startTime && meetingTime <= endTime;
+    const allEmployeesData = paginatedEmployees.map((employee) => {
+      const employeeId = employee.id;
+      const meetings2 = meetingsByEmployee.get(employeeId) || [];
+      const sessions = sessionsByEmployee.get(employeeId) || [];
+      const dateGroups = /* @__PURE__ */ new Map();
+      meetings2.forEach((meeting) => {
+        const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
+        if (!dateGroups.has(date)) {
+          dateGroups.set(date, []);
+        }
+        dateGroups.get(date).push(meeting);
       });
-      const employeeSessions = trackingSessions2.filter(
-        (session) => session.employeeId === employee.id
-      );
-      const dateGroups = meetingsInRange.reduce(
-        (groups, meeting) => {
-          const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
-          if (!groups[date]) groups[date] = [];
-          groups[date].push(meeting);
-          return groups;
-        },
-        {}
-      );
-      const sessionDateGroups = employeeSessions.reduce(
-        (groups, session) => {
-          const date = format(new Date(session.startTime), "yyyy-MM-dd");
-          if (!groups[date]) groups[date] = [];
-          groups[date].push(session);
-          return groups;
-        },
-        {}
-      );
+      const sessionDateGroups = /* @__PURE__ */ new Map();
+      sessions.forEach((session) => {
+        const date = format(new Date(session.startTime), "yyyy-MM-dd");
+        if (!sessionDateGroups.has(date)) {
+          sessionDateGroups.set(date, []);
+        }
+        sessionDateGroups.get(date).push(session);
+      });
       const allDates = /* @__PURE__ */ new Set([
-        ...Object.keys(dateGroups),
-        ...Object.keys(sessionDateGroups)
+        ...Array.from(dateGroups.keys()),
+        ...Array.from(sessionDateGroups.keys())
       ]);
-      const dayRecords = Array.from(allDates).map((date) => {
-        const meetings2 = dateGroups[date] || [];
-        const sessions = sessionDateGroups[date] || [];
-        const totalMeetings = meetings2.length;
-        const totalMeetingHours = meetings2.reduce((total, meeting) => {
+      const allDatesArray = Array.from(allDates);
+      const recentDates = allDatesArray.sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).slice(0, 7);
+      const dayRecords = recentDates.map((date) => {
+        const dayMeetings = dateGroups.get(date) || [];
+        const daySessions = sessionDateGroups.get(date) || [];
+        const totalMeetings2 = dayMeetings.length;
+        const totalMeetingHours2 = dayMeetings.reduce((total, meeting) => {
           return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
         }, 0);
-        const sortedMeetings = [...meetings2].sort(
+        const sortedMeetings = [...dayMeetings].sort(
           (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
         );
         const firstMeeting = sortedMeetings[0];
         const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
-        const firstSession = sessions[0];
-        const lastSession = sessions[sessions.length - 1];
         const startLocationTime = firstMeeting?.startTime || "";
         const startLocationAddress = firstMeeting?.location?.address || "";
         const outLocationTime = lastMeeting?.endTime || "";
@@ -3040,56 +3070,36 @@ const getAllEmployeesDetails = async (req, res) => {
           const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1e3 * 60 * 60);
           totalDutyHours = Math.max(0, dutyDuration);
         }
-        const attendance = attendanceRecords.find((att) => att.date === date && att.employeeId === employee.id);
+        const attendanceKey = `${employeeId}-${date}`;
+        const attendance = attendanceByEmployee.get(attendanceKey);
         const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
         return {
           date,
-          totalMeetings,
+          totalMeetings: totalMeetings2,
           startLocationTime,
           startLocationAddress,
           outLocationTime,
           outLocationAddress,
           totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
-          meetingTime: totalMeetingHours,
-          travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
+          meetingTime: totalMeetingHours2,
+          travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours2),
           attendanceAddedBy
         };
       });
-      const meetingRecords = meetingsInRange.map((meeting) => {
+      const recentMeetings = meetings2.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).slice(0, 5);
+      const meetingRecords = recentMeetings.map((meeting) => {
         const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
         const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
-        console.log(`⏰ TIME DEBUG for ${meeting.clientName} (${employee.name}):`, {
-          rawStartTime: meeting.startTime,
-          rawEndTime: meeting.endTime,
-          formattedInTime: meetingInTime,
-          formattedOutTime: meetingOutTime,
-          timesAreSame: meetingInTime === meetingOutTime && meetingOutTime !== "In Progress"
-        });
-        if (meetingInTime === meetingOutTime && meetingOutTime !== "In Progress") {
-          console.error(`❌ TIMING ISSUE DETECTED in getAllEmployeesDetails: Meeting in and out times are the same!`, {
-            employeeName: employee.name,
-            meetingId: meeting.id,
-            clientName: meeting.clientName,
-            startTime: meeting.startTime,
-            endTime: meeting.endTime,
-            formattedTimes: { in: meetingInTime, out: meetingOutTime }
-          });
-        }
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
           date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
           leadId: meeting.leadId || "",
           meetingInTime,
-          // 🔹 FIX: Always show meeting location when meeting started
           meetingInLocation: meeting.location?.address || "Location loading...",
           meetingOutTime,
-          // 🔹 FIX: Show end location only if meeting has ended with a valid endLocation
           meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "Meeting completed" : "Meeting in progress",
-          totalStayTime: calculateMeetingDuration(
-            meeting.startTime,
-            meeting.endTime
-          ),
+          totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
           discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
           meetingPerson: meeting.meetingDetails?.customers?.length > 0 ? meeting.meetingDetails.customers.map((customer) => customer.customerEmployeeName).join(", ") : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
           meetingStatus: meeting.status || "completed",
@@ -3103,6 +3113,12 @@ const getAllEmployeesDetails = async (req, res) => {
           attachments: meeting.meetingDetails?.attachments || meeting.attachments || []
         };
       });
+      const totalMeetings = meetings2.length;
+      const totalMeetingHours = meetings2.reduce((total, meeting) => {
+        return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
+      }, 0);
+      const uniqueDates = new Set(meetings2.map((m) => format(new Date(m.startTime), "yyyy-MM-dd")));
+      const daysWithMeetings = uniqueDates.size;
       return {
         employeeId: employee.id,
         employeeName: employee.name,
@@ -3112,15 +3128,21 @@ const getAllEmployeesDetails = async (req, res) => {
         department: employee.department,
         companyName: employee.companyName,
         reportTo: employee.reportTo,
-        dayRecords: dayRecords.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        ),
-        meetingRecords: meetingRecords.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        )
+        status: employee.status,
+        summary: {
+          totalMeetings,
+          totalMeetingHours: parseFloat(totalMeetingHours.toFixed(2)),
+          daysWithMeetings,
+          avgMeetingsPerDay: daysWithMeetings > 0 ? parseFloat((totalMeetings / daysWithMeetings).toFixed(2)) : 0
+        },
+        dayRecords: dayRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        meetingRecords: meetingRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       };
     });
-    console.log(`Processed ${allEmployeesData.length} employees with their details`);
+    const endTime = Date.now();
+    console.log(`✅ All employees details fetched in ${endTime - startTime}ms for ${paginatedEmployees.length} employees`);
+    const hasNextPage = pageNum < totalPages;
+    const hasPreviousPage = pageNum > 1;
     res.json({
       success: true,
       dateRange: {
@@ -3128,12 +3150,30 @@ const getAllEmployeesDetails = async (req, res) => {
         end: end.toISOString(),
         label: dateRange
       },
-      totalEmployees: allEmployeesData.length,
+      pagination: {
+        currentPage: pageNum,
+        pageSize: limitNum,
+        totalItems: totalEmployees,
+        totalPages,
+        hasNextPage,
+        hasPreviousPage,
+        nextPage: hasNextPage ? pageNum + 1 : null,
+        previousPage: hasPreviousPage ? pageNum - 1 : null
+      },
+      search: search || null,
+      sort: {
+        by: sortBy,
+        order: sortOrder
+      },
       employees: allEmployeesData
     });
   } catch (error) {
     console.error("Error fetching all employees details:", error);
-    res.status(500).json({ error: "Failed to fetch all employees details" });
+    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      error: "Failed to fetch all employees details",
+      message: error.message
+    });
   }
 };
 const syncAllData = async (req, res) => {
@@ -3861,12 +3901,4 @@ process.on("SIGINT", () => {
   console.log("🛑 Received SIGINT, shutting down gracefully");
   process.exit(0);
 });
-export {
-  Attendance as A,
-  Employee as E,
-  Meeting as M,
-  RouteSnapshot as R,
-  TrackingSession as T,
-  MeetingHistory as a
-};
 //# sourceMappingURL=node-build.mjs.map

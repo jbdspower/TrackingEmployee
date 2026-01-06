@@ -1,5 +1,7 @@
+// config/database.ts
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { createIndexes } from './database-indexes';
 
 // Load environment variables
 dotenv.config();
@@ -9,7 +11,7 @@ interface DatabaseConfig {
   DB_NAME: string;
 }
 
-// Default configuration - replace these with your local MongoDB URLs
+// Default configuration
 export const dbConfig: DatabaseConfig = {
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/',
   DB_NAME: process.env.DB_NAME || 'employee-tracking'
@@ -35,15 +37,22 @@ class Database {
     }
 
     try {
-      console.log('���� Database: Connecting to MongoDB...');
-      console.log('📦 Database: URI:', dbConfig.MONGODB_URI);
+      console.log('🔄 Database: Connecting to MongoDB...');
       
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
+        maxPoolSize: 50, // Increased connection pool
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+        retryWrites: true,
+        retryReads: true,
       });
 
       this.isConnected = true;
       console.log('✅ Database: Successfully connected to MongoDB');
+      
+      // 🔥 Create indexes after successful connection
+      await createIndexes();
       
       // Handle connection events
       mongoose.connection.on('error', (error) => {

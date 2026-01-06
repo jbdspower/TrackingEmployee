@@ -12,6 +12,8 @@ import { RouteSnapshotHistory } from "@/components/RouteSnapshotHistory";
 import { TodaysMeetings, FollowUpMeeting, getPendingTodaysMeetings } from "@/components/TodaysMeetings"; // Import the component
 import { HttpClient } from "@/lib/httpClient";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Employee,
   MeetingLog,
@@ -38,6 +40,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { formatTimeIST, formatTimeOnlyIST } from "@/lib/timeUtils";
 import axios from "axios";
 
+interface TodayMeetingDetail {
+  serialNumber: number;
+  companyName: string;
+  attendanceStatus?: string; // Make optional
+  totalDutyHours?: number;
+}
+
 export default function Tracking() {
   const navigate = useNavigate();
   const { employeeId } = useParams<{ employeeId: string }>();
@@ -56,6 +65,143 @@ export default function Tracking() {
   const [isSnapshotCaptureOpen, setIsSnapshotCaptureOpen] = useState(false);
   const [isSnapshotHistoryOpen, setIsSnapshotHistoryOpen] = useState(false);
   const [startedMeetingMap, setStartedMeetingMap] = useState<Record<string, string>>({});
+  const [isDutyCompletedModalOpen, setIsDutyCompletedModalOpen] = useState(false);
+  const [todaysMeetingDetails, setTodaysMeetingDetails] = useState<TodayMeetingDetail[]>([]);
+  const [loadingTodaysData, setLoadingTodaysData] = useState(false);
+
+
+const handleDutyCompletedClick = async () => {
+  console.log("📋 Opening Duty Completed modal");
+  setIsDutyCompletedModalOpen(true);
+  setLoadingTodaysData(true);
+  
+  try {
+    // Get today's date range for filtering
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    console.log("📅 Fetching meetings for date range:", {
+      start: today.toISOString(),
+      end: tomorrow.toISOString()
+    });
+
+    // Try the new dedicated endpoint first
+    let response;
+    try {
+      response = await HttpClient.get(`/api/meetings/today?employeeId=${employeeId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log("📊 Today's meetings data from dedicated endpoint:", data);
+        
+        // Transform the data for the modal
+        const transformedData: TodayMeetingDetail[] = data.meetings.map((meeting: any, index: number) => {
+          const duration = meeting.startTime && meeting.endTime 
+            ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
+            : 0;
+            
+          return {
+            serialNumber: index + 1,
+            companyName: meeting.clientName || "Unknown",
+            attendanceStatus: "", // Empty since we'll show only in total row
+            totalDutyHours: duration
+          };
+        });
+        
+        setTodaysMeetingDetails(transformedData);
+        
+        // Show success toast with summary
+        toast({
+          title: "Today's Summary Loaded",
+          description: `${data.summary.totalMeetings} meetings, ${data.summary.totalDutyHours} hours total`,
+        });
+        return; // Success, exit early
+      }
+    } catch (dedicatedEndpointError) {
+      console.warn("📡 Dedicated endpoint failed, falling back to existing API:", dedicatedEndpointError);
+    }
+
+    // Fallback: Use existing meetings API with date filtering
+    console.log("📡 Using existing meetings API with date filtering...");
+    response = await HttpClient.get(
+      `/api/meetings?employeeId=${employeeId}&startDate=${today.toISOString()}&endDate=${tomorrow.toISOString()}&limit=50`
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log("📊 Meetings data from existing API:", data);
+      
+      // Filter and transform the data for today only
+      const todaysMeetings = data.meetings.filter((meeting: any) => {
+        const meetingDate = new Date(meeting.startTime);
+        return meetingDate >= today && meetingDate < tomorrow;
+      });
+      
+      const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting: any, index: number) => {
+        const duration = meeting.startTime && meeting.endTime 
+          ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
+          : 0;
+          
+        return {
+          serialNumber: index + 1,
+          companyName: meeting.clientName || "Unknown",
+          attendanceStatus: "", // Empty since we'll show only in total row
+          totalDutyHours: duration
+        };
+      });
+      
+      setTodaysMeetingDetails(transformedData);
+      
+      // Calculate summary manually
+      const completedMeetings = todaysMeetings.filter((m: any) => m.status === 'completed' && m.endTime);
+      const totalHours = transformedData.reduce((sum, meeting) => sum + (meeting.totalDutyHours || 0), 0);
+      
+      toast({
+        title: "Today's Summary Loaded",
+        description: `${todaysMeetings.length} meetings, ${totalHours.toFixed(1)} hours total`,
+      });
+    } else {
+      console.error("Failed to fetch meetings from existing API:", response.status);
+      throw new Error(`API returned ${response.status}`);
+    }
+    
+  } catch (error) {
+    console.error("Error fetching today's meetings:", error);
+    toast({
+      title: "Error Loading Data",
+      description: "Failed to load today's meeting data. Using cached data.",
+      variant: "destructive",
+    });
+    
+    // Final fallback: Use existing meetings data from state
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todaysMeetings = meetings.filter(meeting => {
+      const meetingDate = new Date(meeting.startTime);
+      return meetingDate >= today && meetingDate < tomorrow;
+    });
+    
+    const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting, index) => {
+      return {
+        serialNumber: index + 1,
+        companyName: meeting.clientName || "Unknown",
+        attendanceStatus: "",
+        totalDutyHours: meeting.startTime && meeting.endTime 
+          ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
+          : 0
+      };
+    });
+    
+    setTodaysMeetingDetails(transformedData);
+  } finally {
+    setLoadingTodaysData(false);
+  }
+};
 
   // Debug: Log startedMeetingMap changes
   useEffect(() => {
@@ -75,6 +221,8 @@ export default function Tracking() {
       hasActive: meetings.some(m => m.status === "in-progress" || m.status === "started")
     });
   }, [meetings]);
+
+
 
   useEffect(() => {
     // 🔒 SECURITY: Validate employee ID is present in URL
@@ -826,7 +974,7 @@ export default function Tracking() {
       }
 
       console.log("📤 Sending PUT request to:", `/api/meetings/${meetingIdToEnd}`);
-      
+
       // 🔹 CRITICAL FIX: Get the current meeting data to preserve startTime
       const currentMeeting = meetings.find(m => m.id === meetingIdToEnd);
       if (!currentMeeting) {
@@ -858,7 +1006,7 @@ export default function Tracking() {
       };
 
       console.log("📤 Update payload (preserving original startTime):", updatePayload);
-      
+
       const response = await HttpClient.put(
         `/api/meetings/${meetingIdToEnd}`,
         updatePayload,
@@ -875,11 +1023,11 @@ export default function Tracking() {
         // 🔹 IMMEDIATE UI UPDATE: Optimistically update local state first
         if (followUpMeetingId) {
           console.log("🔄 Optimistically updating local meeting status to complete for:", followUpMeetingId);
-          
+
           // Update todaysFollowUpMeetings immediately for instant UI feedback
           setTodaysFollowUpMeetings(prev => {
-            const updated = prev.map(meeting => 
-              meeting._id === followUpMeetingId 
+            const updated = prev.map(meeting =>
+              meeting._id === followUpMeetingId
                 ? { ...meeting, meetingStatus: "complete" as const }
                 : meeting
             );
@@ -920,17 +1068,17 @@ export default function Tracking() {
               console.log("✅ Follow-up meeting status updated to 'complete' in external API");
             } else {
               console.error("❌ Failed to update follow-up status:", followUpResponse.status);
-              
+
               // 🔹 ROLLBACK: If external API fails, revert the optimistic update
               console.log("🔄 Rolling back optimistic update due to API failure");
-              setTodaysFollowUpMeetings(prev => 
-                prev.map(meeting => 
-                  meeting._id === followUpMeetingId 
+              setTodaysFollowUpMeetings(prev =>
+                prev.map(meeting =>
+                  meeting._id === followUpMeetingId
                     ? { ...meeting, meetingStatus: "In Progress" as const } // Revert to previous status
                     : meeting
                 )
               );
-              
+
               // 🔹 ROLLBACK: Restore startedMeetingMap
               setStartedMeetingMap(prev => ({
                 ...prev,
@@ -939,17 +1087,17 @@ export default function Tracking() {
             }
           } catch (followUpError) {
             console.error("❌ Error updating follow-up status:", followUpError);
-            
+
             // 🔹 ROLLBACK: If external API fails, revert the optimistic update
             console.log("🔄 Rolling back optimistic update due to API error");
-            setTodaysFollowUpMeetings(prev => 
-              prev.map(meeting => 
-                meeting._id === followUpMeetingId 
+            setTodaysFollowUpMeetings(prev =>
+              prev.map(meeting =>
+                meeting._id === followUpMeetingId
                   ? { ...meeting, meetingStatus: "In Progress" as const } // Revert to previous status
                   : meeting
               )
             );
-            
+
             // 🔹 ROLLBACK: Restore startedMeetingMap
             setStartedMeetingMap(prev => ({
               ...prev,
@@ -1240,10 +1388,10 @@ export default function Tracking() {
         await axios.put(`/api/employees/${employeeId}/status`, {
           status: "meeting",
         });
-        
+
         // Refresh employee data to show updated status
         fetchEmployee();
-        
+
         // Close the modal
         setIsStartMeetingModalOpen(false);
 
@@ -1252,7 +1400,7 @@ export default function Tracking() {
           title: "Meeting Started",
           description: `Meeting with ${meetingData.clientName} has been started`,
         });
-        
+
         console.log("🎉 Meeting started successfully - UI should now show End Meeting button");
       } else {
         // Handle error response
@@ -1603,7 +1751,7 @@ export default function Tracking() {
         status: activeMeeting.status,
         startTime: activeMeeting.startTime
       });
-      
+
       toast({
         title: "Cannot Start Meeting",
         description: `You already have an active meeting with ${activeMeeting.clientName}. Please complete it before starting a new one.`,
@@ -1840,6 +1988,7 @@ export default function Tracking() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
+      {/* Header */}
       <header className="border-b bg-card shadow-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -1852,13 +2001,22 @@ export default function Tracking() {
                   </Link>
                 </Button>
               )}
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  {employee.name}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Real-time Tracking
-                </p>
+              <div className="flex items-center justify-between w-full">
+                <div>
+                  <h1 className="text-2xl font-bold text-foreground">
+                    {employee.name}
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    Real-time Tracking
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleDutyCompletedClick}
+                  className="ml-4"
+                >
+                  Duty Completed
+                </Button>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1971,7 +2129,7 @@ export default function Tracking() {
                   const activeMeeting = meetings.find(
                     (m) => m.status === "in-progress" || m.status === "started"
                   );
-                  
+
                   // Show End Meeting button if there's an active meeting OR employee status is "meeting"
                   if (activeMeeting || employee.status === "meeting") {
                     return (
@@ -2036,7 +2194,7 @@ export default function Tracking() {
                     const activeMeeting = meetings.find(
                       (m) => m.status === "in-progress" || m.status === "started"
                     );
-                    
+
                     // Show End Meeting button if there's an active meeting OR employee status is "meeting"
                     if (activeMeeting || employee.status === "meeting") {
                       return (
@@ -2177,112 +2335,112 @@ export default function Tracking() {
                           location: meeting.location,
                           followUpId: meeting.followUpId
                         });
-                        
+
                         return (
-                      <div
-                        key={meeting.id}
-                        className={`border rounded-lg p-3 space-y-2 ${meeting.status === "in-progress"
-                          ? "border-warning bg-warning/5"
-                          : "border-border"
-                          }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-medium">
-                            {meeting.clientName || "Unknown Client"}
-                            {meeting.followUpId && (
-                              <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                Follow-up
-                              </span>
-                            )}
-                          </h4>
-                          <div className="flex items-center space-x-2">
-                            <Badge
-                              variant="secondary"
-                              className={
-                                meeting.status === "completed"
-                                  ? "bg-success text-success-foreground"
-                                  : meeting.status === "in-progress"
-                                    ? "bg-warning text-warning-foreground"
-                                    : "bg-info text-info-foreground"
-                              }
-                            >
-                              {meeting.status}
-                            </Badge>
-                            {meeting.status === "in-progress" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  handleEndMeetingClick(meeting.id)
-                                }
-                                disabled={isEndingMeeting === meeting.id}
-                              >
-                                {isEndingMeeting === meeting.id
-                                  ? "Ending..."
-                                  : "End Meeting"}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground flex items-center">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          {meeting.location?.address || "Location not available"}
-                        </p>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground flex items-center">
-                            <Calendar className="h-3 w-3 mr-1" />
-                            <span className="font-medium">Started:</span>
-                            <span className="ml-1">
-                              {meeting.startTime ? formatTimeIST(meeting.startTime) : "Time not available"}
-                            </span>
-                          </p>
-                          {meeting.endTime && (
+                          <div
+                            key={meeting.id}
+                            className={`border rounded-lg p-3 space-y-2 ${meeting.status === "in-progress"
+                              ? "border-warning bg-warning/5"
+                              : "border-border"
+                              }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium">
+                                {meeting.clientName || "Unknown Client"}
+                                {meeting.followUpId && (
+                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    Follow-up
+                                  </span>
+                                )}
+                              </h4>
+                              <div className="flex items-center space-x-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    meeting.status === "completed"
+                                      ? "bg-success text-success-foreground"
+                                      : meeting.status === "in-progress"
+                                        ? "bg-warning text-warning-foreground"
+                                        : "bg-info text-info-foreground"
+                                  }
+                                >
+                                  {meeting.status}
+                                </Badge>
+                                {meeting.status === "in-progress" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleEndMeetingClick(meeting.id)
+                                    }
+                                    disabled={isEndingMeeting === meeting.id}
+                                  >
+                                    {isEndingMeeting === meeting.id
+                                      ? "Ending..."
+                                      : "End Meeting"}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                             <p className="text-sm text-muted-foreground flex items-center">
-                              <Clock className="h-3 w-3 mr-1" />
-                              <span className="font-medium">Ended:</span>
-                              <span className="ml-1">
-                                {formatTimeIST(meeting.endTime)}
-                              </span>
+                              <MapPin className="h-3 w-3 mr-1" />
+                              {meeting.location?.address || "Location not available"}
                             </p>
-                          )}
-                          {meeting.status === "in-progress" && (
-                            <p className="text-sm text-success flex items-center">
-                              <Clock className="h-3 w-3 mr-1" />
-                              <span className="font-medium">Duration:</span>
-                              <span className="ml-1">
-                                {(() => {
-                                  const durationMs = Date.now() - new Date(meeting.startTime).getTime();
-                                  const totalMinutes = Math.floor(durationMs / (1000 * 60));
-                                  const hours = Math.floor(totalMinutes / 60);
-                                  const minutes = totalMinutes % 60;
-                                  return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
-                                })()}
-                              </span>
-                            </p>
-                          )}
-                          {meeting.endTime &&
-                            meeting.status === "completed" && (
-                              <p className="text-sm text-info flex items-center">
-                                <Clock className="h-3 w-3 mr-1" />
-                                <span className="font-medium">Duration:</span>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground flex items-center">
+                                <Calendar className="h-3 w-3 mr-1" />
+                                <span className="font-medium">Started:</span>
                                 <span className="ml-1">
-                                  {(() => {
-                                    const durationMs = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
-                                    const totalMinutes = Math.floor(durationMs / (1000 * 60));
-                                    const hours = Math.floor(totalMinutes / 60);
-                                    const minutes = totalMinutes % 60;
-                                    return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
-                                  })()}
+                                  {meeting.startTime ? formatTimeIST(meeting.startTime) : "Time not available"}
                                 </span>
                               </p>
+                              {meeting.endTime && (
+                                <p className="text-sm text-muted-foreground flex items-center">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  <span className="font-medium">Ended:</span>
+                                  <span className="ml-1">
+                                    {formatTimeIST(meeting.endTime)}
+                                  </span>
+                                </p>
+                              )}
+                              {meeting.status === "in-progress" && (
+                                <p className="text-sm text-success flex items-center">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  <span className="font-medium">Duration:</span>
+                                  <span className="ml-1">
+                                    {(() => {
+                                      const durationMs = Date.now() - new Date(meeting.startTime).getTime();
+                                      const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                      const hours = Math.floor(totalMinutes / 60);
+                                      const minutes = totalMinutes % 60;
+                                      return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                    })()}
+                                  </span>
+                                </p>
+                              )}
+                              {meeting.endTime &&
+                                meeting.status === "completed" && (
+                                  <p className="text-sm text-info flex items-center">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    <span className="font-medium">Duration:</span>
+                                    <span className="ml-1">
+                                      {(() => {
+                                        const durationMs = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
+                                        const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                        const hours = Math.floor(totalMinutes / 60);
+                                        const minutes = totalMinutes % 60;
+                                        return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                      })()}
+                                    </span>
+                                  </p>
+                                )}
+                            </div>
+                            {meeting.notes && (
+                              <p className="text-sm">{meeting.notes}</p>
                             )}
-                        </div>
-                        {meeting.notes && (
-                          <p className="text-sm">{meeting.notes}</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </CardContent>
@@ -2373,6 +2531,146 @@ export default function Tracking() {
         isOpen={isSnapshotHistoryOpen}
         onClose={() => setIsSnapshotHistoryOpen(false)}
       />
+
+
+      {/* Duty Completed Modal */}
+<Dialog open={isDutyCompletedModalOpen} onOpenChange={setIsDutyCompletedModalOpen}>
+  <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle className="text-2xl font-bold text-center">
+        Today's Meetings & Duty Summary
+      </DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-6 py-4">
+      {loadingTodaysData ? (
+        <div className="flex flex-col justify-center items-center py-12">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading today's meeting details...</p>
+        </div>
+      ) : (
+        <>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px] text-center font-bold">Sr. No.</TableHead>
+                  <TableHead className="font-bold">Company Name</TableHead>
+                  <TableHead className="text-right font-bold">Meeting Duration</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {todaysMeetingDetails.length > 0 ? (
+                  <>
+                    {todaysMeetingDetails.map((meeting) => (
+                      <TableRow key={meeting.serialNumber}>
+                        <TableCell className="text-center font-medium">
+                          {meeting.serialNumber}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {meeting.companyName}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {meeting.totalDutyHours ? `${meeting.totalDutyHours} hours` : "In Progress"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {/* Total Row */}
+                    {(() => {
+                      const totalHours = todaysMeetingDetails.reduce(
+                        (sum, meeting) => sum + (meeting.totalDutyHours || 0), 
+                        0
+                      );
+                      
+                      let attendanceStatus = "Pending Verification";
+                      let badgeClass = "bg-gray-500 hover:bg-gray-600";
+                      
+                      if (totalHours >= 7.50) {
+                        attendanceStatus = "Full Day";
+                        badgeClass = "bg-green-500 hover:bg-green-600";
+                      } else if (totalHours >= 3.50 && totalHours <= 7.50) {
+                        attendanceStatus = "Half Day";
+                        badgeClass = "bg-yellow-500 hover:bg-yellow-600";
+                      } else {
+                        attendanceStatus = "Absent";
+                        badgeClass = "bg-blue-500 hover:bg-red-600";
+                      }
+                      
+                      return (
+                        <TableRow className="bg-muted/30 border-t-2 border-primary">
+                          <TableCell colSpan={2} className="text-right font-bold pr-4">
+                            <div className="flex items-center justify-start">
+                              <span className="mr-4">Total Duty Hours:</span>
+                              <Badge variant="default" className={badgeClass}>
+                                {attendanceStatus}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-lg">
+                            {totalHours.toFixed(1)} hours
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                      No meetings recorded for today
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="bg-muted/50 p-4 rounded-lg border">
+            <h3 className="font-bold text-lg mb-2">📋 Summary Information:</h3>
+            <div className="space-y-2 text-sm">
+              <p>• <strong>Date:</strong> {new Date().toLocaleDateString('en-IN', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}</p>
+              <p>• <strong>Total Meetings:</strong> {todaysMeetingDetails.length}</p>
+              <p>• <strong>Completed Meetings:</strong> {todaysMeetingDetails.filter(m => m.totalDutyHours > 0).length}</p>
+              <p className="text-muted-foreground mt-3">
+                <strong>Note:</strong> The attendance shown above is auto-generated based on today's completed meetings. 
+                Final attendance (Full Day / Half Day) will be confirmed after HR verification.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDutyCompletedModalOpen(false)}
+            >
+              Close
+            </Button>
+            <Button 
+              onClick={() => {
+                const totalHours = todaysMeetingDetails.reduce(
+                  (sum, meeting) => sum + (meeting.totalDutyHours || 0), 
+                  0
+                );
+                
+                toast({
+                  title: "Summary Submitted",
+                  description: `Today's duty summary (${totalHours.toFixed(1)} hours) has been submitted for HR verification.`,
+                });
+                setIsDutyCompletedModalOpen(false);
+              }}
+            >
+              Submit to HR
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }
