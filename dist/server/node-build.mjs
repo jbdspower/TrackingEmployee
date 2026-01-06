@@ -1479,6 +1479,76 @@ const updateMeetingApprovalByDetails = async (req, res) => {
     res.status(500).json({ error: "Failed to update meeting approval" });
   }
 };
+const getTodaysMeetings = async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    if (!employeeId) {
+      return res.status(400).json({ error: "Employee ID is required" });
+    }
+    console.log("📅 Fetching today's meetings for employee:", employeeId);
+    const today = /* @__PURE__ */ new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    console.log("📅 Date range:", {
+      start: today.toISOString(),
+      end: tomorrow.toISOString()
+    });
+    try {
+      const todaysMeetings = await Meeting.find({
+        employeeId,
+        startTime: {
+          $gte: today.toISOString(),
+          $lt: tomorrow.toISOString()
+        }
+      }).sort({ startTime: -1 }).lean();
+      console.log(`📊 Found ${todaysMeetings.length} meetings for today`);
+      const meetingLogs = await Promise.all(
+        todaysMeetings.map((meeting) => convertMeetingToMeetingLog(meeting))
+      );
+      const completedMeetings = meetingLogs.filter((m) => m.status === "completed" && m.endTime);
+      const totalDutyHours = completedMeetings.reduce((total, meeting) => {
+        if (meeting.startTime && meeting.endTime) {
+          const duration = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
+          const hours = duration / (1e3 * 60 * 60);
+          return total + hours;
+        }
+        return total;
+      }, 0);
+      let attendanceStatus = "Pending Verification";
+      let badgeClass = "bg-gray-500";
+      if (totalDutyHours >= 8) {
+        attendanceStatus = "Full Day (Pending Verification)";
+        badgeClass = "bg-green-500";
+      } else if (totalDutyHours >= 4) {
+        attendanceStatus = "Half Day (Pending Verification)";
+        badgeClass = "bg-yellow-500";
+      } else if (totalDutyHours > 0) {
+        attendanceStatus = "Short Duration (Pending Verification)";
+        badgeClass = "bg-blue-500";
+      }
+      const response = {
+        meetings: meetingLogs,
+        summary: {
+          totalMeetings: meetingLogs.length,
+          completedMeetings: completedMeetings.length,
+          totalDutyHours: Math.round(totalDutyHours * 10) / 10,
+          // Round to 1 decimal
+          attendanceStatus,
+          badgeClass
+        }
+      };
+      console.log("✅ Today's meetings summary:", response.summary);
+      res.json(response);
+    } catch (dbError) {
+      console.error("MongoDB query failed:", dbError);
+      res.status(500).json({ error: "Failed to fetch today's meetings" });
+    }
+  } catch (error) {
+    console.error("Error fetching today's meetings:", error);
+    res.status(500).json({ error: "Failed to fetch today's meetings" });
+  }
+};
 const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   createMeeting,
@@ -1486,6 +1556,7 @@ const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProp
   getActiveMeeting,
   getMeeting,
   getMeetings,
+  getTodaysMeetings,
   inMemoryMeetings,
   updateMeeting,
   updateMeetingApproval,
@@ -3821,6 +3892,7 @@ function createServer() {
   app2.get("/api/meetings", getMeetings);
   app2.post("/api/meetings", createMeeting);
   app2.get("/api/meetings/active", getActiveMeeting);
+  app2.get("/api/meetings/today", getTodaysMeetings);
   app2.get("/api/meetings/:id", getMeeting);
   app2.put("/api/meetings/:id", updateMeeting);
   app2.put("/api/meetings/:id/approval", updateMeetingApproval);

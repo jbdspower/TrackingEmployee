@@ -23,6 +23,7 @@ import {
   getActiveMeeting,
   updateMeetingApproval,
   updateMeetingApprovalByDetails,
+  getTodaysMeetings,
 } from "./routes/meetings";
 import {
   getTrackingSessions,
@@ -134,6 +135,7 @@ export function createServer() {
   app.get("/api/meetings", getMeetings);
   app.post("/api/meetings", createMeeting);
   app.get("/api/meetings/active", getActiveMeeting); // 🔹 NEW: Get active meeting
+  app.get("/api/meetings/today", getTodaysMeetings); // 🔹 NEW: Get today's meetings for duty summary
   app.get("/api/meetings/:id", getMeeting);
   app.put("/api/meetings/:id", updateMeeting);
   app.put("/api/meetings/:id/approval", updateMeetingApproval); // Meeting approval by ID
