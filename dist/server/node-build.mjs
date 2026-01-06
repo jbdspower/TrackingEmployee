@@ -282,7 +282,7 @@ const AttendanceSchema = new Schema({
   },
   attendanceStatus: {
     type: String,
-    enum: ["full_day", "half_day", "off", "short_leave", "ot"],
+    enum: ["full_day", "half_day", "off", "short_leave", "ot", "absent"],
     required: true,
     default: "full_day"
   },
@@ -2755,7 +2755,7 @@ const saveAttendance = async (req, res) => {
         error: "Employee ID, date, and attendance status are required"
       });
     }
-    const validStatuses = ["full_day", "half_day", "off", "short_leave", "ot"];
+    const validStatuses = ["full_day", "half_day", "off", "short_leave", "ot", "absent"];
     if (!validStatuses.includes(attendanceStatus)) {
       return res.status(400).json({
         error: "Invalid attendance status"

@@ -376,7 +376,7 @@ export interface AttendanceRecord {
   id?: string;
   employeeId: string;
   date: string; // YYYY-MM-DD format
-  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot' | 'absent';
   attendanceReason?: string;
   attendenceCreated?: string | null; // userId who created the attendance (null for tracking employee, userId from CRM dashboard)
   createdAt?: string;
@@ -386,7 +386,7 @@ export interface AttendanceRecord {
 export interface SaveAttendanceRequest {
   employeeId: string;
   date: string; // YYYY-MM-DD format
-  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot' | 'absent';
   attendanceReason?: string;
   attendenceCreated?: string | null; // null by default for tracking employee
 }

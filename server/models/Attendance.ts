@@ -4,7 +4,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IAttendance extends Document {
   employeeId: string;
   date: string; // YYYY-MM-DD format
-  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot' | 'absent';
   attendanceReason: string;
   attendenceCreated: string | null; // userId who created the attendance (null for tracking employee)
   createdAt: Date;
@@ -26,7 +26,7 @@ const AttendanceSchema = new Schema({
   },
   attendanceStatus: { 
     type: String, 
-    enum: ['full_day', 'half_day', 'off', 'short_leave', 'ot'],
+    enum: ['full_day', 'half_day', 'off', 'short_leave', 'ot', 'absent'],
     required: true,
     default: 'full_day'
   },

@@ -856,7 +856,7 @@ export const saveAttendance: RequestHandler = async (req, res) => {
     }
 
     // Validate attendance status
-    const validStatuses = ["full_day", "half_day", "off", "short_leave", "ot"];
+    const validStatuses = ["full_day", "half_day", "off", "short_leave", "ot", "absent"];
     if (!validStatuses.includes(attendanceStatus)) {
       return res.status(400).json({
         error: "Invalid attendance status"
