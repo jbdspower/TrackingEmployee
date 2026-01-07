@@ -3149,7 +3149,8 @@ const getAllEmployeesDetails = async (req, res) => {
     const employeeIds = paginatedEmployees.map((emp) => emp.userId || emp.id);
     const [
       meetingsForEmployees,
-      attendanceForEmployees
+      attendanceForEmployees,
+      trackingSessionsForEmployees
     ] = await Promise.all([
       // Fetch meetings for these employees
       Meeting.find({
@@ -3166,9 +3167,17 @@ const getAllEmployeesDetails = async (req, res) => {
           $gte: format(start, "yyyy-MM-dd"),
           $lte: format(end, "yyyy-MM-dd")
         }
-      }).select("employeeId date attendanceStatus attendanceReason attendenceCreated").lean().exec()
+      }).select("employeeId date attendanceStatus attendanceReason attendenceCreated").lean().exec(),
+      // ADDED: Fetch tracking sessions for duty hour calculations
+      TrackingSession.find({
+        employeeId: { $in: employeeIds },
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      }).select("employeeId startTime endTime startLocation endLocation status duration").lean().exec()
     ]);
-    console.log(`📈 Fetched ${meetingsForEmployees.length} meetings and ${attendanceForEmployees.length} attendance records`);
+    console.log(`📈 Fetched ${meetingsForEmployees.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
     const meetingsByEmployee = /* @__PURE__ */ new Map();
     meetingsForEmployees.forEach((meeting) => {
       if (!meetingsByEmployee.has(meeting.employeeId)) {
@@ -3180,6 +3189,15 @@ const getAllEmployeesDetails = async (req, res) => {
     attendanceForEmployees.forEach((att) => {
       const key = `${att.employeeId}-${att.date}`;
       attendanceByEmployee.set(key, att);
+    });
+    const sessionsByEmployeeDate = /* @__PURE__ */ new Map();
+    trackingSessionsForEmployees.forEach((session) => {
+      const dateStr = format(new Date(session.startTime), "yyyy-MM-dd");
+      const key = `${session.employeeId}-${dateStr}`;
+      if (!sessionsByEmployeeDate.has(key)) {
+        sessionsByEmployeeDate.set(key, []);
+      }
+      sessionsByEmployeeDate.get(key).push(session);
     });
     const allEmployeesData = paginatedEmployees.map((employee) => {
       const employeeId = employee.userId || employee.id;
@@ -3214,6 +3232,49 @@ const getAllEmployeesDetails = async (req, res) => {
           firstMeeting = sorted[0];
           lastMeeting = sorted[sorted.length - 1];
         }
+        let meetingTime = 0;
+        dateMeetings.forEach((meeting) => {
+          if (meeting.startTime && meeting.endTime) {
+            try {
+              const start2 = new Date(meeting.startTime);
+              const end2 = new Date(meeting.endTime);
+              const durationHours = (end2.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+              if (durationHours > 0) {
+                meetingTime += durationHours;
+              }
+            } catch (error) {
+            }
+          }
+        });
+        let totalDutyHours = 0;
+        const sessionKey = `${employeeId}-${dateStr}`;
+        const dateSessions = sessionsByEmployeeDate.get(sessionKey) || [];
+        if (dateSessions.length > 0) {
+          dateSessions.forEach((session) => {
+            if (session.startTime && session.endTime) {
+              try {
+                const start2 = new Date(session.startTime);
+                const end2 = new Date(session.endTime);
+                const durationHours = (end2.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+                if (durationHours > 0) {
+                  totalDutyHours += durationHours;
+                }
+              } catch (error) {
+              }
+            }
+          });
+        } else if (firstMeeting && lastMeeting?.endTime) {
+          try {
+            const dutyStart = new Date(firstMeeting.startTime);
+            const dutyEnd = new Date(lastMeeting.endTime);
+            totalDutyHours = Math.max(0, (dutyEnd.getTime() - dutyStart.getTime()) / (1e3 * 60 * 60));
+          } catch (error) {
+            totalDutyHours = 8;
+          }
+        } else {
+          totalDutyHours = 8;
+        }
+        const travelAndLunchTime = Math.max(0, totalDutyHours - meetingTime);
         const attendanceKey = `${employeeId}-${dateStr}`;
         const attendance = attendanceByEmployee.get(attendanceKey);
         return {
@@ -3223,14 +3284,23 @@ const getAllEmployeesDetails = async (req, res) => {
           startLocationAddress: firstMeeting?.location?.address || "",
           outLocationTime: lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "",
           outLocationAddress: lastMeeting?.location?.address || "",
-          totalDutyHours: 8,
-          // Default
-          meetingTime: 0,
-          travelAndLunchTime: 0,
+          totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
+          meetingTime: parseFloat(meetingTime.toFixed(2)),
+          travelAndLunchTime: parseFloat(travelAndLunchTime.toFixed(2)),
           attendanceAddedBy: attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated)?.name || attendance.attendenceCreated : "Auto"
         };
       });
       const meetingRecords = meetings2.slice(0, 3).map((meeting) => {
+        let totalStayTime = 0;
+        if (meeting.startTime && meeting.endTime) {
+          try {
+            const start2 = new Date(meeting.startTime);
+            const end2 = new Date(meeting.endTime);
+            totalStayTime = (end2.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+          } catch (error) {
+            totalStayTime = 0;
+          }
+        }
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
@@ -3240,7 +3310,7 @@ const getAllEmployeesDetails = async (req, res) => {
           meetingInLocation: meeting.location?.address || "",
           meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress",
           meetingOutLocation: meeting.location?.address || "",
-          totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
+          totalStayTime: parseFloat(totalStayTime.toFixed(2)),
           discussion: meeting.meetingDetails?.discussion || "",
           meetingPerson: meeting.meetingDetails?.customerEmployeeName || "",
           meetingStatus: meeting.status || "completed",
@@ -3253,10 +3323,16 @@ const getAllEmployeesDetails = async (req, res) => {
       });
       const totalMeetings = meetings2.length;
       const uniqueDates = /* @__PURE__ */ new Set();
+      let totalMeetingHours = 0;
       meetings2.forEach((m) => {
         if (m.startTime) {
           try {
             uniqueDates.add(format(new Date(m.startTime), "yyyy-MM-dd"));
+            if (m.startTime && m.endTime) {
+              const start2 = new Date(m.startTime);
+              const end2 = new Date(m.endTime);
+              totalMeetingHours += (end2.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+            }
           } catch (error) {
           }
         }
@@ -3274,7 +3350,8 @@ const getAllEmployeesDetails = async (req, res) => {
         status: employee.status,
         summary: {
           totalMeetings,
-          totalMeetingHours: 0,
+          totalMeetingHours: parseFloat(totalMeetingHours.toFixed(2)),
+          // ADDED: Proper calculation
           daysWithMeetings,
           avgMeetingsPerDay: daysWithMeetings > 0 ? parseFloat((totalMeetings / daysWithMeetings).toFixed(2)) : 0
         },

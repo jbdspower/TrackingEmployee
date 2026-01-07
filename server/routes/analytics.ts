@@ -1002,7 +1002,6 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
     let employeeIdsWithData = [];
     
     try {
-      // First try with aggregation (fastest if dates are properly stored)
       const result = await Meeting.aggregate([
         {
           $match: {
@@ -1022,11 +1021,10 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
             employeeId: "$_id"
           }
         }
-      ]).allowDiskUse(true); // Allow disk use for large datasets
+      ]).allowDiskUse(true);
       
       employeeIdsWithData = result.map(item => item.employeeId);
     } catch (error) {
-      // If aggregation fails, use distinct (slower but works with mixed data types)
       console.log("Aggregation failed, using distinct query");
       employeeIdsWithData = await Meeting.distinct('employeeId', {
         $or: [
@@ -1162,10 +1160,11 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
     // STEP 7: Get employee IDs for paginated employees
     const employeeIds = paginatedEmployees.map(emp => emp.userId || emp.id);
 
-    // STEP 8: Fetch meeting details for these employees (PARALLEL QUERIES)
+    // STEP 8: Fetch meeting details and tracking sessions for these employees (PARALLEL QUERIES)
     const [
       meetingsForEmployees,
-      attendanceForEmployees
+      attendanceForEmployees,
+      trackingSessionsForEmployees
     ] = await Promise.all([
       // Fetch meetings for these employees
       Meeting.find({
@@ -1190,10 +1189,22 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       })
       .select('employeeId date attendanceStatus attendanceReason attendenceCreated')
       .lean()
+      .exec(),
+      
+      // ADDED: Fetch tracking sessions for duty hour calculations
+      TrackingSession.find({
+        employeeId: { $in: employeeIds },
+        startTime: { 
+          $gte: start.toISOString(), 
+          $lte: end.toISOString() 
+        }
+      })
+      .select('employeeId startTime endTime startLocation endLocation status duration')
+      .lean()
       .exec()
     ]);
 
-    console.log(`📈 Fetched ${meetingsForEmployees.length} meetings and ${attendanceForEmployees.length} attendance records`);
+    console.log(`📈 Fetched ${meetingsForEmployees.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
 
     // STEP 9: Group data for quick access
     const meetingsByEmployee = new Map();
@@ -1208,6 +1219,17 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
     attendanceForEmployees.forEach(att => {
       const key = `${att.employeeId}-${att.date}`;
       attendanceByEmployee.set(key, att);
+    });
+
+    // ADDED: Group tracking sessions by employee and date
+    const sessionsByEmployeeDate = new Map();
+    trackingSessionsForEmployees.forEach(session => {
+      const dateStr = format(new Date(session.startTime), "yyyy-MM-dd");
+      const key = `${session.employeeId}-${dateStr}`;
+      if (!sessionsByEmployeeDate.has(key)) {
+        sessionsByEmployeeDate.set(key, []);
+      }
+      sessionsByEmployeeDate.get(key).push(session);
     });
 
     // STEP 10: Build response with data
@@ -1236,7 +1258,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
         .slice(0, 3);
 
-      // Generate day records
+      // Generate day records WITH PROPER CALCULATIONS
       const dayRecords = recentDates.map(dateStr => {
         const dateMeetings = meetingsByDate.get(dateStr) || [];
         const totalMeetings = dateMeetings.length;
@@ -1256,6 +1278,60 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           lastMeeting = sorted[sorted.length - 1];
         }
 
+        // Calculate meeting time (sum of all meeting durations)
+        let meetingTime = 0;
+        dateMeetings.forEach(meeting => {
+          if (meeting.startTime && meeting.endTime) {
+            try {
+              const start = new Date(meeting.startTime);
+              const end = new Date(meeting.endTime);
+              const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              if (durationHours > 0) {
+                meetingTime += durationHours;
+              }
+            } catch (error) {
+              // Skip invalid dates
+            }
+          }
+        });
+
+        // Calculate total duty hours from tracking sessions if available
+        let totalDutyHours = 0;
+        const sessionKey = `${employeeId}-${dateStr}`;
+        const dateSessions = sessionsByEmployeeDate.get(sessionKey) || [];
+        
+        if (dateSessions.length > 0) {
+          // Calculate from tracking sessions
+          dateSessions.forEach(session => {
+            if (session.startTime && session.endTime) {
+              try {
+                const start = new Date(session.startTime);
+                const end = new Date(session.endTime);
+                const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+                if (durationHours > 0) {
+                  totalDutyHours += durationHours;
+                }
+              } catch (error) {
+                // Skip invalid dates
+              }
+            }
+          });
+        } else if (firstMeeting && lastMeeting?.endTime) {
+          // Fallback: calculate from first to last meeting
+          try {
+            const dutyStart = new Date(firstMeeting.startTime);
+            const dutyEnd = new Date(lastMeeting.endTime);
+            totalDutyHours = Math.max(0, (dutyEnd.getTime() - dutyStart.getTime()) / (1000 * 60 * 60));
+          } catch (error) {
+            totalDutyHours = 8; // Default fallback
+          }
+        } else {
+          totalDutyHours = 8; // Default
+        }
+
+        // Calculate travel and lunch time
+        const travelAndLunchTime = Math.max(0, totalDutyHours - meetingTime);
+
         // Get attendance info
         const attendanceKey = `${employeeId}-${dateStr}`;
         const attendance = attendanceByEmployee.get(attendanceKey);
@@ -1267,9 +1343,9 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           startLocationAddress: firstMeeting?.location?.address || "",
           outLocationTime: lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "",
           outLocationAddress: lastMeeting?.location?.address || "",
-          totalDutyHours: 8, // Default
-          meetingTime: 0,
-          travelAndLunchTime: 0,
+          totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
+          meetingTime: parseFloat(meetingTime.toFixed(2)),
+          travelAndLunchTime: parseFloat(travelAndLunchTime.toFixed(2)),
           attendanceAddedBy: attendance?.attendenceCreated ? 
             (userMap.get(attendance.attendenceCreated)?.name || attendance.attendenceCreated) : "Auto"
         };
@@ -1277,6 +1353,18 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
       // Generate meeting records (max 3 for performance)
       const meetingRecords = meetings.slice(0, 3).map(meeting => {
+        // Calculate individual meeting duration
+        let totalStayTime = 0;
+        if (meeting.startTime && meeting.endTime) {
+          try {
+            const start = new Date(meeting.startTime);
+            const end = new Date(meeting.endTime);
+            totalStayTime = (end.getTime() - start.getTime()) / (1000 * 60 * 60); // Convert to hours
+          } catch (error) {
+            totalStayTime = 0;
+          }
+        }
+        
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
@@ -1286,7 +1374,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           meetingInLocation: meeting.location?.address || "",
           meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress",
           meetingOutLocation: meeting.location?.address || "",
-          totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
+          totalStayTime: parseFloat(totalStayTime.toFixed(2)),
           discussion: meeting.meetingDetails?.discussion || "",
           meetingPerson: meeting.meetingDetails?.customerEmployeeName || "",
           meetingStatus: meeting.status || "completed",
@@ -1299,13 +1387,21 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         };
       });
 
-      // Calculate summary
+      // Calculate summary with total meeting hours
       const totalMeetings = meetings.length;
       const uniqueDates = new Set();
+      let totalMeetingHours = 0;
+      
       meetings.forEach(m => {
         if (m.startTime) {
           try {
             uniqueDates.add(format(new Date(m.startTime), "yyyy-MM-dd"));
+            // Calculate meeting duration for summary
+            if (m.startTime && m.endTime) {
+              const start = new Date(m.startTime);
+              const end = new Date(m.endTime);
+              totalMeetingHours += (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            }
           } catch (error) {
             // Skip invalid dates
           }
@@ -1326,7 +1422,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         status: employee.status,
         summary: {
           totalMeetings,
-          totalMeetingHours: 0,
+          totalMeetingHours: parseFloat(totalMeetingHours.toFixed(2)), // ADDED: Proper calculation
           daysWithMeetings,
           avgMeetingsPerDay: daysWithMeetings > 0 ? parseFloat((totalMeetings / daysWithMeetings).toFixed(2)) : 0,
         },
