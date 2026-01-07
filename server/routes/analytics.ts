@@ -968,7 +968,7 @@ export const getAttendance: RequestHandler = async (req, res) => {
   }
 };
 
-// New endpoint: Get all employees' attendance and meeting details
+// Update the backend to filter out employees without data before returning
 export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
   try {
     const { 
@@ -1014,35 +1014,11 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         emp.department?.toLowerCase().includes(searchLower)
       );
     }
-    
-    // Sort employees
-    const sortDirection = sortOrder === 'desc' ? -1 : 1;
-    employees.sort((a, b) => {
-      switch (sortBy) {
-        case 'employeeName':
-          return sortDirection * a.name.localeCompare(b.name);
-        case 'email':
-          return sortDirection * (a.email || '').localeCompare(b.email || '');
-        case 'designation':
-          return sortDirection * (a.designation || '').localeCompare(b.designation || '');
-        case 'department':
-          return sortDirection * (a.department || '').localeCompare(b.department || '');
-        default:
-          return sortDirection * a.name.localeCompare(b.name);
-      }
-    });
-
-    // Apply pagination to employees
-    const totalEmployees = employees.length;
-    const totalPages = Math.ceil(totalEmployees / limitNum);
-    const paginatedEmployees = employees.slice(skip, skip + limitNum);
-
-    console.log(`👥 Processing ${paginatedEmployees.length} employees (${skip + 1} to ${skip + paginatedEmployees.length} of ${totalEmployees})`);
 
     // Get employee IDs for batch querying
-    const employeeIds = paginatedEmployees.map(emp => emp.id);
+    const employeeIds = employees.map(emp => emp.id);
 
-    // PARALLELIZE DATA FETCHING for paginated employees
+    // PARALLELIZE DATA FETCHING for all employees
     const [
       allMeetings,
       allTrackingSessions,
@@ -1113,11 +1089,18 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
     // Create user map for attendenceCreated lookups
     const userMap = new Map(externalUsers.map(user => [user._id, user.name]));
 
-    // Process each employee (only paginated ones)
-    const allEmployeesData = paginatedEmployees.map((employee) => {
+    // Process each employee and filter out those without data
+    const employeesWithData = [];
+
+    employees.forEach((employee) => {
       const employeeId = employee.id;
       const meetings = meetingsByEmployee.get(employeeId) || [];
       const sessions = sessionsByEmployee.get(employeeId) || [];
+
+      // Check if employee has any data (meetings OR tracking sessions)
+      if (meetings.length === 0 && sessions.length === 0) {
+        return; // Skip employees without any data
+      }
 
       // Group meetings by date
       const dateGroups = new Map();
@@ -1255,7 +1238,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       const uniqueDates = new Set(meetings.map(m => format(new Date(m.startTime), "yyyy-MM-dd")));
       const daysWithMeetings = uniqueDates.size;
 
-      return {
+      employeesWithData.push({
         employeeId: employee.id,
         employeeName: employee.name,
         email: employee.email,
@@ -1273,11 +1256,35 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         },
         dayRecords: dayRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
         meetingRecords: meetingRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-      };
+      });
     });
 
+    // Sort employees with data
+    const sortDirection = sortOrder === 'desc' ? -1 : 1;
+    employeesWithData.sort((a, b) => {
+      switch (sortBy) {
+        case 'employeeName':
+          return sortDirection * a.employeeName.localeCompare(b.employeeName);
+        case 'email':
+          return sortDirection * (a.email || '').localeCompare(b.email || '');
+        case 'designation':
+          return sortDirection * (a.designation || '').localeCompare(b.designation || '');
+        case 'department':
+          return sortDirection * (a.department || '').localeCompare(b.department || '');
+        default:
+          return sortDirection * a.employeeName.localeCompare(b.employeeName);
+      }
+    });
+
+    // Apply pagination to employees with data
+    const totalEmployeesWithData = employeesWithData.length;
+    const totalPages = Math.ceil(totalEmployeesWithData / limitNum);
+    const paginatedEmployeesWithData = employeesWithData.slice(skip, skip + limitNum);
+
+    console.log(`👥 Found ${employeesWithData.length} employees with data, showing ${paginatedEmployeesWithData.length} (page ${pageNum})`);
+
     const endTime = Date.now();
-    console.log(`✅ All employees details fetched in ${endTime - startTime}ms for ${paginatedEmployees.length} employees`);
+    console.log(`✅ All employees details fetched in ${endTime - startTime}ms for ${paginatedEmployeesWithData.length} employees`);
 
     // Calculate pagination info
     const hasNextPage = pageNum < totalPages;
@@ -1293,7 +1300,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       pagination: {
         currentPage: pageNum,
         pageSize: limitNum,
-        totalItems: totalEmployees,
+        totalItems: totalEmployeesWithData, // Only count employees with data
         totalPages: totalPages,
         hasNextPage,
         hasPreviousPage,
@@ -1305,7 +1312,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         by: sortBy,
         order: sortOrder
       },
-      employees: allEmployeesData,
+      employees: paginatedEmployeesWithData, // Only return employees with data
     });
   } catch (error) {
     console.error("Error fetching all employees details:", error);

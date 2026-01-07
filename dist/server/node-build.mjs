@@ -3023,26 +3023,7 @@ const getAllEmployeesDetails = async (req, res) => {
         (emp) => emp.name.toLowerCase().includes(searchLower) || emp.email.toLowerCase().includes(searchLower) || emp.designation?.toLowerCase().includes(searchLower) || emp.department?.toLowerCase().includes(searchLower)
       );
     }
-    const sortDirection = sortOrder === "desc" ? -1 : 1;
-    employees.sort((a, b) => {
-      switch (sortBy) {
-        case "employeeName":
-          return sortDirection * a.name.localeCompare(b.name);
-        case "email":
-          return sortDirection * (a.email || "").localeCompare(b.email || "");
-        case "designation":
-          return sortDirection * (a.designation || "").localeCompare(b.designation || "");
-        case "department":
-          return sortDirection * (a.department || "").localeCompare(b.department || "");
-        default:
-          return sortDirection * a.name.localeCompare(b.name);
-      }
-    });
-    const totalEmployees = employees.length;
-    const totalPages = Math.ceil(totalEmployees / limitNum);
-    const paginatedEmployees = employees.slice(skip, skip + limitNum);
-    console.log(`👥 Processing ${paginatedEmployees.length} employees (${skip + 1} to ${skip + paginatedEmployees.length} of ${totalEmployees})`);
-    const employeeIds = paginatedEmployees.map((emp) => emp.id);
+    const employeeIds = employees.map((emp) => emp.id);
     const [
       allMeetings,
       allTrackingSessions,
@@ -3094,10 +3075,14 @@ const getAllEmployeesDetails = async (req, res) => {
       attendanceByEmployee.set(key, att);
     });
     const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
-    const allEmployeesData = paginatedEmployees.map((employee) => {
+    const employeesWithData = [];
+    employees.forEach((employee) => {
       const employeeId = employee.id;
       const meetings2 = meetingsByEmployee.get(employeeId) || [];
       const sessions = sessionsByEmployee.get(employeeId) || [];
+      if (meetings2.length === 0 && sessions.length === 0) {
+        return;
+      }
       const dateGroups = /* @__PURE__ */ new Map();
       meetings2.forEach((meeting) => {
         const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
@@ -3190,7 +3175,7 @@ const getAllEmployeesDetails = async (req, res) => {
       }, 0);
       const uniqueDates = new Set(meetings2.map((m) => format(new Date(m.startTime), "yyyy-MM-dd")));
       const daysWithMeetings = uniqueDates.size;
-      return {
+      employeesWithData.push({
         employeeId: employee.id,
         employeeName: employee.name,
         email: employee.email,
@@ -3208,10 +3193,29 @@ const getAllEmployeesDetails = async (req, res) => {
         },
         dayRecords: dayRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
         meetingRecords: meetingRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      };
+      });
     });
+    const sortDirection = sortOrder === "desc" ? -1 : 1;
+    employeesWithData.sort((a, b) => {
+      switch (sortBy) {
+        case "employeeName":
+          return sortDirection * a.employeeName.localeCompare(b.employeeName);
+        case "email":
+          return sortDirection * (a.email || "").localeCompare(b.email || "");
+        case "designation":
+          return sortDirection * (a.designation || "").localeCompare(b.designation || "");
+        case "department":
+          return sortDirection * (a.department || "").localeCompare(b.department || "");
+        default:
+          return sortDirection * a.employeeName.localeCompare(b.employeeName);
+      }
+    });
+    const totalEmployeesWithData = employeesWithData.length;
+    const totalPages = Math.ceil(totalEmployeesWithData / limitNum);
+    const paginatedEmployeesWithData = employeesWithData.slice(skip, skip + limitNum);
+    console.log(`👥 Found ${employeesWithData.length} employees with data, showing ${paginatedEmployeesWithData.length} (page ${pageNum})`);
     const endTime = Date.now();
-    console.log(`✅ All employees details fetched in ${endTime - startTime}ms for ${paginatedEmployees.length} employees`);
+    console.log(`✅ All employees details fetched in ${endTime - startTime}ms for ${paginatedEmployeesWithData.length} employees`);
     const hasNextPage = pageNum < totalPages;
     const hasPreviousPage = pageNum > 1;
     res.json({
@@ -3224,7 +3228,8 @@ const getAllEmployeesDetails = async (req, res) => {
       pagination: {
         currentPage: pageNum,
         pageSize: limitNum,
-        totalItems: totalEmployees,
+        totalItems: totalEmployeesWithData,
+        // Only count employees with data
         totalPages,
         hasNextPage,
         hasPreviousPage,
@@ -3236,7 +3241,8 @@ const getAllEmployeesDetails = async (req, res) => {
         by: sortBy,
         order: sortOrder
       },
-      employees: allEmployeesData
+      employees: paginatedEmployeesWithData
+      // Only return employees with data
     });
   } catch (error) {
     console.error("Error fetching all employees details:", error);
