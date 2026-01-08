@@ -2043,147 +2043,34 @@ const handleDutyCompletedClick = async () => {
       {/* Content */}
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Employee Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Employee Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Name</span>
-                    <span className="font-medium">{employee.name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Email</span>
-                    <span className="font-medium">{employee.email}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Phone</span>
-                    <span className="font-medium">{employee.phone}</span>
-                  </div>
-                  {employee.designation && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Designation
-                      </span>
-                      <span className="font-medium">
-                        {employee.designation}
-                      </span>
-                    </div>
-                  )}
-                  {employee.department && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Department
-                      </span>
-                      <span className="font-medium">{employee.department}</span>
-                    </div>
-                  )}
-                  {employee.companyName && (
-                    <div className="flex items-start justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Company
-                      </span>
-                      <span className="font-medium text-right max-w-xs">
-                        {employee.companyName}
-                      </span>
-                    </div>
-                  )}
-                  {employee.reportTo && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Reports To
-                      </span>
-                      <span className="font-medium">{employee.reportTo}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Status
-                    </span>
-                    <Badge
-                      variant="secondary"
-                      className={`${getStatusColor(employee.status)}`}
-                    >
-                      {getStatusText(employee.status)}
-                    </Badge>
-                  </div>
-                  {employee.currentTask && (
-                    <div className="flex items-start justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Current Task
-                      </span>
-                      <span className="font-medium text-right max-w-xs">
-                        {employee.currentTask}
-                      </span>
-                    </div>
-                  )}
-                </div>
+           {/* Today's Meetings Component */}
+            <TodaysMeetings
+              userId={employeeId}
+              onStartMeeting={handleStartMeetingFromFollowUp}
+              startedMeetingMap={startedMeetingMap}
+              onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
+              onMeetingsFetched={handleTodaysMeetingsFetched}
+              refreshTrigger={refreshTodaysMeetings}
+              hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
+              todaysFollowUpMeetings={todaysFollowUpMeetings}
+            />
 
-                {/* End Meeting Button - Shows when there's an active meeting */}
-                {(() => {
-                  // Check if there's an active meeting in the meetings array
-                  const activeMeeting = meetings.find(
-                    (m) => m.status === "in-progress" || m.status === "started"
-                  );
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* Location Tracker */}
+            <LocationTracker
+              employeeId={employee.id}
+              employeeName={employee.name}
+              onLocationUpdate={handleLocationUpdate}
+              trackingEnabled={employee.status === "active"}
+              onTrackingSessionStart={handleTrackingSessionStart}
+              onTrackingSessionEnd={handleTrackingSessionEnd}
+              todaysMeetings={todaysFollowUpMeetings}
+            />
 
-                  // Show End Meeting button if there's an active meeting OR employee status is "meeting"
-                  if (activeMeeting || employee.status === "meeting") {
-                    return (
-                      <div className="pt-4 pb-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="w-full"
-                          onClick={handleEndMeetingAttempt}
-                          disabled={isEndingMeeting !== null}
-                        >
-                          <Clock className="h-4 w-4 mr-2" />
-                          {isEndingMeeting
-                            ? "Ending Meeting..."
-                            : "End Current Meeting"}
-                        </Button>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
+            
 
-                <div className="grid grid-cols-2 gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleCall(employee.phone)}
-                  >
-                    <Phone className="h-4 w-4 mr-2" />
-                    Call
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEmail(employee.email, employee.name)}
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Email
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      handleSendMessage(employee.phone, employee.name)
-                    }
-                    className="col-span-2"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Send Message
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
+            <div className="lg:col-span-2 space-y-6">
             {/* Current Location */}
             <Card>
               <CardHeader>
@@ -2445,32 +2332,148 @@ const handleDutyCompletedClick = async () => {
                 )}
               </CardContent>
             </Card>
+
+             {/* Employee Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Employee Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Name</span>
+                    <span className="font-medium">{employee.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Email</span>
+                    <span className="font-medium">{employee.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Phone</span>
+                    <span className="font-medium">{employee.phone}</span>
+                  </div>
+                  {employee.designation && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Designation
+                      </span>
+                      <span className="font-medium">
+                        {employee.designation}
+                      </span>
+                    </div>
+                  )}
+                  {employee.department && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Department
+                      </span>
+                      <span className="font-medium">{employee.department}</span>
+                    </div>
+                  )}
+                  {employee.companyName && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Company
+                      </span>
+                      <span className="font-medium text-right max-w-xs">
+                        {employee.companyName}
+                      </span>
+                    </div>
+                  )}
+                  {employee.reportTo && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Reports To
+                      </span>
+                      <span className="font-medium">{employee.reportTo}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Status
+                    </span>
+                    <Badge
+                      variant="secondary"
+                      className={`${getStatusColor(employee.status)}`}
+                    >
+                      {getStatusText(employee.status)}
+                    </Badge>
+                  </div>
+                  {employee.currentTask && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Current Task
+                      </span>
+                      <span className="font-medium text-right max-w-xs">
+                        {employee.currentTask}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* End Meeting Button - Shows when there's an active meeting */}
+                {(() => {
+                  // Check if there's an active meeting in the meetings array
+                  const activeMeeting = meetings.find(
+                    (m) => m.status === "in-progress" || m.status === "started"
+                  );
+
+                  // Show End Meeting button if there's an active meeting OR employee status is "meeting"
+                  if (activeMeeting || employee.status === "meeting") {
+                    return (
+                      <div className="pt-4 pb-2">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="w-full"
+                          onClick={handleEndMeetingAttempt}
+                          disabled={isEndingMeeting !== null}
+                        >
+                          <Clock className="h-4 w-4 mr-2" />
+                          {isEndingMeeting
+                            ? "Ending Meeting..."
+                            : "End Current Meeting"}
+                        </Button>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                <div className="grid grid-cols-2 gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCall(employee.phone)}
+                  >
+                    <Phone className="h-4 w-4 mr-2" />
+                    Call
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEmail(employee.email, employee.name)}
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Email
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      handleSendMessage(employee.phone, employee.name)
+                    }
+                    className="col-span-2"
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Send Message
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
           </div>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Location Tracker */}
-            <LocationTracker
-              employeeId={employee.id}
-              employeeName={employee.name}
-              onLocationUpdate={handleLocationUpdate}
-              trackingEnabled={employee.status === "active"}
-              onTrackingSessionStart={handleTrackingSessionStart}
-              onTrackingSessionEnd={handleTrackingSessionEnd}
-              todaysMeetings={todaysFollowUpMeetings}
-            />
-
-            {/* Today's Meetings Component */}
-            <TodaysMeetings
-              userId={employeeId}
-              onStartMeeting={handleStartMeetingFromFollowUp}
-              startedMeetingMap={startedMeetingMap}
-              onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
-              onMeetingsFetched={handleTodaysMeetingsFetched}
-              refreshTrigger={refreshTodaysMeetings}
-              hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
-              todaysFollowUpMeetings={todaysFollowUpMeetings}
-            />
           </div>
         </div>
       </div>
