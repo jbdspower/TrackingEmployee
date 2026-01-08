@@ -184,10 +184,28 @@ function getDateRange(dateRange: string, startDate?: string, endDate?: string) {
 
 // Function to calculate meeting duration in hours
 function calculateMeetingDuration(startTime: string, endTime?: string): number {
-  const start = new Date(startTime);
-  const end = endTime ? new Date(endTime) : new Date();
-  const durationMs = end.getTime() - start.getTime();
-  return durationMs / (1000 * 60 * 60); // Convert to hours
+  if (!startTime) return 0;
+  
+  try {
+    const start = new Date(startTime);
+    const end = endTime ? new Date(endTime) : new Date();
+    
+    // Validate dates
+    if (isNaN(start.getTime())) return 0;
+    if (endTime && isNaN(end.getTime())) {
+      // If end time is invalid, use current time
+      const durationMs = new Date().getTime() - start.getTime();
+      return Math.max(0, durationMs / (1000 * 60 * 60));
+    }
+    
+    const durationMs = end.getTime() - start.getTime();
+    if (durationMs < 0) return 0; // Invalid if end is before start
+    
+    return Math.max(0, durationMs / (1000 * 60 * 60)); // Convert to hours
+  } catch (error) {
+    console.error("Error calculating meeting duration:", error);
+    return 0;
+  }
 }
 
 // Function to calculate duty hours (placeholder - would need tracking data)
@@ -200,7 +218,7 @@ function calculateDutyHours(
   // For now, we'll assume 8 hours per working day in the date range
   const daysInRange = Math.ceil(
     (dateRange.end.getTime() - dateRange.start.getTime()) /
-      (1000 * 60 * 60 * 24),
+    (1000 * 60 * 60 * 24),
   );
   return Math.min(daysInRange * 8, 40); // Max 40 hours per week
 }
@@ -217,13 +235,13 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
 
     // Get date range
     const { start, end } = getDateRange(
-    dateRange as string,
-    startDate as string,
-    endDate as string,
-  );
+      dateRange as string,
+      startDate as string,
+      endDate as string,
+    );
 
-  console.log(`Analytics date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
-  console.log(`Calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
+    console.log(`Analytics date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
+    console.log(`Calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
 
     // Fetch all employees
     const externalUsers = await fetchExternalUsers();
@@ -351,10 +369,10 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
       avgMeetingDuration:
         analytics.length > 0
           ? analytics.reduce((sum, emp) => sum + emp.totalMeetingHours, 0) /
-            Math.max(
-              analytics.reduce((sum, emp) => sum + emp.totalMeetings, 0),
-              1,
-            )
+          Math.max(
+            analytics.reduce((sum, emp) => sum + emp.totalMeetings, 0),
+            1,
+          )
           : 0,
     };
 
@@ -397,7 +415,7 @@ function generateMockMeetings(
       // Random date within range
       const randomTime = new Date(
         startDate.getTime() +
-          Math.random() * (endDate.getTime() - startDate.getTime()),
+        Math.random() * (endDate.getTime() - startDate.getTime()),
       );
 
       // Random meeting duration (30 minutes to 3 hours)
@@ -425,9 +443,9 @@ function generateMockMeetings(
 export const getEmployeeDetails: RequestHandler = async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const { 
-      dateRange = "today", 
-      startDate, 
+    const {
+      dateRange = "today",
+      startDate,
       endDate,
       page = "1",
       limit = "20",
@@ -451,64 +469,78 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
     console.log(`📊 Employee details for ${employeeId} - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}`);
 
-    // PARALLELIZE DATA FETCHING with pagination
+    // PARALLELIZE DATA FETCHING
     const [
       externalUsers,
       meetingsData,
       meetingsCount,
       trackingSessionsData,
-      attendanceRecords
+      attendanceRecords,
+      allMeetingsForEmployee
     ] = await Promise.allSettled([
       // Get external users from cache
       cacheService.getExternalUsers(),
-      
+
       // Fetch meetings with date range filter and pagination
       Meeting.find({
         employeeId,
-        startTime: { 
-          $gte: start.toISOString(), 
-          $lte: end.toISOString() 
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
         }
       })
-      .select('startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy')
-      .sort({ startTime: -1 }) // Sort by latest first
-      .skip(skip)
-      .limit(limitNum)
-      .lean()
-      .exec(),
-      
+        .select('startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy')
+        .sort({ startTime: -1 }) // Sort by latest first
+        .skip(skip)
+        .limit(limitNum)
+        .lean()
+        .exec(),
+
       // Get total count of meetings for pagination
       Meeting.countDocuments({
         employeeId,
-        startTime: { 
-          $gte: start.toISOString(), 
-          $lte: end.toISOString() 
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
         }
       }),
-      
-      // Fetch tracking sessions with date range filter (no pagination needed for day grouping)
+
+      // Fetch tracking sessions with date range filter
       TrackingSession.find({
         employeeId,
-        startTime: { 
-          $gte: start.toISOString(), 
-          $lte: end.toISOString() 
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
         }
       })
-      .select('startTime endTime startLocation endLocation status duration')
-      .lean()
-      .exec(),
-      
+        .select('startTime endTime startLocation endLocation status duration')
+        .lean()
+        .exec(),
+
       // Fetch attendance records
       Attendance.find({
         employeeId,
-        date: { 
-          $gte: format(start, "yyyy-MM-dd"), 
-          $lte: format(end, "yyyy-MM-dd") 
+        date: {
+          $gte: format(start, "yyyy-MM-dd"),
+          $lte: format(end, "yyyy-MM-dd")
         }
       })
-      .select('date attendanceStatus attendanceReason attendenceCreated')
-      .lean()
-      .exec()
+        .select('date attendanceStatus attendanceReason attendenceCreated')
+        .lean()
+        .exec(),
+
+      // Get ALL meetings for this employee in the date range (not paginated)
+      Meeting.find({
+        employeeId,
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
+        }
+      })
+        .select('startTime endTime clientName leadId status meetingDetails location')
+        .sort({ startTime: -1 })
+        .lean()
+        .exec()
     ]);
 
     // Handle Promise results
@@ -517,6 +549,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     const meetingsCountResult = meetingsCount.status === 'fulfilled' ? meetingsCount.value : 0;
     const trackingSessionsResult = trackingSessionsData.status === 'fulfilled' ? trackingSessionsData.value : [];
     const attendanceRecordsResult = attendanceRecords.status === 'fulfilled' ? attendanceRecords.value : [];
+    const allMeetingsResult = allMeetingsForEmployee.status === 'fulfilled' ? allMeetingsForEmployee.value : [];
 
     // Log any errors
     if (externalUsers.status === 'rejected') console.error('Error fetching external users:', externalUsers.reason);
@@ -524,78 +557,113 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     if (meetingsCount.status === 'rejected') console.error('Error counting meetings:', meetingsCount.reason);
     if (trackingSessionsData.status === 'rejected') console.error('Error fetching tracking sessions:', trackingSessionsData.reason);
     if (attendanceRecords.status === 'rejected') console.error('Error fetching attendance:', attendanceRecords.reason);
+    if (allMeetingsForEmployee.status === 'rejected') console.error('Error fetching all meetings:', allMeetingsForEmployee.reason);
 
     const meetings = meetingsDataResult;
     const trackingSessions = trackingSessionsResult;
+    const allMeetings = allMeetingsResult;
 
-    console.log(`📈 Fetched data: ${meetings.length} meetings (total: ${meetingsCountResult}), ${trackingSessions.length} sessions, ${attendanceRecordsResult.length} attendance records`);
+    console.log(`📈 Fetched data: ${meetings.length} paginated meetings, ${allMeetings.length} total meetings (total count: ${meetingsCountResult}), ${trackingSessions.length} sessions, ${attendanceRecordsResult.length} attendance records`);
 
     // Create user map for quick lookups
     const userMap = new Map(externalUsersResult.map(user => [user._id, user.name]));
 
-    // Group meetings by date (optimized with Map)
-    const dateGroups = new Map();
-    meetings.forEach(meeting => {
-      const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
-      if (!dateGroups.has(date)) {
-        dateGroups.set(date, []);
+    // Get ALL dates in the range (not just paginated meetings)
+    const allDatesInRange = [];
+    let currentDate = new Date(start);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // End of today
+
+    // Only include dates up to today to avoid future empty dates
+    while (currentDate <= end && currentDate <= today) {
+      allDatesInRange.push(format(currentDate, "yyyy-MM-dd"));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    console.log(`📅 Date range includes ${allDatesInRange.length} total days (excluding future dates)`);
+
+    // Group ALL meetings by date
+    const allMeetingsByDate = new Map();
+    allMeetings.forEach(meeting => {
+      try {
+        const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
+        if (!allMeetingsByDate.has(date)) {
+          allMeetingsByDate.set(date, []);
+        }
+        allMeetingsByDate.get(date).push(meeting);
+      } catch (error) {
+        console.error('Error processing meeting date:', error);
       }
-      dateGroups.get(date).push(meeting);
     });
 
     // Group tracking sessions by date
     const sessionDateGroups = new Map();
     trackingSessions.forEach(session => {
-      const date = format(new Date(session.startTime), "yyyy-MM-dd");
-      if (!sessionDateGroups.has(date)) {
-        sessionDateGroups.set(date, []);
+      try {
+        const date = format(new Date(session.startTime), "yyyy-MM-dd");
+        if (!sessionDateGroups.has(date)) {
+          sessionDateGroups.set(date, []);
+        }
+        sessionDateGroups.get(date).push(session);
+      } catch (error) {
+        console.error('Error processing session date:', error);
       }
-      sessionDateGroups.get(date).push(session);
     });
 
-    // Get all unique dates from fetched meetings (for paginated day records)
-    const allDates = new Set([
-      ...Array.from(dateGroups.keys()),
-      ...Array.from(sessionDateGroups.keys())
-    ]);
-
-    // Generate day records (paginated)
-    const dayRecords = Array.from(allDates).map((date) => {
-      const meetings = dateGroups.get(date) || [];
+    // Generate day records for ALL dates in range
+    const dayRecords = allDatesInRange.map((date) => {
+      const meetings = allMeetingsByDate.get(date) || [];
       const sessions = sessionDateGroups.get(date) || [];
-      
+
       const totalMeetings = meetings.length;
       const totalMeetingHours = meetings.reduce((total, meeting) => {
         return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
       }, 0);
 
       // Sort meetings by start time
-      const sortedMeetings = [...meetings].sort((a, b) => 
+      const sortedMeetings = [...meetings].sort((a, b) =>
         new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
       );
-      
+
       const firstMeeting = sortedMeetings[0];
       const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
 
       // Calculate times
-      const startLocationTime = firstMeeting?.startTime || "";
+      const startLocationTime = firstMeeting?.startTime ? format(new Date(firstMeeting.startTime), "HH:mm:ss") : "";
       const startLocationAddress = firstMeeting?.location?.address || "";
-      
-      const outLocationTime = lastMeeting?.endTime || "";
+
+      const outLocationTime = lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "";
       const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address
         ? lastMeeting.location.endLocation.address
         : (lastMeeting?.location?.address || "");
 
-      // Calculate duty hours
-      let totalDutyHours = 8; // Default
-      if (firstMeeting && lastMeeting?.endTime) {
-        const dutyDuration = (new Date(lastMeeting.endTime).getTime() - new Date(firstMeeting.startTime).getTime()) / (1000 * 60 * 60);
-        totalDutyHours = Math.max(0, dutyDuration);
+      // Calculate duty hours from first meeting start to last meeting end
+      let totalDutyHours = 0;
+      if (firstMeeting?.startTime && lastMeeting?.endTime) {
+        try {
+          const start = new Date(firstMeeting.startTime);
+          const end = new Date(lastMeeting.endTime);
+          const dutyDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          totalDutyHours = Math.max(0, dutyDuration);
+        } catch (error) {
+          console.error("Error calculating duty hours:", error);
+          totalDutyHours = 0;
+        }
+      } else if (firstMeeting?.startTime) {
+        // Only start time available (ongoing meeting)
+        try {
+          const start = new Date(firstMeeting.startTime);
+          const now = new Date();
+          const dutyDuration = (now.getTime() - start.getTime()) / (1000 * 60 * 60);
+          totalDutyHours = Math.max(0, dutyDuration);
+        } catch (error) {
+          totalDutyHours = 0;
+        }
       }
 
       // Get attendance info
       const attendance = attendanceRecordsResult.find(att => att.date === date);
-      const attendanceAddedBy = attendance?.attendenceCreated 
+      const attendanceAddedBy = attendance?.attendenceCreated
         ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated
         : null;
 
@@ -607,24 +675,24 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         outLocationTime,
         outLocationAddress,
         totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
-        meetingTime: totalMeetingHours,
-        travelAndLunchTime: Math.max(0, totalDutyHours - totalMeetingHours),
+        meetingTime: parseFloat(totalMeetingHours.toFixed(2)),
+        travelAndLunchTime: Math.max(0, parseFloat((totalDutyHours - totalMeetingHours).toFixed(2))),
         attendanceAddedBy
       };
     });
 
-    // Generate meeting records
+    // Generate meeting records from PAGINATED meetings only
     const meetingRecords = meetings.map((meeting) => {
-      const meetingInTime = format(new Date(meeting.startTime), "HH:mm:ss");
+      const meetingInTime = meeting.startTime ? format(new Date(meeting.startTime), "HH:mm:ss") : "";
       const meetingOutTime = meeting.endTime
         ? format(new Date(meeting.endTime), "HH:mm:ss")
         : "In Progress";
-      
+
       return {
         meetingId: meeting._id?.toString() || meeting.id,
         employeeName: "", // Will be filled by client
         companyName: meeting.clientName || "Unknown Company",
-        date: format(new Date(meeting.startTime), "yyyy-MM-dd"),
+        date: meeting.startTime ? format(new Date(meeting.startTime), "yyyy-MM-dd") : "",
         leadId: meeting.leadId || "",
         meetingInTime,
         meetingInLocation: meeting.location?.address || "Location loading...",
@@ -636,8 +704,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
         meetingPerson: meeting.meetingDetails?.customers?.length > 0
           ? meeting.meetingDetails.customers
-              .map((customer) => customer.customerEmployeeName)
-              .join(", ")
+            .map((customer) => customer.customerEmployeeName)
+            .join(", ")
           : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
         meetingStatus: meeting.status || "completed",
         externalMeetingStatus: meeting.externalMeetingStatus || "",
@@ -650,6 +718,35 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         attachments: meeting.meetingDetails?.attachments || meeting.attachments || [],
       };
     });
+
+    // Apply pagination to dayRecords
+    // First filter out future dates and sort in DESCENDING order (newest first)
+    const todayDate = new Date();
+    const todayStr = format(todayDate, "yyyy-MM-dd");
+    const validDayRecords = dayRecords.filter(record => {
+      try {
+        const recordDate = new Date(record.date);
+        return recordDate <= todayDate;
+      } catch {
+        return true;
+      }
+    });
+
+    const dayRecordsSorted = validDayRecords.sort((a, b) => {
+      try {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      } catch {
+        return 0;
+      }
+    });
+
+    const totalDayRecords = dayRecordsSorted.length;
+    const dayRecordsTotalPages = Math.ceil(totalDayRecords / limitNum);
+    const dayRecordsStartIndex = (pageNum - 1) * limitNum;
+    const dayRecordsEndIndex = dayRecordsStartIndex + limitNum;
+    const paginatedDayRecords = dayRecordsSorted.slice(dayRecordsStartIndex, dayRecordsEndIndex);
+
+    console.log(`📅 Day records: ${totalDayRecords} valid dates (filtered future dates), showing ${paginatedDayRecords.length} on page ${pageNum}`);
 
     // Calculate pagination info
     const totalPages = Math.ceil(meetingsCountResult / limitNum);
@@ -667,7 +764,15 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         nextPage: hasNextPage ? pageNum + 1 : null,
         previousPage: hasPreviousPage ? pageNum - 1 : null,
       },
-      dayRecords: dayRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      dayRecordsPagination: {
+        currentPage: pageNum,
+        pageSize: limitNum,
+        totalItems: totalDayRecords,
+        totalPages: dayRecordsTotalPages,
+        hasNextDayRecordsPage: pageNum < dayRecordsTotalPages,
+        hasPreviousDayRecordsPage: pageNum > 1,
+      },
+      dayRecords: paginatedDayRecords,
       meetingRecords: meetingRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     };
 
@@ -679,9 +784,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     console.error("Error fetching employee details:", error);
     console.error("Error details:", error.message);
     console.error("Error stack:", error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to fetch employee details",
-      message: error.message 
+      message: error.message
     });
   }
 };
@@ -935,7 +1040,7 @@ export const getAttendance: RequestHandler = async (req, res) => {
         attendanceStatus: record.attendanceStatus,
         attendanceReason: record.attendanceReason || "",
         attendenceCreated: record.attendenceCreated,
-        attendenceCreatedName: record.attendenceCreated 
+        attendenceCreatedName: record.attendenceCreated
           ? userMap.get(record.attendenceCreated) || record.attendenceCreated
           : null,
         savedAt: record.updatedAt || record.createdAt
@@ -949,7 +1054,7 @@ export const getAttendance: RequestHandler = async (req, res) => {
 
     } catch (dbError) {
       console.warn("MongoDB query failed:", dbError);
-      
+
       // Fallback response
       res.json({
         success: true,
@@ -961,18 +1066,18 @@ export const getAttendance: RequestHandler = async (req, res) => {
 
   } catch (error) {
     console.error("Error fetching attendance:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: "Failed to fetch attendance records" 
+      error: "Failed to fetch attendance records"
     });
   }
 };
 
 export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
   try {
-    const { 
-      dateRange = "today", 
-      startDate, 
+    const {
+      dateRange = "today",
+      startDate,
       endDate,
       page = "1",
       limit = "10",
@@ -980,7 +1085,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       sortBy = "employeeName",
       sortOrder = "asc"
     } = req.query;
-    
+
     // Start timing
     const startTime = Date.now();
 
@@ -998,49 +1103,38 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
     console.log(`📊 All employees details - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}, Search: "${search}"`);
 
-    // STEP 1: Get distinct employee IDs who have meetings in date range (FAST QUERY)
-    let employeeIdsWithData = [];
-    
-    try {
-      const result = await Meeting.aggregate([
-        {
-          $match: {
-            $or: [
-              { startTime: { $gte: start, $lte: end } },
-              { "startTime": { $gte: start.toISOString(), $lte: end.toISOString() } }
-            ]
-          }
-        },
-        {
-          $group: {
-            _id: "$employeeId"
-          }
-        },
-        {
-          $project: {
-            employeeId: "$_id"
-          }
-        }
-      ]).allowDiskUse(true);
-      
-      employeeIdsWithData = result.map(item => item.employeeId);
-    } catch (error) {
-      console.log("Aggregation failed, using distinct query");
-      employeeIdsWithData = await Meeting.distinct('employeeId', {
-        $or: [
-          { startTime: { $gte: start, $lte: end } },
-          { startTime: { $gte: start.toISOString(), $lte: end.toISOString() } }
-        ]
-      });
+    // STEP 1: Get ALL employees from external API
+    const externalUsers = await cacheService.getExternalUsers();
+    console.log(`Found ${externalUsers.length} total employees from cache`);
+
+    // STEP 2: Map all employees (don't filter by meetings)
+    let allEmployees = externalUsers.map((user, index) => {
+      const employee = mapExternalUserToEmployee(user, index);
+      return {
+        ...employee,
+        userId: user._id
+      };
+    });
+
+    console.log(`Mapped ${allEmployees.length} total employees`);
+
+    // STEP 3: Apply search filter if provided
+    if (search) {
+      const searchLower = (search as string).toLowerCase();
+      allEmployees = allEmployees.filter(emp =>
+        emp.name.toLowerCase().includes(searchLower) ||
+        emp.email.toLowerCase().includes(searchLower) ||
+        emp.designation?.toLowerCase().includes(searchLower) ||
+        emp.department?.toLowerCase().includes(searchLower)
+      );
+      console.log(`Filtered to ${allEmployees.length} employees after search`);
     }
 
-    console.log(`Found ${employeeIdsWithData.length} employees with meetings in date range`);
-
-    // If no employees have data, return empty result immediately
-    if (employeeIdsWithData.length === 0) {
+    // If no employees after search, return empty result
+    if (allEmployees.length === 0) {
       const endTime = Date.now();
-      console.log(`✅ No employees with data found in ${endTime - startTime}ms`);
-      
+      console.log(`✅ No employees found after search in ${endTime - startTime}ms`);
+
       return res.json({
         success: true,
         dateRange: {
@@ -1067,44 +1161,9 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       });
     }
 
-    // STEP 2: Get external users from cache
-    const externalUsers = await cacheService.getExternalUsers();
-    
-    // Create a map of all users for quick lookup
-    const userMap = new Map();
-    externalUsers.forEach(user => {
-      userMap.set(user._id, user);
-    });
-
-    // STEP 3: Filter users to only those who have data
-    let employeesWithData = [];
-    for (const employeeId of employeeIdsWithData) {
-      const user = userMap.get(employeeId);
-      if (user) {
-        const employee = mapExternalUserToEmployee(user, employeesWithData.length);
-        employeesWithData.push({
-          ...employee,
-          userId: employeeId
-        });
-      }
-    }
-
-    console.log(`Matched ${employeesWithData.length} employees with user data`);
-
-    // STEP 4: Apply search filter if provided
-    if (search) {
-      const searchLower = (search as string).toLowerCase();
-      employeesWithData = employeesWithData.filter(emp => 
-        emp.name.toLowerCase().includes(searchLower) ||
-        emp.email.toLowerCase().includes(searchLower) ||
-        emp.designation?.toLowerCase().includes(searchLower) ||
-        emp.department?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // STEP 5: Sort employees
+    // STEP 4: Sort employees
     const sortDirection = sortOrder === 'desc' ? -1 : 1;
-    employeesWithData.sort((a, b) => {
+    allEmployees.sort((a, b) => {
       switch (sortBy) {
         case 'employeeName':
           return sortDirection * a.name.localeCompare(b.name);
@@ -1119,18 +1178,18 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       }
     });
 
-    // STEP 6: Apply pagination
-    const totalEmployees = employeesWithData.length;
+    // STEP 5: Apply pagination
+    const totalEmployees = allEmployees.length;
     const totalPages = Math.ceil(totalEmployees / limitNum);
-    const paginatedEmployees = employeesWithData.slice(skip, skip + limitNum);
+    const paginatedEmployees = allEmployees.slice(skip, skip + limitNum);
 
-    console.log(`👥 Showing ${paginatedEmployees.length} employees with data (page ${pageNum} of ${totalPages})`);
+    console.log(`👥 Showing ${paginatedEmployees.length} employees (page ${pageNum} of ${totalPages})`);
 
     // If no paginated employees, return empty
     if (paginatedEmployees.length === 0) {
       const endTime = Date.now();
       console.log(`✅ Process completed in ${endTime - startTime}ms`);
-      
+
       return res.json({
         success: true,
         dateRange: {
@@ -1157,89 +1216,102 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       });
     }
 
-    // STEP 7: Get employee IDs for paginated employees
+    // STEP 6: Get employee IDs for paginated employees
     const employeeIds = paginatedEmployees.map(emp => emp.userId || emp.id);
 
-    // STEP 8: Fetch meeting details and tracking sessions for these employees (PARALLEL QUERIES)
+    // STEP 7: Fetch ALL meetings for these employees in the date range
+    const allEmployeeMeetings = await Meeting.find({
+      employeeId: { $in: employeeIds },
+      $or: [
+        { startTime: { $gte: start, $lte: end } },
+        { startTime: { $gte: start.toISOString(), $lte: end.toISOString() } }
+      ]
+    })
+      .select('employeeId startTime endTime clientName leadId status meetingDetails location')
+      .sort({ startTime: -1 })
+      .lean()
+      .exec();
+
+    console.log(`📅 Found ${allEmployeeMeetings.length} total meetings for ${employeeIds.length} employees`);
+
+    // STEP 8: Fetch other data in parallel
     const [
-      meetingsForEmployees,
       attendanceForEmployees,
       trackingSessionsForEmployees
     ] = await Promise.all([
-      // Fetch meetings for these employees
-      Meeting.find({
-        employeeId: { $in: employeeIds },
-        $or: [
-          { startTime: { $gte: start, $lte: end } },
-          { startTime: { $gte: start.toISOString(), $lte: end.toISOString() } }
-        ]
-      })
-      .select('employeeId startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy')
-      .lean()
-      .limit(100) // Limit per employee for performance
-      .exec(),
-      
       // Fetch attendance records
       Attendance.find({
         employeeId: { $in: employeeIds },
-        date: { 
-          $gte: format(start, "yyyy-MM-dd"), 
-          $lte: format(end, "yyyy-MM-dd") 
+        date: {
+          $gte: format(start, "yyyy-MM-dd"),
+          $lte: format(end, "yyyy-MM-dd")
         }
       })
-      .select('employeeId date attendanceStatus attendanceReason attendenceCreated')
-      .lean()
-      .exec(),
-      
-      // ADDED: Fetch tracking sessions for duty hour calculations
+        .select('employeeId date attendanceStatus attendanceReason attendenceCreated')
+        .lean()
+        .exec(),
+
+      // Fetch tracking sessions for duty hour calculations
       TrackingSession.find({
         employeeId: { $in: employeeIds },
-        startTime: { 
-          $gte: start.toISOString(), 
-          $lte: end.toISOString() 
+        startTime: {
+          $gte: start.toISOString(),
+          $lte: end.toISOString()
         }
       })
-      .select('employeeId startTime endTime startLocation endLocation status duration')
-      .lean()
-      .exec()
+        .select('employeeId startTime endTime startLocation endLocation status duration')
+        .lean()
+        .exec()
     ]);
 
-    console.log(`📈 Fetched ${meetingsForEmployees.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
+    console.log(`📈 Fetched ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
 
     // STEP 9: Group data for quick access
-    const meetingsByEmployee = new Map();
-    meetingsForEmployees.forEach(meeting => {
-      if (!meetingsByEmployee.has(meeting.employeeId)) {
-        meetingsByEmployee.set(meeting.employeeId, []);
+    // Group ALL meetings by employee
+    const allMeetingsByEmployee = new Map();
+    allEmployeeMeetings.forEach(meeting => {
+      if (!allMeetingsByEmployee.has(meeting.employeeId)) {
+        allMeetingsByEmployee.set(meeting.employeeId, []);
       }
-      meetingsByEmployee.get(meeting.employeeId).push(meeting);
+      allMeetingsByEmployee.get(meeting.employeeId).push(meeting);
     });
 
+    // Group attendance by employee-date
     const attendanceByEmployee = new Map();
     attendanceForEmployees.forEach(att => {
       const key = `${att.employeeId}-${att.date}`;
       attendanceByEmployee.set(key, att);
     });
 
-    // ADDED: Group tracking sessions by employee and date
+    // Group tracking sessions by employee and date
     const sessionsByEmployeeDate = new Map();
     trackingSessionsForEmployees.forEach(session => {
-      const dateStr = format(new Date(session.startTime), "yyyy-MM-dd");
-      const key = `${session.employeeId}-${dateStr}`;
-      if (!sessionsByEmployeeDate.has(key)) {
-        sessionsByEmployeeDate.set(key, []);
+      try {
+        const dateStr = format(new Date(session.startTime), "yyyy-MM-dd");
+        const key = `${session.employeeId}-${dateStr}`;
+        if (!sessionsByEmployeeDate.has(key)) {
+          sessionsByEmployeeDate.set(key, []);
+        }
+        sessionsByEmployeeDate.get(key).push(session);
+      } catch (error) {
+        console.error('Error processing tracking session date:', error);
       }
-      sessionsByEmployeeDate.get(key).push(session);
+    });
+
+    // Create user map for quick lookups
+    const userMap = new Map();
+    externalUsers.forEach(user => {
+      userMap.set(user._id, user);
     });
 
     // STEP 10: Build response with data
     const allEmployeesData = paginatedEmployees.map((employee) => {
       const employeeId = employee.userId || employee.id;
-      const meetings = meetingsByEmployee.get(employeeId) || [];
-      
-      // Group meetings by date
+      const allMeetings = allMeetingsByEmployee.get(employeeId) || [];
+
+      // Group ALL meetings by date for this employee
       const meetingsByDate = new Map();
-      meetings.forEach(meeting => {
+      allMeetings.forEach(meeting => {
         try {
           if (meeting.startTime) {
             const dateStr = format(new Date(meeting.startTime), "yyyy-MM-dd");
@@ -1253,16 +1325,16 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         }
       });
 
-      // Get recent dates (max 3 for performance)
-      const recentDates = Array.from(meetingsByDate.keys())
+      // Get all unique dates from ALL meetings
+      const allDates = Array.from(meetingsByDate.keys())
         .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-        .slice(0, 3);
+        .slice(0, 10); // Limit to 10 most recent days for performance
 
-      // Generate day records WITH PROPER CALCULATIONS
-      const dayRecords = recentDates.map(dateStr => {
+      // Generate day records from ALL meetings
+      const dayRecords = allDates.map(dateStr => {
         const dateMeetings = meetingsByDate.get(dateStr) || [];
         const totalMeetings = dateMeetings.length;
-        
+
         // Get first and last meeting
         let firstMeeting = null;
         let lastMeeting = null;
@@ -1275,7 +1347,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
             }
           });
           firstMeeting = sorted[0];
-          lastMeeting = sorted[sorted.length - 1];
+          lastMeeting = sorted[sortedMeetings.length - 1];
         }
 
         // Calculate meeting time (sum of all meeting durations)
@@ -1295,38 +1367,50 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           }
         });
 
-        // Calculate total duty hours from tracking sessions if available
+        // Calculate total duty hours from first meeting start to last meeting end
         let totalDutyHours = 0;
-        const sessionKey = `${employeeId}-${dateStr}`;
-        const dateSessions = sessionsByEmployeeDate.get(sessionKey) || [];
-        
-        if (dateSessions.length > 0) {
-          // Calculate from tracking sessions
-          dateSessions.forEach(session => {
-            if (session.startTime && session.endTime) {
-              try {
-                const start = new Date(session.startTime);
-                const end = new Date(session.endTime);
-                const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-                if (durationHours > 0) {
-                  totalDutyHours += durationHours;
-                }
-              } catch (error) {
-                // Skip invalid dates
-              }
-            }
-          });
-        } else if (firstMeeting && lastMeeting?.endTime) {
-          // Fallback: calculate from first to last meeting
+        if (firstMeeting?.startTime && lastMeeting?.endTime) {
           try {
             const dutyStart = new Date(firstMeeting.startTime);
             const dutyEnd = new Date(lastMeeting.endTime);
             totalDutyHours = Math.max(0, (dutyEnd.getTime() - dutyStart.getTime()) / (1000 * 60 * 60));
           } catch (error) {
-            totalDutyHours = 8; // Default fallback
+            console.error(`Error calculating duty hours for ${employeeId} on ${dateStr}:`, error);
+            totalDutyHours = 0;
           }
-        } else {
-          totalDutyHours = 8; // Default
+        } else if (firstMeeting?.startTime) {
+          // Only start time available (ongoing meeting)
+          try {
+            const dutyStart = new Date(firstMeeting.startTime);
+            const now = new Date();
+            totalDutyHours = Math.max(0, (now.getTime() - dutyStart.getTime()) / (1000 * 60 * 60));
+          } catch (error) {
+            totalDutyHours = 0;
+          }
+        }
+
+        // Use tracking sessions data if available and if no meetings exist
+        if (totalDutyHours === 0) {
+          const sessionKey = `${employeeId}-${dateStr}`;
+          const dateSessions = sessionsByEmployeeDate.get(sessionKey) || [];
+
+          if (dateSessions.length > 0) {
+            // Calculate from tracking sessions as fallback
+            dateSessions.forEach(session => {
+              if (session.startTime && session.endTime) {
+                try {
+                  const start = new Date(session.startTime);
+                  const end = new Date(session.endTime);
+                  const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+                  if (durationHours > 0) {
+                    totalDutyHours += durationHours;
+                  }
+                } catch (error) {
+                  // Skip invalid dates
+                }
+              }
+            });
+          }
         }
 
         // Calculate travel and lunch time
@@ -1346,13 +1430,14 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
           meetingTime: parseFloat(meetingTime.toFixed(2)),
           travelAndLunchTime: parseFloat(travelAndLunchTime.toFixed(2)),
-          attendanceAddedBy: attendance?.attendenceCreated ? 
+          attendanceAddedBy: attendance?.attendenceCreated ?
             (userMap.get(attendance.attendenceCreated)?.name || attendance.attendenceCreated) : "Auto"
         };
       });
 
-      // Generate meeting records (max 3 for performance)
-      const meetingRecords = meetings.slice(0, 3).map(meeting => {
+      // Generate meeting records from most recent meetings (max 3)
+      const recentMeetings = allMeetings.slice(0, 3);
+      const meetingRecords = recentMeetings.map(meeting => {
         // Calculate individual meeting duration
         let totalStayTime = 0;
         if (meeting.startTime && meeting.endTime) {
@@ -1364,7 +1449,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
             totalStayTime = 0;
           }
         }
-        
+
         return {
           employeeName: employee.name,
           companyName: meeting.clientName || "Unknown Company",
@@ -1381,18 +1466,18 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           approvalStatus: meeting.approvalStatus,
           approvalReason: meeting.approvalReason,
           approvedBy: meeting.approvedBy,
-          approvedByName: meeting.approvedBy ? 
+          approvedByName: meeting.approvedBy ?
             (userMap.get(meeting.approvedBy)?.name || meeting.approvedBy) : undefined,
           attachments: meeting.meetingDetails?.attachments || [],
         };
       });
 
-      // Calculate summary with total meeting hours
-      const totalMeetings = meetings.length;
+      // Calculate summary from ALL meetings
+      const totalMeetings = allMeetings.length;
       const uniqueDates = new Set();
       let totalMeetingHours = 0;
-      
-      meetings.forEach(m => {
+
+      allMeetings.forEach(m => {
         if (m.startTime) {
           try {
             uniqueDates.add(format(new Date(m.startTime), "yyyy-MM-dd"));
@@ -1407,7 +1492,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           }
         }
       });
-      
+
       const daysWithMeetings = uniqueDates.size;
 
       return {
@@ -1422,7 +1507,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         status: employee.status,
         summary: {
           totalMeetings,
-          totalMeetingHours: parseFloat(totalMeetingHours.toFixed(2)), // ADDED: Proper calculation
+          totalMeetingHours: parseFloat(totalMeetingHours.toFixed(2)),
           daysWithMeetings,
           avgMeetingsPerDay: daysWithMeetings > 0 ? parseFloat((totalMeetings / daysWithMeetings).toFixed(2)) : 0,
         },
@@ -1465,9 +1550,9 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error("Error fetching all employees details:", error);
     console.error("Error stack:", error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to fetch all employees details",
-      message: error.message 
+      message: error.message
     });
   }
 };
