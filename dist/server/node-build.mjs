@@ -64,9 +64,12 @@ class Database {
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
         maxPoolSize: 50,
-        // Increased connection pool
-        serverSelectionTimeoutMS: 1e4,
-        socketTimeoutMS: 45e3,
+        serverSelectionTimeoutMS: 3e4,
+        // 30s → cluster select
+        socketTimeoutMS: 12e4,
+        // 2 min → slow queries
+        connectTimeoutMS: 3e4,
+        // 30s initial connect
         retryWrites: true,
         retryReads: true
       });
@@ -3225,17 +3228,16 @@ const getAllEmployeesDetails = async (req, res) => {
     console.log(`📅 Found ${allEmployeeMeetings.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
     const employeesWithActivity = /* @__PURE__ */ new Set();
     allEmployeeMeetings.forEach((meeting) => {
-      employeesWithActivity.add(meeting.employeeId);
+      employeesWithActivity.add(meeting.employeeId.toString());
     });
     attendanceForEmployees.forEach((attendance) => {
-      employeesWithActivity.add(attendance.employeeId);
+      employeesWithActivity.add(attendance.employeeId.toString());
     });
     trackingSessionsForEmployees.forEach((session) => {
-      employeesWithActivity.add(session.employeeId);
+      employeesWithActivity.add(session.employeeId.toString());
     });
-    console.log(`👥 ${employeesWithActivity.size} employees have activity data in the selected date range`);
     const employeesWithData = allEmployees.filter(
-      (emp) => employeesWithActivity.has(emp.userId || emp.id)
+      (emp) => employeesWithActivity.has((emp.userId || emp.id).toString())
     );
     console.log(`Filtered to ${employeesWithData.length} employees with data`);
     if (employeesWithData.length === 0) {

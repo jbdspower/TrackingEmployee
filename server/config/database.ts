@@ -40,13 +40,15 @@ class Database {
       console.log('🔄 Database: Connecting to MongoDB...');
       
       await mongoose.connect(dbConfig.MONGODB_URI, {
-        dbName: dbConfig.DB_NAME,
-        maxPoolSize: 50, // Increased connection pool
-        serverSelectionTimeoutMS: 10000,
-        socketTimeoutMS: 45000,
-        retryWrites: true,
-        retryReads: true,
-      });
+  dbName: dbConfig.DB_NAME,
+  maxPoolSize: 50,
+  serverSelectionTimeoutMS: 30000, // 30s → cluster select
+  socketTimeoutMS: 120000,         // 2 min → slow queries
+  connectTimeoutMS: 30000,         // 30s initial connect
+  retryWrites: true,
+  retryReads: true,
+});
+
 
       this.isConnected = true;
       console.log('✅ Database: Successfully connected to MongoDB');

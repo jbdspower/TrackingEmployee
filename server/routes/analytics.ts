@@ -1279,30 +1279,28 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
     console.log(`📅 Found ${allEmployeeMeetings.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
 
-    // STEP 6: Identify which employees have activity data
-    const employeesWithActivity = new Set();
-    
-    // Add employees with meetings
-    allEmployeeMeetings.forEach(meeting => {
-      employeesWithActivity.add(meeting.employeeId);
-    });
-    
-    // Add employees with attendance
-    attendanceForEmployees.forEach(attendance => {
-      employeesWithActivity.add(attendance.employeeId);
-    });
-    
-    // Add employees with tracking sessions
-    trackingSessionsForEmployees.forEach(session => {
-      employeesWithActivity.add(session.employeeId);
-    });
 
-    console.log(`👥 ${employeesWithActivity.size} employees have activity data in the selected date range`);
 
-    // STEP 7: Filter employees to only those with activity
-    const employeesWithData = allEmployees.filter(emp => 
-      employeesWithActivity.has(emp.userId || emp.id)
-    );
+// Convert ObjectId to string when adding to Set
+const employeesWithActivity = new Set<string>();
+
+allEmployeeMeetings.forEach(meeting => {
+  employeesWithActivity.add(meeting.employeeId.toString());
+});
+
+attendanceForEmployees.forEach(attendance => {
+  employeesWithActivity.add(attendance.employeeId.toString());
+});
+
+trackingSessionsForEmployees.forEach(session => {
+  employeesWithActivity.add(session.employeeId.toString());
+});
+
+// Filter using string comparison
+const employeesWithData = allEmployees.filter(emp => 
+  employeesWithActivity.has((emp.userId || emp.id).toString())
+);
+
 
     console.log(`Filtered to ${employeesWithData.length} employees with data`);
 
