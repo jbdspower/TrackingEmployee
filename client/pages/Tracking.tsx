@@ -48,6 +48,14 @@ interface TodayMeetingDetail {
 }
 
 export default function Tracking() {
+  // Add this inside your Tracking component, after the helper functions
+  useEffect(() => {
+    console.log("📱 Device Detection:", {
+      isMobile: isMobileDevice(),
+      userAgent: navigator.userAgent,
+      platform: navigator.platform
+    });
+  }, []);
   const navigate = useNavigate();
   const { employeeId } = useParams<{ employeeId: string }>();
   const { toast } = useToast();
@@ -68,40 +76,128 @@ export default function Tracking() {
   const [isDutyCompletedModalOpen, setIsDutyCompletedModalOpen] = useState(false);
   const [todaysMeetingDetails, setTodaysMeetingDetails] = useState<TodayMeetingDetail[]>([]);
   const [loadingTodaysData, setLoadingTodaysData] = useState(false);
+  // Add this with your other useState declarations
+  const [cachedLocation, setCachedLocation] = useState<GeolocationPosition | null>(null);
 
+  // Add these helper functions after imports but before the component definition
+  const isMobileDevice = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  };
 
-const handleDutyCompletedClick = async () => {
-  console.log("📋 Opening Duty Completed modal");
-  setIsDutyCompletedModalOpen(true);
-  setLoadingTodaysData(true);
-  
-  try {
-    // Get today's date range for filtering
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    console.log("📅 Fetching meetings for date range:", {
-      start: today.toISOString(),
-      end: tomorrow.toISOString()
-    });
+  const getAdaptiveLocationSettings = (retryCount = 0) => {
+    const isMobile = isMobileDevice();
+    const baseTimeout = isMobile ? 15000 : 10000;
+    const timeoutDuration = baseTimeout + (retryCount * (isMobile ? 5000 : 3000));
 
-    // Try the new dedicated endpoint first
-    let response;
+    return {
+      enableHighAccuracy: isMobile,
+      maximumAge: isMobile ? 0 : 30000,
+      timeout: timeoutDuration,
+    };
+  };
+
+  const getAddressFromCoords = async (lat: number, lng: number) => {
+    const isMobile = isMobileDevice();
+
+    // Quick return for desktop to avoid slow API calls
+    if (!isMobile) {
+      return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+
+    // Mobile: Use full address lookup
     try {
-      response = await HttpClient.get(`/api/meetings/today?employeeId=${employeeId}`);
-      
+      const addressResponse = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        {
+          headers: { 'User-Agent': 'EmployeeTrackingApp/1.0' }
+        }
+      );
+
+      if (addressResponse.ok) {
+        const addressData = await addressResponse.json();
+        return addressData.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      }
+    } catch (error) {
+      console.warn("Address lookup failed:", error);
+    }
+
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  };
+
+  const handleDutyCompletedClick = async () => {
+    console.log("📋 Opening Duty Completed modal");
+    setIsDutyCompletedModalOpen(true);
+    setLoadingTodaysData(true);
+
+    try {
+      // Get today's date range for filtering
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      console.log("📅 Fetching meetings for date range:", {
+        start: today.toISOString(),
+        end: tomorrow.toISOString()
+      });
+
+      // Try the new dedicated endpoint first
+      let response;
+      try {
+        response = await HttpClient.get(`/api/meetings/today?employeeId=${employeeId}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log("📊 Today's meetings data from dedicated endpoint:", data);
+
+          // Transform the data for the modal
+          const transformedData: TodayMeetingDetail[] = data.meetings.map((meeting: any, index: number) => {
+            const duration = meeting.startTime && meeting.endTime
+              ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
+              : 0;
+
+            return {
+              serialNumber: index + 1,
+              companyName: meeting.clientName || "Unknown",
+              attendanceStatus: "", // Empty since we'll show only in total row
+              totalDutyHours: duration
+            };
+          });
+
+          setTodaysMeetingDetails(transformedData);
+
+          // Show success toast with summary
+          toast({
+            title: "Today's Summary Loaded",
+            description: `${data.summary.totalMeetings} meetings, ${data.summary.totalDutyHours} hours total`,
+          });
+          return; // Success, exit early
+        }
+      } catch (dedicatedEndpointError) {
+        console.warn("📡 Dedicated endpoint failed, falling back to existing API:", dedicatedEndpointError);
+      }
+
+      // Fallback: Use existing meetings API with date filtering
+      console.log("📡 Using existing meetings API with date filtering...");
+      response = await HttpClient.get(
+        `/api/meetings?employeeId=${employeeId}&startDate=${today.toISOString()}&endDate=${tomorrow.toISOString()}&limit=50`
+      );
+
       if (response.ok) {
         const data = await response.json();
-        console.log("📊 Today's meetings data from dedicated endpoint:", data);
-        
-        // Transform the data for the modal
-        const transformedData: TodayMeetingDetail[] = data.meetings.map((meeting: any, index: number) => {
-          const duration = meeting.startTime && meeting.endTime 
+        console.log("📊 Meetings data from existing API:", data);
+
+        // Filter and transform the data for today only
+        const todaysMeetings = data.meetings.filter((meeting: any) => {
+          const meetingDate = new Date(meeting.startTime);
+          return meetingDate >= today && meetingDate < tomorrow;
+        });
+
+        const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting: any, index: number) => {
+          const duration = meeting.startTime && meeting.endTime
             ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
             : 0;
-            
+
           return {
             serialNumber: index + 1,
             companyName: meeting.clientName || "Unknown",
@@ -109,99 +205,57 @@ const handleDutyCompletedClick = async () => {
             totalDutyHours: duration
           };
         });
-        
+
         setTodaysMeetingDetails(transformedData);
-        
-        // Show success toast with summary
+
+        // Calculate summary manually
+        const completedMeetings = todaysMeetings.filter((m: any) => m.status === 'completed' && m.endTime);
+        const totalHours = transformedData.reduce((sum, meeting) => sum + (meeting.totalDutyHours || 0), 0);
+
         toast({
           title: "Today's Summary Loaded",
-          description: `${data.summary.totalMeetings} meetings, ${data.summary.totalDutyHours} hours total`,
+          description: `${todaysMeetings.length} meetings, ${totalHours.toFixed(1)} hours total`,
         });
-        return; // Success, exit early
+      } else {
+        console.error("Failed to fetch meetings from existing API:", response.status);
+        throw new Error(`API returned ${response.status}`);
       }
-    } catch (dedicatedEndpointError) {
-      console.warn("📡 Dedicated endpoint failed, falling back to existing API:", dedicatedEndpointError);
-    }
 
-    // Fallback: Use existing meetings API with date filtering
-    console.log("📡 Using existing meetings API with date filtering...");
-    response = await HttpClient.get(
-      `/api/meetings?employeeId=${employeeId}&startDate=${today.toISOString()}&endDate=${tomorrow.toISOString()}&limit=50`
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log("📊 Meetings data from existing API:", data);
-      
-      // Filter and transform the data for today only
-      const todaysMeetings = data.meetings.filter((meeting: any) => {
+    } catch (error) {
+      console.error("Error fetching today's meetings:", error);
+      toast({
+        title: "Error Loading Data",
+        description: "Failed to load today's meeting data. Using cached data.",
+        variant: "destructive",
+      });
+
+      // Final fallback: Use existing meetings data from state
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const todaysMeetings = meetings.filter(meeting => {
         const meetingDate = new Date(meeting.startTime);
         return meetingDate >= today && meetingDate < tomorrow;
       });
-      
-      const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting: any, index: number) => {
-        const duration = meeting.startTime && meeting.endTime 
-          ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
-          : 0;
-          
+
+      const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting, index) => {
         return {
           serialNumber: index + 1,
           companyName: meeting.clientName || "Unknown",
-          attendanceStatus: "", // Empty since we'll show only in total row
-          totalDutyHours: duration
+          attendanceStatus: "",
+          totalDutyHours: meeting.startTime && meeting.endTime
+            ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
+            : 0
         };
       });
-      
+
       setTodaysMeetingDetails(transformedData);
-      
-      // Calculate summary manually
-      const completedMeetings = todaysMeetings.filter((m: any) => m.status === 'completed' && m.endTime);
-      const totalHours = transformedData.reduce((sum, meeting) => sum + (meeting.totalDutyHours || 0), 0);
-      
-      toast({
-        title: "Today's Summary Loaded",
-        description: `${todaysMeetings.length} meetings, ${totalHours.toFixed(1)} hours total`,
-      });
-    } else {
-      console.error("Failed to fetch meetings from existing API:", response.status);
-      throw new Error(`API returned ${response.status}`);
+    } finally {
+      setLoadingTodaysData(false);
     }
-    
-  } catch (error) {
-    console.error("Error fetching today's meetings:", error);
-    toast({
-      title: "Error Loading Data",
-      description: "Failed to load today's meeting data. Using cached data.",
-      variant: "destructive",
-    });
-    
-    // Final fallback: Use existing meetings data from state
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const todaysMeetings = meetings.filter(meeting => {
-      const meetingDate = new Date(meeting.startTime);
-      return meetingDate >= today && meetingDate < tomorrow;
-    });
-    
-    const transformedData: TodayMeetingDetail[] = todaysMeetings.map((meeting, index) => {
-      return {
-        serialNumber: index + 1,
-        companyName: meeting.clientName || "Unknown",
-        attendanceStatus: "",
-        totalDutyHours: meeting.startTime && meeting.endTime 
-          ? Math.floor((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60 * 60) * 10) / 10
-          : 0
-      };
-    });
-    
-    setTodaysMeetingDetails(transformedData);
-  } finally {
-    setLoadingTodaysData(false);
-  }
-};
+  };
 
   // Debug: Log startedMeetingMap changes
   useEffect(() => {
@@ -844,9 +898,12 @@ const handleDutyCompletedClick = async () => {
 
           // Show loading toast on first attempt
           if (retryCount === 0) {
+            const isMobile = isMobileDevice();
             toast({
-              title: "Getting Location",
-              description: "Please wait while we fetch your current location...",
+              title: isMobile ? "Getting GPS Location..." : "Approximating Location...",
+              description: isMobile
+                ? "Using GPS for precise location"
+                : "Using network-based location (faster)",
             });
           }
 
@@ -896,24 +953,14 @@ const handleDutyCompletedClick = async () => {
           let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
 
           // Get human-readable address from coordinates
+          // Get address (optimized for desktop/mobile)
           try {
-            console.log("🗺️ Fetching address for meeting end location...");
-            const addressResponse = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-              {
-                headers: {
-                  'User-Agent': 'EmployeeTrackingApp/1.0'
-                }
-              }
-            );
-
-            if (addressResponse.ok) {
-              const addressData = await addressResponse.json();
-              address = addressData.display_name || address;
-              console.log("✅ Meeting end address resolved:", address);
-            }
+            console.log("🗺️ Fetching address...");
+            address = await getAddressFromCoords(position.coords.latitude, position.coords.longitude);
+            console.log("✅ Address resolved:", address);
           } catch (addressError) {
             console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+            address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
           }
 
           endLocation = {
@@ -934,13 +981,16 @@ const handleDutyCompletedClick = async () => {
           retryCount++;
           console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
 
+          const isMobile = isMobileDevice();
+          const maxRetries = isMobile ? 3 : 1; // Desktop: only 1 retry
+
           if (retryCount < maxRetries) {
             // Retry with user feedback
             toast({
               title: "Retrying Location",
-              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+              description: `Attempt ${retryCount + 1}/${maxRetries}. ${isMobile ? 'Ensure GPS is enabled' : 'Checking network location...'}`,
             });
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+            await new Promise(resolve => setTimeout(resolve, isMobile ? 1000 : 500)); // Shorter wait for desktop
           } else {
             // All retries exhausted
             const errorMessage = locationError instanceof GeolocationPositionError
@@ -997,13 +1047,22 @@ const handleDutyCompletedClick = async () => {
 
       // 🔹 CRITICAL FIX: Use the exact end time captured when user clicked submit
       const updatePayload = {
-        status: "completed",
-        endTime: exactEndTime, // Use captured time, not new Date().toISOString()
-        meetingDetails,
-        endLocation, // Include end location
-        // 🔹 CRITICAL: Do NOT include startTime in the update payload
-        // The backend should preserve the original startTime from when the meeting was created
-      };
+  status: "completed",
+  endTime: exactEndTime,
+  meetingDetails,
+
+  // ✅ FIX: write endLocation in correct schema
+  location: {
+    ...currentMeeting.location,
+    endLocation: {
+      lat: endLocation.lat,
+      lng: endLocation.lng,
+      address: endLocation.address,
+      timestamp: endLocation.timestamp,
+    },
+  },
+};
+
 
       console.log("📤 Update payload (preserving original startTime):", updatePayload);
 
@@ -1222,9 +1281,12 @@ const handleDutyCompletedClick = async () => {
 
           // Show loading toast on first attempt
           if (retryCount === 0) {
+            const isMobile = isMobileDevice();
             toast({
-              title: "Getting Location",
-              description: "Please wait while we fetch your current location...",
+              title: isMobile ? "Getting GPS Location..." : "Approximating Location...",
+              description: isMobile
+                ? "Using GPS for precise location"
+                : "Using network-based location (faster)",
             });
           }
 
@@ -1256,42 +1318,61 @@ const handleDutyCompletedClick = async () => {
             }
           }
 
-          // Attempt to get fresh location with increased timeout
-          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
+          // Check cache first for desktop
+          let position: GeolocationPosition;
+          const isMobile = isMobileDevice();
 
-            navigator.geolocation.getCurrentPosition(
-              resolve,
-              reject,
-              {
-                enableHighAccuracy: true,
-                maximumAge: 0,
-                timeout: timeoutDuration,
-              }
-            );
-          });
+          if (!isMobile && cachedLocation) {
+            const age = Date.now() - cachedLocation.timestamp;
+            if (age < 120000) { // 2 minutes
+              console.log("📱 Using cached location for desktop start meeting");
+              position = cachedLocation;
+
+              toast({
+                title: "Using Recent Location",
+                description: "Using location from 2 minutes ago (desktop optimization)",
+              });
+            } else {
+              // Cache expired, get fresh location
+              position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                const settings = getAdaptiveLocationSettings(retryCount);
+                console.log("Desktop location settings:", settings);
+
+                navigator.geolocation.getCurrentPosition(
+                  resolve,
+                  reject,
+                  settings
+                );
+              });
+
+              // Update cache
+              setCachedLocation(position);
+            }
+          } else {
+            // Mobile: Always get fresh location
+            position = await new Promise<GeolocationPosition>((resolve, reject) => {
+              const settings = getAdaptiveLocationSettings(retryCount);
+              console.log("Mobile location settings:", settings);
+
+              navigator.geolocation.getCurrentPosition(
+                resolve,
+                reject,
+                settings
+              );
+            });
+          }
 
           let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
 
           // Get human-readable address from coordinates
+          // Get address (optimized for desktop/mobile)
           try {
-            console.log("🗺️ Fetching address for meeting start location...");
-            const addressResponse = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-              {
-                headers: {
-                  'User-Agent': 'EmployeeTrackingApp/1.0'
-                }
-              }
-            );
-
-            if (addressResponse.ok) {
-              const addressData = await addressResponse.json();
-              address = addressData.display_name || address;
-              console.log("✅ Meeting start address resolved:", address);
-            }
+            console.log("🗺️ Fetching address...");
+            address = await getAddressFromCoords(position.coords.latitude, position.coords.longitude);
+            console.log("✅ Address resolved:", address);
           } catch (addressError) {
             console.warn("⚠️ Failed to get address, using coordinates:", addressError);
+            address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
           }
 
           startLocation = {
@@ -1311,13 +1392,16 @@ const handleDutyCompletedClick = async () => {
           retryCount++;
           console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
 
+          const isMobile = isMobileDevice();
+          const maxRetries = isMobile ? 3 : 1; // Desktop: only 1 retry
+
           if (retryCount < maxRetries) {
             // Retry with user feedback
             toast({
               title: "Retrying Location",
-              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
+              description: `Attempt ${retryCount + 1}/${maxRetries}. ${isMobile ? 'Ensure GPS is enabled' : 'Checking network location...'}`,
             });
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+            await new Promise(resolve => setTimeout(resolve, isMobile ? 1000 : 500)); // Shorter wait for desktop
           } else {
             // All retries exhausted
             const errorMessage = locationError instanceof GeolocationPositionError
@@ -1423,320 +1507,331 @@ const handleDutyCompletedClick = async () => {
     }
   };
 
-  const startMeetingFromFollowUp = async (
-    meetingData: {
-      clientName: string;
-      reason: string;
-      notes: string;
-      leadId?: string;
-      leadInfo?: {
-        id: string;
-        companyName: string;
-        contactName: string;
-      };
-    },
-    followUpId: string
-  ) => {
-    if (!employee) return;
+const startMeetingFromFollowUp = async (
+  meetingData: {
+    clientName: string;
+    reason: string;
+    notes: string;
+    leadId?: string;
+    leadInfo?: {
+      id: string;
+      companyName: string;
+      contactName: string;
+    };
+  },
+  followUpId: string
+) => {
+  if (!employee) return;
 
-    // 🔹 CRITICAL FIX: Capture the exact start time when user clicks "Start Meeting"
-    const exactStartTime = new Date().toISOString();
-    console.log("⏰ Follow-up meeting start time captured:", exactStartTime);
+  // 🔹 CRITICAL FIX: Capture the exact start time when user clicks "Start Meeting"
+  const exactStartTime = new Date().toISOString();
+  console.log("⏰ Follow-up meeting start time captured:", exactStartTime);
 
-    setIsStartingMeeting(true);
-    try {
-      // Find and store the full follow-up data before starting the meeting
-      const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
-      console.log("📋 Storing follow-up data for meeting:", followUpData);
+  setIsStartingMeeting(true);
+  try {
+    // Find and store the full follow-up data before starting the meeting
+    const followUpData = todaysFollowUpMeetings.find(m => m._id === followUpId);
+    console.log("📋 Storing follow-up data for meeting:", followUpData);
 
-      // 🔹 MANDATORY: Get fresh location with retry logic
-      let startLocation = null;
-      const maxRetries = 3;
-      let retryCount = 0;
+    // 🔹 OPTIMIZED: Get location with adaptive settings
+    let startLocation = null;
+    const isMobile = isMobileDevice();
+    const maxRetries = isMobile ? 3 : 1; // Desktop: only 1 retry
+    let retryCount = 0;
 
-      while (retryCount < maxRetries && !startLocation) {
-        try {
-          console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
+    while (retryCount < maxRetries && !startLocation) {
+      try {
+        console.log(`📍 Attempt ${retryCount + 1}/${maxRetries}: Fetching location for meeting start...`);
 
-          // Show loading toast on first attempt
-          if (retryCount === 0) {
-            toast({
-              title: "Getting Location",
-              description: "Please wait while we fetch your current location...",
-            });
-          }
-
-          // Check if geolocation is supported
-          if (!navigator.geolocation) {
-            throw new Error("Geolocation is not supported by your browser");
-          }
-
-          // Check permission status
-          if (navigator.permissions) {
-            const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-            console.log("Location permission status:", permissionStatus.state);
-
-            if (permissionStatus.state === 'denied') {
-              toast({
-                title: "Location Permission Denied",
-                description: "Please enable location access in your browser settings and try again.",
-                variant: "destructive",
-              });
-              setIsStartingMeeting(false);
-              return;
-            }
-
-            if (permissionStatus.state === 'prompt') {
-              toast({
-                title: "Location Permission Required",
-                description: "Please allow location access when prompted.",
-              });
-            }
-          }
-
-          // Attempt to get fresh location with increased timeout
-          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            const timeoutDuration = 15000 + (retryCount * 5000); // Increase timeout with each retry
-
-            navigator.geolocation.getCurrentPosition(
-              resolve,
-              reject,
-              {
-                enableHighAccuracy: true,
-                maximumAge: 0,
-                timeout: timeoutDuration,
-              }
-            );
-          });
-
-          let address = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-
-          // Get human-readable address from coordinates
-          try {
-            console.log("🗺️ Fetching address for meeting start location...");
-            const addressResponse = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`,
-              {
-                headers: {
-                  'User-Agent': 'EmployeeTrackingApp/1.0'
-                }
-              }
-            );
-
-            if (addressResponse.ok) {
-              const addressData = await addressResponse.json();
-              address = addressData.display_name || address;
-              console.log("✅ Meeting start address resolved:", address);
-            }
-          } catch (addressError) {
-            console.warn("⚠️ Failed to get address, using coordinates:", addressError);
-          }
-
-          startLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            address: address,
-          };
-          console.log("✅ Fresh start location obtained:", startLocation);
-
-          // Success - show confirmation
+        // Show appropriate loading toast
+        if (retryCount === 0) {
           toast({
-            title: "Location Obtained",
-            description: "Starting meeting...",
+            title: isMobile ? "Getting GPS Location..." : "Approximating Location...",
+            description: isMobile 
+              ? "Using GPS for precise location" 
+              : "Using network-based location (faster)",
           });
+        }
 
-        } catch (locationError) {
-          retryCount++;
-          console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+        // Check if geolocation is supported
+        if (!navigator.geolocation) {
+          throw new Error("Geolocation is not supported by your browser");
+        }
 
-          if (retryCount < maxRetries) {
-            // Retry with user feedback
+        // Check permission status
+        if (navigator.permissions) {
+          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+          console.log("Location permission status:", permissionStatus.state);
+
+          if (permissionStatus.state === 'denied') {
             toast({
-              title: "Retrying Location",
-              description: `Attempt ${retryCount + 1}/${maxRetries}. Please ensure location is enabled...`,
-            });
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
-          } else {
-            // All retries exhausted
-            const errorMessage = locationError instanceof GeolocationPositionError
-              ? locationError.code === 1
-                ? "Location permission denied. Please enable location in your browser settings."
-                : locationError.code === 2
-                  ? "Unable to determine your location. Please check your device's location settings."
-                  : "Location request timed out. Please ensure location services are enabled and try again."
-              : "Failed to access location. Please check your location settings and try again.";
-
-            toast({
-              title: "Location Required",
-              description: errorMessage,
+              title: "Location Permission Denied",
+              description: "Please enable location access in your browser settings and try again.",
               variant: "destructive",
             });
             setIsStartingMeeting(false);
             return;
           }
-        }
-      }
 
-      // Final check - ensure we have location
-      if (!startLocation) {
-        toast({
-          title: "Location Required",
-          description: "Unable to get your location after multiple attempts. Please check your settings.",
-          variant: "destructive",
-        });
-        setIsStartingMeeting(false);
-        return;
-      }
-
-      console.log("🚀 Creating follow-up meeting with payload:", {
-        employeeId: employee.id,
-        location: startLocation,
-        clientName: meetingData.clientName,
-        notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
-        leadId: meetingData.leadId,
-        leadInfo: meetingData.leadInfo,
-        followUpId: followUpId,
-        externalMeetingStatus: "meeting on-going"
-      });
-
-      const response = await HttpClient.post("/api/meetings", {
-        employeeId: employee.id,
-        location: startLocation,
-        clientName: meetingData.clientName,
-        notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
-        leadId: meetingData.leadId,
-        leadInfo: meetingData.leadInfo,
-        followUpId: followUpId, // 🔹 Store the follow-up meeting ID
-        externalMeetingStatus: "meeting on-going", // Initial status from external API
-        startTime: exactStartTime, // 🔹 CRITICAL: Send the exact time when user clicked start
-      });
-
-      if (response.ok) {
-        const createdMeeting = await response.json();
-
-        console.log("✅ Follow-up meeting created successfully:", {
-          id: createdMeeting.id,
-          clientName: createdMeeting.clientName,
-          status: createdMeeting.status,
-          startTime: createdMeeting.startTime,
-          location: createdMeeting.location,
-          followUpId: createdMeeting.followUpId
-        });
-
-        // 🔹 CRITICAL: Ensure the meeting has the correct structure for display
-        const meetingForState = {
-          ...createdMeeting,
-          status: "in-progress", // Ensure status is set correctly
-          startTime: createdMeeting.startTime || new Date().toISOString(),
-          location: {
-            ...createdMeeting.location,
-            address: createdMeeting.location.address || startLocation.address
+          if (permissionStatus.state === 'prompt') {
+            toast({
+              title: "Location Permission Required",
+              description: "Please allow location access when prompted.",
+            });
           }
-        };
-
-        // IMMEDIATELY add the meeting to the local state to prevent race conditions
-        setMeetings(prev => {
-          console.log("📝 Adding follow-up meeting to state:", meetingForState.id);
-          console.log("📝 Meeting details for state:", {
-            id: meetingForState.id,
-            clientName: meetingForState.clientName,
-            status: meetingForState.status,
-            startTime: meetingForState.startTime,
-            location: meetingForState.location
-          });
-          return [meetingForState, ...prev];
-        });
-
-        // Track the mapping of follow-up ID to created meeting ID
-        setStartedMeetingMap(prev => {
-          const newMap = {
-            ...prev,
-            [followUpId]: createdMeeting.id
-          };
-          console.log("🗺️ Updated startedMeetingMap:", newMap);
-          return newMap;
-        });
-
-        // Store the follow-up data mapped by meeting ID for later retrieval
-        if (followUpData) {
-          setFollowUpDataMap(prev => ({
-            ...prev,
-            [createdMeeting.id]: followUpData
-          }));
-          console.log("✅ Stored follow-up data for meeting ID:", createdMeeting.id);
         }
 
-        // Notify backend/external API that follow-up meeting has started (meeting on-going)
-        try {
-          const resp = await fetch(
-            `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
-            {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                meetingStatus: "meeting on-going",
-              }),
-            }
-          );
-
-          if (resp.ok) {
-            console.log(
-              "✅ Updated follow-up meetingStatus to 'meeting on-going' for:",
-              followUpId
-            );
+        // 🔹 OPTIMIZED: Use adaptive location fetching
+        let position: GeolocationPosition;
+        
+        if (!isMobile && cachedLocation) {
+          const age = Date.now() - cachedLocation.timestamp;
+          if (age < 120000) { // 2 minutes
+            console.log("📱 Using cached location for desktop follow-up meeting");
+            position = cachedLocation;
+            
+            toast({
+              title: "Using Recent Location",
+              description: "Using location from 2 minutes ago (desktop optimization)",
+            });
           } else {
-            console.warn("⚠️ Failed to update follow-up meetingStatus:", resp.status);
+            // Cache expired, get fresh location
+            position = await new Promise<GeolocationPosition>((resolve, reject) => {
+              const settings = getAdaptiveLocationSettings(retryCount);
+              console.log("Desktop follow-up location settings:", settings);
+              
+              navigator.geolocation.getCurrentPosition(
+                resolve,
+                reject,
+                settings
+              );
+            });
+            
+            // Update cache
+            setCachedLocation(position);
           }
-        } catch (err) {
-          console.error(
-            "❌ Failed to update follow-up meetingStatus to meeting on-going:",
-            err
-          );
-        }
-
-        // Update employee status to "meeting" - same as regular meetings
-        try {
-          await axios.put(`/api/employees/${employeeId}/status`, {
-            status: "meeting",
+        } else {
+          // Mobile: Always get fresh location
+          position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            const settings = getAdaptiveLocationSettings(retryCount);
+            console.log("Mobile follow-up location settings:", settings);
+            
+            navigator.geolocation.getCurrentPosition(
+              resolve,
+              reject,
+              settings
+            );
           });
-          console.log("✅ Employee status updated to 'meeting'");
-        } catch (statusError) {
-          console.error("❌ Failed to update employee status:", statusError);
         }
 
-        // Refresh employee data to show updated status
-        fetchEmployee();
+        // 🔹 OPTIMIZED: Use helper function for address
+        let address = await getAddressFromCoords(position.coords.latitude, position.coords.longitude);
 
-        // Show success toast - same as regular meetings
+        startLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          address: address,
+        };
+        console.log("✅ Fresh start location obtained:", startLocation);
+
+        // Success - show confirmation
         toast({
-          title: "Meeting Started",
-          description: `Meeting with ${meetingData.clientName} has been started`,
+          title: "Location Obtained",
+          description: "Starting meeting...",
         });
 
-        console.log("🎉 Follow-up meeting started successfully - should now appear in Recent Meetings");
-      } else {
-        // Handle error response
-        const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
-        console.error("❌ Failed to create follow-up meeting:", errorData);
-        toast({
-          title: "Cannot Start Meeting",
-          description: errorData.error || "Failed to start meeting",
-          variant: "destructive",
-        });
+      } catch (locationError) {
+        retryCount++;
+        console.error(`❌ Location fetch attempt ${retryCount} failed:`, locationError);
+
+        if (retryCount < maxRetries) {
+          // Retry with user feedback
+          toast({
+            title: "Retrying Location",
+            description: `Attempt ${retryCount + 1}/${maxRetries}. ${isMobile ? 'Ensure GPS is enabled' : 'Checking network location...'}`,
+          });
+          await new Promise(resolve => setTimeout(resolve, isMobile ? 1000 : 500)); // Shorter wait for desktop
+        } else {
+          // All retries exhausted
+          const errorMessage = locationError instanceof GeolocationPositionError
+            ? locationError.code === 1
+              ? "Location permission denied. Please enable location in your browser settings."
+              : locationError.code === 2
+                ? "Unable to determine your location. Please check your device's location settings."
+                : "Location request timed out. Please ensure location services are enabled and try again."
+            : "Failed to access location. Please check your location settings and try again.";
+
+          toast({
+            title: "Location Required",
+            description: errorMessage,
+            variant: "destructive",
+          });
+          setIsStartingMeeting(false);
+          return;
+        }
       }
-    } catch (error) {
-      console.error("❌ Error starting follow-up meeting:", error);
+    }
+
+    // Final check - ensure we have location
+    if (!startLocation) {
       toast({
-        title: "Error",
-        description: "Failed to start meeting",
+        title: "Location Required",
+        description: "Unable to get your location after multiple attempts. Please check your settings.",
         variant: "destructive",
       });
-    } finally {
       setIsStartingMeeting(false);
+      return;
     }
-  };
+
+    console.log("🚀 Creating follow-up meeting with payload:", {
+      employeeId: employee.id,
+      location: startLocation,
+      clientName: meetingData.clientName,
+      notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+      followUpId: followUpId,
+      externalMeetingStatus: "meeting on-going"
+    });
+
+    const response = await HttpClient.post("/api/meetings", {
+      employeeId: employee.id,
+      location: startLocation,
+      clientName: meetingData.clientName,
+      notes: `${meetingData.reason}${meetingData.notes ? ` - ${meetingData.notes}` : ""}`,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+      followUpId: followUpId, // 🔹 Store the follow-up meeting ID
+      externalMeetingStatus: "meeting on-going", // Initial status from external API
+      startTime: exactStartTime, // 🔹 CRITICAL: Send the exact time when user clicked start
+    });
+
+    if (response.ok) {
+      const createdMeeting = await response.json();
+
+      console.log("✅ Follow-up meeting created successfully:", {
+        id: createdMeeting.id,
+        clientName: createdMeeting.clientName,
+        status: createdMeeting.status,
+        startTime: createdMeeting.startTime,
+        location: createdMeeting.location,
+        followUpId: createdMeeting.followUpId
+      });
+
+      // 🔹 CRITICAL: Ensure the meeting has the correct structure for display
+      const meetingForState = {
+        ...createdMeeting,
+        status: "in-progress", // Ensure status is set correctly
+        startTime: createdMeeting.startTime || new Date().toISOString(),
+        location: {
+          ...createdMeeting.location,
+          address: createdMeeting.location.address || startLocation.address
+        }
+      };
+
+      // IMMEDIATELY add the meeting to the local state to prevent race conditions
+      setMeetings(prev => {
+        console.log("📝 Adding follow-up meeting to state:", meetingForState.id);
+        console.log("📝 Meeting details for state:", {
+          id: meetingForState.id,
+          clientName: meetingForState.clientName,
+          status: meetingForState.status,
+          startTime: meetingForState.startTime,
+          location: meetingForState.location
+        });
+        return [meetingForState, ...prev];
+      });
+
+      // Track the mapping of follow-up ID to created meeting ID
+      setStartedMeetingMap(prev => {
+        const newMap = {
+          ...prev,
+          [followUpId]: createdMeeting.id
+        };
+        console.log("🗺️ Updated startedMeetingMap:", newMap);
+        return newMap;
+      });
+
+      // Store the follow-up data mapped by meeting ID for later retrieval
+      if (followUpData) {
+        setFollowUpDataMap(prev => ({
+          ...prev,
+          [createdMeeting.id]: followUpData
+        }));
+        console.log("✅ Stored follow-up data for meeting ID:", createdMeeting.id);
+      }
+
+      // Notify backend/external API that follow-up meeting has started (meeting on-going)
+      try {
+        const resp = await fetch(
+          `https://jbdspower.in/LeafNetServer/api/updateFollowUp/${followUpId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              meetingStatus: "meeting on-going",
+            }),
+          }
+        );
+
+        if (resp.ok) {
+          console.log(
+            "✅ Updated follow-up meetingStatus to 'meeting on-going' for:",
+            followUpId
+          );
+        } else {
+          console.warn("⚠️ Failed to update follow-up meetingStatus:", resp.status);
+        }
+      } catch (err) {
+        console.error(
+          "❌ Failed to update follow-up meetingStatus to meeting on-going:",
+          err
+        );
+      }
+
+      // Update employee status to "meeting" - same as regular meetings
+      try {
+        await axios.put(`/api/employees/${employeeId}/status`, {
+          status: "meeting",
+        });
+        console.log("✅ Employee status updated to 'meeting'");
+      } catch (statusError) {
+        console.error("❌ Failed to update employee status:", statusError);
+      }
+
+      // Refresh employee data to show updated status
+      fetchEmployee();
+
+      // Show success toast - same as regular meetings
+      toast({
+        title: "Meeting Started",
+        description: `Meeting with ${meetingData.clientName} has been started`,
+      });
+
+      console.log("🎉 Follow-up meeting started successfully - should now appear in Recent Meetings");
+    } else {
+      // Handle error response
+      const errorData = await response.json().catch(() => ({ error: "Failed to start meeting" }));
+      console.error("❌ Failed to create follow-up meeting:", errorData);
+      toast({
+        title: "Cannot Start Meeting",
+        description: errorData.error || "Failed to start meeting",
+        variant: "destructive",
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error starting follow-up meeting:", error);
+    toast({
+      title: "Error",
+      description: "Failed to start meeting",
+      variant: "destructive",
+    });
+  } finally {
+    setIsStartingMeeting(false);
+  }
+};
 
   const openStartMeetingModal = () => {
     // Check if there's already an active meeting
@@ -2043,17 +2138,17 @@ const handleDutyCompletedClick = async () => {
       {/* Content */}
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-           {/* Today's Meetings Component */}
-            <TodaysMeetings
-              userId={employeeId}
-              onStartMeeting={handleStartMeetingFromFollowUp}
-              startedMeetingMap={startedMeetingMap}
-              onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
-              onMeetingsFetched={handleTodaysMeetingsFetched}
-              refreshTrigger={refreshTodaysMeetings}
-              hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
-              todaysFollowUpMeetings={todaysFollowUpMeetings}
-            />
+          {/* Today's Meetings Component */}
+          <TodaysMeetings
+            userId={employeeId}
+            onStartMeeting={handleStartMeetingFromFollowUp}
+            startedMeetingMap={startedMeetingMap}
+            onEndMeetingFromFollowUp={handleEndMeetingFromFollowUp}
+            onMeetingsFetched={handleTodaysMeetingsFetched}
+            refreshTrigger={refreshTodaysMeetings}
+            hasActiveMeeting={meetings.some(m => m.status === "in-progress" || m.status === "started")}
+            todaysFollowUpMeetings={todaysFollowUpMeetings}
+          />
 
           {/* Right Column */}
           <div className="space-y-6">
@@ -2068,14 +2163,350 @@ const handleDutyCompletedClick = async () => {
               todaysMeetings={todaysFollowUpMeetings}
             />
 
-            
+
 
             <div className="lg:col-span-2 space-y-6">
-            {/* Current Location */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Current Location</span>
+              {/* Current Location */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Current Location</span>
+                    {(() => {
+                      // Check if there's an active meeting in the meetings array
+                      const activeMeeting = meetings.find(
+                        (m) => m.status === "in-progress" || m.status === "started"
+                      );
+
+                      // Show End Meeting button if there's an active meeting OR employee status is "meeting"
+                      if (activeMeeting || employee.status === "meeting") {
+                        return (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleEndMeetingAttempt}
+                            disabled={isEndingMeeting !== null}
+                          >
+                            <Clock className="h-4 w-4 mr-2" />
+                            {isEndingMeeting ? "Ending..." : "End Meeting"}
+                          </Button>
+                        );
+                      } else {
+                        // Show Start Meeting button only if no active meeting exists
+                        return (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={openStartMeetingModal}
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Start Meeting
+                          </Button>
+                        );
+                      }
+                    })()}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-start space-x-3">
+                    <MapPin className="h-5 w-5 text-primary mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium">{employee.location.address}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {employee.location.lat.toFixed(6)},{" "}
+                        {employee.location.lng.toFixed(6)}
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center mt-1">
+                        <Clock className="h-3 w-3 mr-1" />
+                        Last updated {employee.lastUpdate}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setShowMap(!showMap)}
+                    >
+                      <Navigation className="h-4 w-4 mr-2" />
+                      {showMap ? "Hide Map" : "View on Map"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() =>
+                        openInExternalMap(
+                          employee.location.lat,
+                          employee.location.lng,
+                          employee.location.address,
+                        )
+                      }
+                    >
+                      <MapPin className="h-4 w-4 mr-2" />
+                      Open in Maps App
+                    </Button>
+
+                    <div className="grid grid-cols-2 gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsSnapshotCaptureOpen(true)}
+                        className="text-primary"
+                      >
+                        <Camera className="h-4 w-4 mr-2" />
+                        Manual Capture
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsSnapshotHistoryOpen(true)}
+                      >
+                        <History className="h-4 w-4 mr-2" />
+                        View History
+                      </Button>
+                    </div>
+                  </div>
+
+                  {showMap && employee && (
+                    <div className="mt-4">
+                      <EmployeeMap
+                        employees={[employee]}
+                        height="300px"
+                        trackingSession={currentTrackingSession}
+                        showRoute={currentTrackingSession !== null}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Recent Meetings */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Recent Meetings</span>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="secondary">{meetings.length}</Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsMeetingHistoryOpen(true)}
+                      >
+                        <Calendar className="h-4 w-4 mr-2" />
+                        History
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {meetings.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">
+                      No recent meetings
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {meetings
+                        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()) // Sort by most recent first
+                        .map((meeting) => {
+                          console.log("🔍 Rendering meeting:", {
+                            id: meeting.id,
+                            clientName: meeting.clientName,
+                            status: meeting.status,
+                            startTime: meeting.startTime,
+                            location: meeting.location,
+                            followUpId: meeting.followUpId
+                          });
+
+                          return (
+                            <div
+                              key={meeting.id}
+                              className={`border rounded-lg p-3 space-y-2 ${meeting.status === "in-progress"
+                                ? "border-warning bg-warning/5"
+                                : "border-border"
+                                }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-medium">
+                                  {meeting.clientName || "Unknown Client"}
+                                  {meeting.followUpId && (
+                                    <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                      Follow-up
+                                    </span>
+                                  )}
+                                </h4>
+                                <div className="flex items-center space-x-2">
+                                  <Badge
+                                    variant="secondary"
+                                    className={
+                                      meeting.status === "completed"
+                                        ? "bg-success text-success-foreground"
+                                        : meeting.status === "in-progress"
+                                          ? "bg-warning text-warning-foreground"
+                                          : "bg-info text-info-foreground"
+                                    }
+                                  >
+                                    {meeting.status}
+                                  </Badge>
+                                  {meeting.status === "in-progress" && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleEndMeetingClick(meeting.id)
+                                      }
+                                      disabled={isEndingMeeting === meeting.id}
+                                    >
+                                      {isEndingMeeting === meeting.id
+                                        ? "Ending..."
+                                        : "End Meeting"}
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-sm text-muted-foreground flex items-center">
+                                <MapPin className="h-3 w-3 mr-1" />
+                                {meeting.location?.address || "Location not available"}
+                              </p>
+                              <div className="space-y-1">
+                                <p className="text-sm text-muted-foreground flex items-center">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  <span className="font-medium">Started:</span>
+                                  <span className="ml-1">
+                                    {meeting.startTime ? formatTimeIST(meeting.startTime) : "Time not available"}
+                                  </span>
+                                </p>
+                                {meeting.endTime && (
+                                  <p className="text-sm text-muted-foreground flex items-center">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    <span className="font-medium">Ended:</span>
+                                    <span className="ml-1">
+                                      {formatTimeIST(meeting.endTime)}
+                                    </span>
+                                  </p>
+                                )}
+                                {meeting.status === "in-progress" && (
+                                  <p className="text-sm text-success flex items-center">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    <span className="font-medium">Duration:</span>
+                                    <span className="ml-1">
+                                      {(() => {
+                                        const durationMs = Date.now() - new Date(meeting.startTime).getTime();
+                                        const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                        const hours = Math.floor(totalMinutes / 60);
+                                        const minutes = totalMinutes % 60;
+                                        return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                      })()}
+                                    </span>
+                                  </p>
+                                )}
+                                {meeting.endTime &&
+                                  meeting.status === "completed" && (
+                                    <p className="text-sm text-info flex items-center">
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      <span className="font-medium">Duration:</span>
+                                      <span className="ml-1">
+                                        {(() => {
+                                          const durationMs = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
+                                          const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                                          const hours = Math.floor(totalMinutes / 60);
+                                          const minutes = totalMinutes % 60;
+                                          return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+                                        })()}
+                                      </span>
+                                    </p>
+                                  )}
+                              </div>
+                              {meeting.notes && (
+                                <p className="text-sm">{meeting.notes}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Employee Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Employee Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Name</span>
+                      <span className="font-medium">{employee.name}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Email</span>
+                      <span className="font-medium">{employee.email}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Phone</span>
+                      <span className="font-medium">{employee.phone}</span>
+                    </div>
+                    {employee.designation && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          Designation
+                        </span>
+                        <span className="font-medium">
+                          {employee.designation}
+                        </span>
+                      </div>
+                    )}
+                    {employee.department && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          Department
+                        </span>
+                        <span className="font-medium">{employee.department}</span>
+                      </div>
+                    )}
+                    {employee.companyName && (
+                      <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          Company
+                        </span>
+                        <span className="font-medium text-right max-w-xs">
+                          {employee.companyName}
+                        </span>
+                      </div>
+                    )}
+                    {employee.reportTo && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          Reports To
+                        </span>
+                        <span className="font-medium">{employee.reportTo}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Status
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className={`${getStatusColor(employee.status)}`}
+                      >
+                        {getStatusText(employee.status)}
+                      </Badge>
+                    </div>
+                    {employee.currentTask && (
+                      <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          Current Task
+                        </span>
+                        <span className="font-medium text-right max-w-xs">
+                          {employee.currentTask}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* End Meeting Button - Shows when there's an active meeting */}
                   {(() => {
                     // Check if there's an active meeting in the meetings array
                     const activeMeeting = meetings.find(
@@ -2085,394 +2516,58 @@ const handleDutyCompletedClick = async () => {
                     // Show End Meeting button if there's an active meeting OR employee status is "meeting"
                     if (activeMeeting || employee.status === "meeting") {
                       return (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleEndMeetingAttempt}
-                          disabled={isEndingMeeting !== null}
-                        >
-                          <Clock className="h-4 w-4 mr-2" />
-                          {isEndingMeeting ? "Ending..." : "End Meeting"}
-                        </Button>
-                      );
-                    } else {
-                      // Show Start Meeting button only if no active meeting exists
-                      return (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={openStartMeetingModal}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Start Meeting
-                        </Button>
-                      );
-                    }
-                  })()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start space-x-3">
-                  <MapPin className="h-5 w-5 text-primary mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium">{employee.location.address}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {employee.location.lat.toFixed(6)},{" "}
-                      {employee.location.lng.toFixed(6)}
-                    </p>
-                    <p className="text-xs text-muted-foreground flex items-center mt-1">
-                      <Clock className="h-3 w-3 mr-1" />
-                      Last updated {employee.lastUpdate}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setShowMap(!showMap)}
-                  >
-                    <Navigation className="h-4 w-4 mr-2" />
-                    {showMap ? "Hide Map" : "View on Map"}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      openInExternalMap(
-                        employee.location.lat,
-                        employee.location.lng,
-                        employee.location.address,
-                      )
-                    }
-                  >
-                    <MapPin className="h-4 w-4 mr-2" />
-                    Open in Maps App
-                  </Button>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsSnapshotCaptureOpen(true)}
-                      className="text-primary"
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Manual Capture
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsSnapshotHistoryOpen(true)}
-                    >
-                      <History className="h-4 w-4 mr-2" />
-                      View History
-                    </Button>
-                  </div>
-                </div>
-
-                {showMap && employee && (
-                  <div className="mt-4">
-                    <EmployeeMap
-                      employees={[employee]}
-                      height="300px"
-                      trackingSession={currentTrackingSession}
-                      showRoute={currentTrackingSession !== null}
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Recent Meetings */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Recent Meetings</span>
-                  <div className="flex items-center space-x-2">
-                    <Badge variant="secondary">{meetings.length}</Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsMeetingHistoryOpen(true)}
-                    >
-                      <Calendar className="h-4 w-4 mr-2" />
-                      History
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {meetings.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">
-                    No recent meetings
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {meetings
-                      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()) // Sort by most recent first
-                      .map((meeting) => {
-                        console.log("🔍 Rendering meeting:", {
-                          id: meeting.id,
-                          clientName: meeting.clientName,
-                          status: meeting.status,
-                          startTime: meeting.startTime,
-                          location: meeting.location,
-                          followUpId: meeting.followUpId
-                        });
-
-                        return (
-                          <div
-                            key={meeting.id}
-                            className={`border rounded-lg p-3 space-y-2 ${meeting.status === "in-progress"
-                              ? "border-warning bg-warning/5"
-                              : "border-border"
-                              }`}
+                        <div className="pt-4 pb-2">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="w-full"
+                            onClick={handleEndMeetingAttempt}
+                            disabled={isEndingMeeting !== null}
                           >
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-medium">
-                                {meeting.clientName || "Unknown Client"}
-                                {meeting.followUpId && (
-                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    Follow-up
-                                  </span>
-                                )}
-                              </h4>
-                              <div className="flex items-center space-x-2">
-                                <Badge
-                                  variant="secondary"
-                                  className={
-                                    meeting.status === "completed"
-                                      ? "bg-success text-success-foreground"
-                                      : meeting.status === "in-progress"
-                                        ? "bg-warning text-warning-foreground"
-                                        : "bg-info text-info-foreground"
-                                  }
-                                >
-                                  {meeting.status}
-                                </Badge>
-                                {meeting.status === "in-progress" && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                      handleEndMeetingClick(meeting.id)
-                                    }
-                                    disabled={isEndingMeeting === meeting.id}
-                                  >
-                                    {isEndingMeeting === meeting.id
-                                      ? "Ending..."
-                                      : "End Meeting"}
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                            <p className="text-sm text-muted-foreground flex items-center">
-                              <MapPin className="h-3 w-3 mr-1" />
-                              {meeting.location?.address || "Location not available"}
-                            </p>
-                            <div className="space-y-1">
-                              <p className="text-sm text-muted-foreground flex items-center">
-                                <Calendar className="h-3 w-3 mr-1" />
-                                <span className="font-medium">Started:</span>
-                                <span className="ml-1">
-                                  {meeting.startTime ? formatTimeIST(meeting.startTime) : "Time not available"}
-                                </span>
-                              </p>
-                              {meeting.endTime && (
-                                <p className="text-sm text-muted-foreground flex items-center">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  <span className="font-medium">Ended:</span>
-                                  <span className="ml-1">
-                                    {formatTimeIST(meeting.endTime)}
-                                  </span>
-                                </p>
-                              )}
-                              {meeting.status === "in-progress" && (
-                                <p className="text-sm text-success flex items-center">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  <span className="font-medium">Duration:</span>
-                                  <span className="ml-1">
-                                    {(() => {
-                                      const durationMs = Date.now() - new Date(meeting.startTime).getTime();
-                                      const totalMinutes = Math.floor(durationMs / (1000 * 60));
-                                      const hours = Math.floor(totalMinutes / 60);
-                                      const minutes = totalMinutes % 60;
-                                      return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
-                                    })()}
-                                  </span>
-                                </p>
-                              )}
-                              {meeting.endTime &&
-                                meeting.status === "completed" && (
-                                  <p className="text-sm text-info flex items-center">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    <span className="font-medium">Duration:</span>
-                                    <span className="ml-1">
-                                      {(() => {
-                                        const durationMs = new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime();
-                                        const totalMinutes = Math.floor(durationMs / (1000 * 60));
-                                        const hours = Math.floor(totalMinutes / 60);
-                                        const minutes = totalMinutes % 60;
-                                        return hours > 0 ? `${hours}h:${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
-                                      })()}
-                                    </span>
-                                  </p>
-                                )}
-                            </div>
-                            {meeting.notes && (
-                              <p className="text-sm">{meeting.notes}</p>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-             {/* Employee Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Employee Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Name</span>
-                    <span className="font-medium">{employee.name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Email</span>
-                    <span className="font-medium">{employee.email}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Phone</span>
-                    <span className="font-medium">{employee.phone}</span>
-                  </div>
-                  {employee.designation && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Designation
-                      </span>
-                      <span className="font-medium">
-                        {employee.designation}
-                      </span>
-                    </div>
-                  )}
-                  {employee.department && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Department
-                      </span>
-                      <span className="font-medium">{employee.department}</span>
-                    </div>
-                  )}
-                  {employee.companyName && (
-                    <div className="flex items-start justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Company
-                      </span>
-                      <span className="font-medium text-right max-w-xs">
-                        {employee.companyName}
-                      </span>
-                    </div>
-                  )}
-                  {employee.reportTo && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Reports To
-                      </span>
-                      <span className="font-medium">{employee.reportTo}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Status
-                    </span>
-                    <Badge
-                      variant="secondary"
-                      className={`${getStatusColor(employee.status)}`}
-                    >
-                      {getStatusText(employee.status)}
-                    </Badge>
-                  </div>
-                  {employee.currentTask && (
-                    <div className="flex items-start justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        Current Task
-                      </span>
-                      <span className="font-medium text-right max-w-xs">
-                        {employee.currentTask}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* End Meeting Button - Shows when there's an active meeting */}
-                {(() => {
-                  // Check if there's an active meeting in the meetings array
-                  const activeMeeting = meetings.find(
-                    (m) => m.status === "in-progress" || m.status === "started"
-                  );
-
-                  // Show End Meeting button if there's an active meeting OR employee status is "meeting"
-                  if (activeMeeting || employee.status === "meeting") {
-                    return (
-                      <div className="pt-4 pb-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="w-full"
-                          onClick={handleEndMeetingAttempt}
-                          disabled={isEndingMeeting !== null}
-                        >
-                          <Clock className="h-4 w-4 mr-2" />
-                          {isEndingMeeting
-                            ? "Ending Meeting..."
-                            : "End Current Meeting"}
-                        </Button>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                <div className="grid grid-cols-2 gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleCall(employee.phone)}
-                  >
-                    <Phone className="h-4 w-4 mr-2" />
-                    Call
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEmail(employee.email, employee.name)}
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Email
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      handleSendMessage(employee.phone, employee.name)
+                            <Clock className="h-4 w-4 mr-2" />
+                            {isEndingMeeting
+                              ? "Ending Meeting..."
+                              : "End Current Meeting"}
+                          </Button>
+                        </div>
+                      );
                     }
-                    className="col-span-2"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Send Message
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                    return null;
+                  })()}
 
-          </div>
+                  <div className="grid grid-cols-2 gap-2 pt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCall(employee.phone)}
+                    >
+                      <Phone className="h-4 w-4 mr-2" />
+                      Call
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEmail(employee.email, employee.name)}
+                    >
+                      <Mail className="h-4 w-4 mr-2" />
+                      Email
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handleSendMessage(employee.phone, employee.name)
+                      }
+                      className="col-span-2"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Send Message
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
 
           </div>
         </div>
@@ -2537,143 +2632,143 @@ const handleDutyCompletedClick = async () => {
 
 
       {/* Duty Completed Modal */}
-<Dialog open={isDutyCompletedModalOpen} onOpenChange={setIsDutyCompletedModalOpen}>
-  <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-    <DialogHeader>
-      <DialogTitle className="text-2xl font-bold text-center">
-        Today's Meetings & Duty Summary
-      </DialogTitle>
-    </DialogHeader>
+      <Dialog open={isDutyCompletedModalOpen} onOpenChange={setIsDutyCompletedModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-center">
+              Today's Meetings & Duty Summary
+            </DialogTitle>
+          </DialogHeader>
 
-    <div className="space-y-6 py-4">
-      {loadingTodaysData ? (
-        <div className="flex flex-col justify-center items-center py-12">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading today's meeting details...</p>
-        </div>
-      ) : (
-        <>
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[80px] text-center font-bold">Sr. No.</TableHead>
-                  <TableHead className="font-bold">Company Name</TableHead>
-                  <TableHead className="text-right font-bold">Meeting Duration</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {todaysMeetingDetails.length > 0 ? (
-                  <>
-                    {todaysMeetingDetails.map((meeting) => (
-                      <TableRow key={meeting.serialNumber}>
-                        <TableCell className="text-center font-medium">
-                          {meeting.serialNumber}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {meeting.companyName}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {meeting.totalDutyHours ? `${meeting.totalDutyHours} hours` : "In Progress"}
-                        </TableCell>
+          <div className="space-y-6 py-4">
+            {loadingTodaysData ? (
+              <div className="flex flex-col justify-center items-center py-12">
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading today's meeting details...</p>
+              </div>
+            ) : (
+              <>
+                <div className="border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px] text-center font-bold">Sr. No.</TableHead>
+                        <TableHead className="font-bold">Company Name</TableHead>
+                        <TableHead className="text-right font-bold">Meeting Duration</TableHead>
                       </TableRow>
-                    ))}
-                    {/* Total Row */}
-                    {(() => {
-                      const totalHours = todaysMeetingDetails.reduce(
-                        (sum, meeting) => sum + (meeting.totalDutyHours || 0), 
-                        0
-                      );
-                      
-                      let attendanceStatus = "Pending Verification";
-                      let badgeClass = "bg-gray-500 hover:bg-gray-600";
-                      
-                      if (totalHours >= 7.50) {
-                        attendanceStatus = "Full Day";
-                        badgeClass = "bg-green-500 hover:bg-green-600";
-                      } else if (totalHours >= 3.50 && totalHours <= 7.50) {
-                        attendanceStatus = "Half Day";
-                        badgeClass = "bg-yellow-500 hover:bg-yellow-600";
-                      } else {
-                        attendanceStatus = "Absent";
-                        badgeClass = "bg-blue-500 hover:bg-red-600";
-                      }
-                      
-                      return (
-                        <TableRow className="bg-muted/30 border-t-2 border-primary">
-                          <TableCell colSpan={2} className="text-right font-bold pr-4">
-                            <div className="flex items-center justify-start">
-                              <span className="mr-4">Total Duty Hours:</span>
-                              <Badge variant="default" className={badgeClass}>
-                                {attendanceStatus}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-bold text-lg">
-                            {totalHours.toFixed(1)} hours
+                    </TableHeader>
+                    <TableBody>
+                      {todaysMeetingDetails.length > 0 ? (
+                        <>
+                          {todaysMeetingDetails.map((meeting) => (
+                            <TableRow key={meeting.serialNumber}>
+                              <TableCell className="text-center font-medium">
+                                {meeting.serialNumber}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {meeting.companyName}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {meeting.totalDutyHours ? `${meeting.totalDutyHours} hours` : "In Progress"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {/* Total Row */}
+                          {(() => {
+                            const totalHours = todaysMeetingDetails.reduce(
+                              (sum, meeting) => sum + (meeting.totalDutyHours || 0),
+                              0
+                            );
+
+                            let attendanceStatus = "Pending Verification";
+                            let badgeClass = "bg-gray-500 hover:bg-gray-600";
+
+                            if (totalHours >= 7.50) {
+                              attendanceStatus = "Full Day";
+                              badgeClass = "bg-green-500 hover:bg-green-600";
+                            } else if (totalHours >= 3.50 && totalHours <= 7.50) {
+                              attendanceStatus = "Half Day";
+                              badgeClass = "bg-yellow-500 hover:bg-yellow-600";
+                            } else {
+                              attendanceStatus = "Absent";
+                              badgeClass = "bg-blue-500 hover:bg-red-600";
+                            }
+
+                            return (
+                              <TableRow className="bg-muted/30 border-t-2 border-primary">
+                                <TableCell colSpan={2} className="text-right font-bold pr-4">
+                                  <div className="flex items-center justify-start">
+                                    <span className="mr-4">Total Duty Hours:</span>
+                                    <Badge variant="default" className={badgeClass}>
+                                      {attendanceStatus}
+                                    </Badge>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-bold text-lg">
+                                  {totalHours.toFixed(1)} hours
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                            No meetings recorded for today
                           </TableCell>
                         </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="bg-muted/50 p-4 rounded-lg border">
+                  <h3 className="font-bold text-lg mb-2">📋 Summary Information:</h3>
+                  <div className="space-y-2 text-sm">
+                    <p>• <strong>Date:</strong> {new Date().toLocaleDateString('en-IN', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}</p>
+                    <p>• <strong>Total Meetings:</strong> {todaysMeetingDetails.length}</p>
+                    <p>• <strong>Completed Meetings:</strong> {todaysMeetingDetails.filter(m => m.totalDutyHours > 0).length}</p>
+                    <p className="text-muted-foreground mt-3">
+                      <strong>Note:</strong> The attendance shown above is auto-generated based on today's completed meetings.
+                      Final attendance (Full Day / Half Day) will be confirmed after HR verification.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDutyCompletedModalOpen(false)}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const totalHours = todaysMeetingDetails.reduce(
+                        (sum, meeting) => sum + (meeting.totalDutyHours || 0),
+                        0
                       );
-                    })()}
-                  </>
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                      No meetings recorded for today
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
 
-          <div className="bg-muted/50 p-4 rounded-lg border">
-            <h3 className="font-bold text-lg mb-2">📋 Summary Information:</h3>
-            <div className="space-y-2 text-sm">
-              <p>• <strong>Date:</strong> {new Date().toLocaleDateString('en-IN', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}</p>
-              <p>• <strong>Total Meetings:</strong> {todaysMeetingDetails.length}</p>
-              <p>• <strong>Completed Meetings:</strong> {todaysMeetingDetails.filter(m => m.totalDutyHours > 0).length}</p>
-              <p className="text-muted-foreground mt-3">
-                <strong>Note:</strong> The attendance shown above is auto-generated based on today's completed meetings. 
-                Final attendance (Full Day / Half Day) will be confirmed after HR verification.
-              </p>
-            </div>
+                      toast({
+                        title: "Summary Submitted",
+                        description: `Today's duty summary (${totalHours.toFixed(1)} hours) has been submitted for HR verification.`,
+                      });
+                      setIsDutyCompletedModalOpen(false);
+                    }}
+                  >
+                    Submit to HR
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
-
-          <div className="flex justify-end space-x-4">
-            <Button 
-              variant="outline" 
-              onClick={() => setIsDutyCompletedModalOpen(false)}
-            >
-              Close
-            </Button>
-            <Button 
-              onClick={() => {
-                const totalHours = todaysMeetingDetails.reduce(
-                  (sum, meeting) => sum + (meeting.totalDutyHours || 0), 
-                  0
-                );
-                
-                toast({
-                  title: "Summary Submitted",
-                  description: `Today's duty summary (${totalHours.toFixed(1)} hours) has been submitted for HR verification.`,
-                });
-                setIsDutyCompletedModalOpen(false);
-              }}
-            >
-              Submit to HR
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  </DialogContent>
-</Dialog>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

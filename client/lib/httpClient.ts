@@ -230,9 +230,9 @@ export class HttpClient {
         };
 
         xhr.onabort = () => {
-          console.error("HttpClient: XHR aborted");
-          reject(new Error("XMLHttpRequest was aborted"));
-        };
+  console.log("HttpClient: XHR aborted (expected)");
+};
+
 
         // Send request
         console.log(`HttpClient: Sending XHR ${method} request to ${url}`);
@@ -262,7 +262,11 @@ export class HttpClient {
 
     // Create request key for deduplication (only for GET requests)
     const method = options.method || "GET";
-    const requestKey = method === "GET" ? `${method}:${url}` : null;
+    const requestKey =
+  method === "GET" && !url.includes("?")
+    ? `${method}:${url}`
+    : null;
+
 
     // Check for pending identical request
     if (requestKey && this.pendingRequests.has(requestKey)) {
@@ -356,55 +360,22 @@ export class HttpClient {
 
       console.log(`HttpClient: Fetch successful to ${url}`, response.status);
       return response;
-    } catch (error) {
-      // Clear timeout on error
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
+    } catch (error: any) {
+  // 🔑 THIS IS THE KEY FIX
+  if (error?.name === "AbortError") {
+    console.log(`HttpClient: Request aborted for ${url}`);
+    throw error; // DO NOT fallback
+  }
 
-      console.warn(
-        `HttpClient: Fetch failed, trying fallback for ${url}:`,
-        error,
-      );
+  console.warn(
+    `HttpClient: Fetch failed, trying fallback for ${url}:`,
+    error
+  );
 
-      // If this is a FullStory interference error, switch to XHR mode permanently
-      if (
-        error instanceof TypeError &&
-        (error.message.includes("fetch") ||
-          error.message.includes("Failed to fetch") ||
-          error.stack?.includes("fullstory") ||
-          error.stack?.includes("fs.js"))
-      ) {
-        console.log(
-          "HttpClient: Detected FullStory interference, switching to XMLHttpRequest mode permanently",
-        );
-        this.useXHROnly = true;
-      }
+  // fallback only for real failures
+  return this.fallbackFetch(url, baseOptions);
+}
 
-      // Check if error is due to abort and not a network issue
-      if (error instanceof Error && error.name === "AbortError") {
-        console.log(
-          `HttpClient: Request was aborted, trying fallback without signal`,
-        );
-      }
-
-      // Fallback to XMLHttpRequest if fetch fails
-      try {
-        const response = await this.fallbackFetch(url, baseOptions);
-        console.log(
-          `HttpClient: Fallback successful to ${url}`,
-          response.status,
-        );
-        return response;
-      } catch (fallbackError) {
-        console.error(
-          `HttpClient: Both fetch and fallback failed for ${url}:`,
-          fallbackError,
-        );
-        throw fallbackError;
-      }
-    }
   }
 
   // Retry mechanism for critical requests

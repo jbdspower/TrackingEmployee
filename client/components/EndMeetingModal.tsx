@@ -434,78 +434,88 @@ useEffect(() => {
 
 
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    console.log("🔵 EndMeetingModal: Form submit triggered");
-    console.log("EndMeetingModal: Form data before validation:", formData);
-    console.log("EndMeetingModal: Selected customers:", selectedCustomers);
-    console.log("EndMeetingModal: Discussion:", formData.discussion);
-    console.log("EndMeetingModal: Attached files:", attachedFiles.length);
+  console.log("🔵 EndMeetingModal: Form submit triggered");
+  console.log("EndMeetingModal: Form data before validation:", formData);
+  console.log("EndMeetingModal: Selected customers:", selectedCustomers);
+  console.log("EndMeetingModal: Discussion:", formData.discussion);
+  console.log("EndMeetingModal: Attached files:", attachedFiles.length);
 
-    const isValid = validateForm();
-    console.log("EndMeetingModal: Validation result:", isValid);
+  const isValid = validateForm();
+  console.log("EndMeetingModal: Validation result:", isValid);
 
-    if (!isValid) {
-      console.log("EndMeetingModal: Form validation failed with errors:", errors);
-      // Scroll to first error
-      const firstErrorElement = document.querySelector('.border-destructive');
-      if (firstErrorElement) {
-        firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      return;
+  if (!isValid) {
+    console.log("EndMeetingModal: Form validation failed with errors:", errors);
+    const firstErrorElement = document.querySelector(".border-destructive");
+    if (firstErrorElement) {
+      firstErrorElement.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+    return;
+  }
 
-    console.log("✅ EndMeetingModal: Validation passed, processing files...");
-    setIsSubmitting(true);
-    try {
-      // Convert files to base64 for storage
-      const attachmentPromises = attachedFiles.map(file => {
-        return new Promise<string>((resolve, reject) => {
+  console.log("✅ EndMeetingModal: Validation passed, processing files...");
+  setIsSubmitting(true);
+
+  try {
+    // 🔹 Convert files to base64
+    const attachmentPromises = attachedFiles.map(
+      (file) =>
+        new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = reader.result as string;
-            // Store as data URL (includes file type)
-            resolve(base64);
-          };
+          reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(file);
-        });
-      });
+        })
+    );
 
-      console.log("📎 Converting files to base64...");
-      const attachments = await Promise.all(attachmentPromises);
-      console.log(`✅ Converted ${attachments.length} files to base64`);
+    console.log("📎 Converting files to base64...");
+    const attachments = await Promise.all(attachmentPromises);
+    console.log(`✅ Converted ${attachments.length} files to base64`);
 
-      // Include attachments in meeting details
-      const meetingDetailsWithAttachments = {
-        ...formData,
-        attachments: attachments.length > 0 ? attachments : undefined
-      };
+    // 🔹 Build meeting payload
+    const meetingDetailsWithAttachments = {
+      ...formData,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
 
-      console.log("EndMeetingModal: Calling onEndMeeting with attachments:", {
-        ...meetingDetailsWithAttachments,
-        attachments: attachments.length > 0 ? `${attachments.length} files` : 'none'
-      });
+    // 🔴 🔴 🔴 FIX STARTS HERE 🔴 🔴 🔴
+    // Normalize outLocation so it never stays as raw { lat, long }
+// In your frontend EndMeetingModal's handleSubmit function:
+const normalizedMeetingDetails = {
+  ...meetingDetailsWithAttachments,
+  // Ensure outLocation is a string address, not an object
+  outLocation: typeof (meetingDetailsWithAttachments as any).outLocation === "object"
+    ? (meetingDetailsWithAttachments as any).outLocation?.address || 
+      `${(meetingDetailsWithAttachments as any).outLocation?.lat}, ${(meetingDetailsWithAttachments as any).outLocation?.lng}`
+    : (meetingDetailsWithAttachments as any).outLocation,
+};
+    // 🔴 🔴 🔴 FIX ENDS HERE 🔴 🔴 🔴
 
-      await onEndMeeting(meetingDetailsWithAttachments);
-      console.log("✅ Meeting ended successfully, clearing temp employees");
-      // Clear temporary employees after successful meeting end
-      if (customerSelectorRef.current) {
-        customerSelectorRef.current.clearTempEmployees();
-      }
-      handleClose();
-    } catch (error) {
-      console.error("❌ Error ending meeting:", error);
-      toast({
-        title: "Error",
-        description: "Failed to end meeting. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
+    console.log("EndMeetingModal: Final payload:", normalizedMeetingDetails);
+
+    await onEndMeeting(normalizedMeetingDetails);
+
+    console.log("✅ Meeting ended successfully, clearing temp employees");
+
+    if (customerSelectorRef.current) {
+      customerSelectorRef.current.clearTempEmployees();
     }
-  };
+
+    handleClose();
+  } catch (error) {
+    console.error("❌ Error ending meeting:", error);
+    toast({
+      title: "Error",
+      description: "Failed to end meeting. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
 
   const handleCreateLead = async () => {
     console.log("🚀 Creating lead from meeting data");

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -234,9 +234,31 @@ export default function Dashboard() {
     avgMeetingDuration: 0,
   });
 
-  useEffect(() => {
+const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+useEffect(() => {
+  if (debounceRef.current) {
+    clearTimeout(debounceRef.current);
+  }
+
+  debounceRef.current = setTimeout(() => {
     fetchAnalytics();
-  }, [filters]);
+  }, 300); // 👈 debounce window
+
+  return () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+  };
+}, [
+  filters.employeeId,
+  filters.dateRange,
+  filters.startDate,
+  filters.endDate,
+  filters.searchTerm,
+]);
+
+
 
   // Re-fetch employee details when filters change while in detail view
   useEffect(() => {

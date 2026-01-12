@@ -2598,6 +2598,21 @@ const getEmployeeAnalytics = async (req, res) => {
   }
 };
 const getEmployeeDetails = async (req, res) => {
+  const resolveLocationAddress = (location) => {
+    if (!location) return "";
+    if (location.endLocation?.address) {
+      const endAddr = location.endLocation.address;
+      const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
+      if (isCoordinates) {
+        return location.address || "Location coordinates";
+      }
+      return endAddr;
+    }
+    if (typeof location.address === "string" && location.address.trim()) {
+      return location.address;
+    }
+    return "";
+  };
   try {
     const { employeeId } = req.params;
     const {
@@ -2735,7 +2750,7 @@ const getEmployeeDetails = async (req, res) => {
       const startLocationTime = firstMeeting?.startTime ? format(new Date(firstMeeting.startTime), "HH:mm:ss") : "";
       const startLocationAddress = firstMeeting?.location?.address || "";
       const outLocationTime = lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "";
-      const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address ? lastMeeting.location.endLocation.address : lastMeeting?.location?.address || "";
+      const outLocationAddress = lastMeeting?.endTime ? resolveLocationAddress(lastMeeting.location) || (lastMeeting?.location?.address || "") : "";
       let totalDutyHours = 0;
       if (firstMeeting?.startTime && lastMeeting?.endTime) {
         try {
@@ -2775,6 +2790,37 @@ const getEmployeeDetails = async (req, res) => {
     const meetingRecords = meetings2.map((meeting) => {
       const meetingInTime = meeting.startTime ? format(new Date(meeting.startTime), "HH:mm:ss") : "";
       const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
+      let meetingOutLocation = "Meeting in progress";
+      if (meeting.endTime) {
+        if (meeting.location?.endLocation?.address) {
+          const endAddr = meeting.location.endLocation.address;
+          const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
+          if (isCoordinates) {
+            meetingOutLocation = meeting.location?.address || "Location coordinates";
+          } else {
+            meetingOutLocation = endAddr;
+          }
+        } else if (meeting.status === "completed") {
+          console.log("meeting.location?.address", meeting.location?.address);
+          meetingOutLocation = meeting.location?.address || "Meeting completed";
+        }
+      }
+      let meetingPerson = "TBD";
+      if (meeting.status === "completed") {
+        if (meeting.meetingDetails?.customers?.length > 0) {
+          meetingPerson = meeting.meetingDetails.customers.map((customer) => customer.customerEmployeeName).join(", ");
+        } else if (meeting.meetingDetails?.customerEmployeeName) {
+          meetingPerson = meeting.meetingDetails.customerEmployeeName;
+        } else {
+          meetingPerson = "Unknown";
+        }
+      }
+      let discussion = "";
+      if (meeting.status === "completed") {
+        discussion = meeting.meetingDetails?.discussion || meeting.notes || "";
+      } else {
+        discussion = "Meeting in progress";
+      }
       return {
         meetingId: meeting._id?.toString() || meeting.id,
         employeeName: "",
@@ -2783,12 +2829,13 @@ const getEmployeeDetails = async (req, res) => {
         date: meeting.startTime ? format(new Date(meeting.startTime), "yyyy-MM-dd") : "",
         leadId: meeting.leadId || "",
         meetingInTime,
-        meetingInLocation: meeting.location?.address || "Location loading...",
+        meetingInLocation: meeting.location?.address || "Location not available",
         meetingOutTime,
-        meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address ? meeting.location.endLocation.address : meeting.status === "completed" ? "Meeting completed" : "Meeting in progress",
+        meetingOutLocation,
+        // Use the fixed value
         totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
-        discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
-        meetingPerson: meeting.meetingDetails?.customers?.length > 0 ? meeting.meetingDetails.customers.map((customer) => customer.customerEmployeeName).join(", ") : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
+        discussion,
+        meetingPerson,
         meetingStatus: meeting.status || "completed",
         externalMeetingStatus: meeting.externalMeetingStatus || "",
         incomplete: meeting.meetingDetails?.incomplete || false,

@@ -441,6 +441,33 @@ function generateMockMeetings(
 }
 
 export const getEmployeeDetails: RequestHandler = async (req, res) => {
+
+  const resolveLocationAddress = (location: any): string => {
+    if (!location) return "";
+
+    // If location has an endLocation, use that first
+    if (location.endLocation?.address) {
+      const endAddr = location.endLocation.address;
+      
+      // Check if it's just coordinates (lat,lng format) like "28.277276, 76.885777"
+      const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
+      
+      if (isCoordinates) {
+        // If end location is coordinates, try to use the start address instead
+        return location.address || "Location coordinates";
+      }
+      return endAddr;
+    }
+
+    // Fallback to main address
+    if (typeof location.address === "string" && location.address.trim()) {
+      return location.address;
+    }
+
+    // fallback: return empty string
+    return "";
+  };
+
   try {
     const { employeeId } = req.params;
     const {
@@ -633,9 +660,11 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       const startLocationAddress = firstMeeting?.location?.address || "";
 
       const outLocationTime = lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "";
-      const outLocationAddress = lastMeeting?.endTime && lastMeeting?.location?.endLocation?.address
-        ? lastMeeting.location.endLocation.address
-        : (lastMeeting?.location?.address || "");
+      
+      // 🔹 FIX: Use resolveLocationAddress for outLocationAddress
+      const outLocationAddress = lastMeeting?.endTime 
+        ? resolveLocationAddress(lastMeeting.location) || (lastMeeting?.location?.address || "")
+        : "";
 
       // Calculate duty hours from first meeting start to last meeting end
       let totalDutyHours = 0;
@@ -688,6 +717,52 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         ? format(new Date(meeting.endTime), "HH:mm:ss")
         : "In Progress";
 
+      // 🔹 FIX: Smart logic for meetingOutLocation
+      let meetingOutLocation = "Meeting in progress";
+      
+      if (meeting.endTime) {
+        if (meeting.location?.endLocation?.address) {
+          const endAddr = meeting.location.endLocation.address;
+          
+          // Check if it's just coordinates (e.g., "28.277276, 76.885777")
+          const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
+          
+          if (isCoordinates) {
+            // If end location is coordinates, try to use the start address
+            meetingOutLocation = meeting.location?.address || "Location coordinates";
+          } else {
+            // Use the proper end address
+            meetingOutLocation = endAddr;
+          }
+        } else if (meeting.status === "completed") {
+          // No endLocation but meeting is completed - use start address
+          console.log("meeting.location?.address",meeting.location?.address);
+          meetingOutLocation = meeting.location?.address || "Meeting completed";
+        }
+      }
+
+      // 🔹 FIX: Smart logic for meetingPerson
+      let meetingPerson = "TBD";
+      if (meeting.status === "completed") {
+        if (meeting.meetingDetails?.customers?.length > 0) {
+          meetingPerson = meeting.meetingDetails.customers
+            .map((customer) => customer.customerEmployeeName)
+            .join(", ");
+        } else if (meeting.meetingDetails?.customerEmployeeName) {
+          meetingPerson = meeting.meetingDetails.customerEmployeeName;
+        } else {
+          meetingPerson = "Unknown";
+        }
+      }
+
+      // 🔹 FIX: Smart logic for discussion
+      let discussion = "";
+      if (meeting.status === "completed") {
+        discussion = meeting.meetingDetails?.discussion || meeting.notes || "";
+      } else {
+        discussion = "Meeting in progress";
+      }
+
       return {
         meetingId: meeting._id?.toString() || meeting.id,
         employeeName: "", // Will be filled by client
@@ -695,18 +770,12 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         date: meeting.startTime ? format(new Date(meeting.startTime), "yyyy-MM-dd") : "",
         leadId: meeting.leadId || "",
         meetingInTime,
-        meetingInLocation: meeting.location?.address || "Location loading...",
+        meetingInLocation: meeting.location?.address || "Location not available",
         meetingOutTime,
-        meetingOutLocation: meeting.endTime && meeting.location?.endLocation?.address
-          ? meeting.location.endLocation.address
-          : (meeting.status === "completed" ? "Meeting completed" : "Meeting in progress"),
+        meetingOutLocation, // Use the fixed value
         totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
-        discussion: meeting.meetingDetails?.discussion || meeting.notes || (meeting.status !== "completed" ? "Meeting in progress" : ""),
-        meetingPerson: meeting.meetingDetails?.customers?.length > 0
-          ? meeting.meetingDetails.customers
-            .map((customer) => customer.customerEmployeeName)
-            .join(", ")
-          : meeting.meetingDetails?.customerEmployeeName || (meeting.status !== "completed" ? "TBD" : "Unknown"),
+        discussion,
+        meetingPerson,
         meetingStatus: meeting.status || "completed",
         externalMeetingStatus: meeting.externalMeetingStatus || "",
         incomplete: meeting.meetingDetails?.incomplete || false,
