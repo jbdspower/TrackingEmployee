@@ -3455,8 +3455,7 @@ const getAllEmployeesDetails = async (req, res) => {
           attendanceAddedBy: attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated)?.name || attendance.attendenceCreated : "Auto"
         };
       });
-      const recentMeetings = allMeetings.slice(0, 3);
-      const meetingRecords = recentMeetings.map((meeting) => {
+      const meetingRecords = allMeetings.map((meeting) => {
         let totalStayTime = 0;
         if (meeting.startTime && meeting.endTime) {
           try {
