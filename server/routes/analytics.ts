@@ -1576,9 +1576,8 @@ const employeesWithData = allEmployees.filter(emp =>
         };
       });
 
-      // Generate meeting records from most recent meetings (max 3)
-      const recentMeetings = allMeetings.slice(0, 3);
-      const meetingRecords = recentMeetings.map(meeting => {
+      // Generate meeting records from ALL meetings (no limit)
+      const meetingRecords = allMeetings.map(meeting => {
         // Calculate individual meeting duration
         let totalStayTime = 0;
         if (meeting.startTime && meeting.endTime) {
