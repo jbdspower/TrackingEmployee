@@ -12,9 +12,9 @@ import type { IMeetingHistory, ITrackingSession } from "../models";
 
 // Rate limiting for Nominatim API (max 1 request per second)
 let lastGeocodingTime = 0;
-const GEOCODING_DELAY = 1000; // 1 second
+const GEOCODING_DELAY = 2000; // 🔥 FIX: Increase from 1s to 2s to reduce API load
 const geocodeCache = new Map<string, { address: string; expires: number }>();
-const GEOCACHE_TTL = 3600000; // 1 hour
+const GEOCACHE_TTL = 7200000; // 🔥 FIX: Increase cache from 1 hour to 2 hours
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
@@ -49,7 +49,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
       headers: {
         'User-Agent': 'EmployeeTrackingApp/1.0'
       },
-      timeout: 5000
+      timeout: 8000 // 🔥 FIX: Increase timeout from 5s to 8s to reduce failures
     });
 
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;

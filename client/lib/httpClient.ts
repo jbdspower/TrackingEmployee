@@ -152,7 +152,7 @@ export class HttpClient {
         }
 
         // Handle timeout
-        xhr.timeout = 25000; // 25 seconds (longer than fetch timeout)
+        xhr.timeout = 15000; // 🔥 FIX: Reduce from 25s to 15s for faster failures
 
         xhr.onreadystatechange = () => {
           console.log(
@@ -340,9 +340,9 @@ export class HttpClient {
       // Set up timeout
       timeoutId = setTimeout(() => {
         if (controller && !controller.signal.aborted) {
-          controller.abort("Request timeout after 20 seconds");
+          controller.abort("Request timeout after 15 seconds"); // 🔥 FIX: Reduce from 20s to 15s
         }
-      }, 20000); // 20 second timeout
+      }, 15000); // 20 second timeout
 
       const fetchOptions: RequestInit = {
         ...baseOptions,

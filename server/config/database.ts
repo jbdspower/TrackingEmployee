@@ -40,14 +40,16 @@ class Database {
       console.log('🔄 Database: Connecting to MongoDB...');
       
       await mongoose.connect(dbConfig.MONGODB_URI, {
-  dbName: dbConfig.DB_NAME,
-  maxPoolSize: 50,
-  serverSelectionTimeoutMS: 30000, // 30s → cluster select
-  socketTimeoutMS: 120000,         // 2 min → slow queries
-  connectTimeoutMS: 30000,         // 30s initial connect
-  retryWrites: true,
-  retryReads: true,
-});
+        dbName: dbConfig.DB_NAME,
+        maxPoolSize: 10, // 🔥 FIX: Reduce from 50 to 10 to prevent connection overload
+        serverSelectionTimeoutMS: 10000, // 🔥 FIX: Reduce from 30s to 10s
+        socketTimeoutMS: 30000, // 🔥 FIX: Reduce from 2min to 30s for faster timeouts
+        connectTimeoutMS: 10000, // 🔥 FIX: Reduce from 30s to 10s
+        retryWrites: true,
+        retryReads: false, // 🔥 FIX: Disable retry reads to prevent retry storms
+        maxIdleTimeMS: 30000, // 🔥 FIX: Close idle connections after 30s
+        heartbeatFrequencyMS: 30000, // 🔥 FIX: Reduce heartbeat frequency
+      });
 
 
       this.isConnected = true;

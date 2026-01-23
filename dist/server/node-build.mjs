@@ -63,15 +63,21 @@ class Database {
       console.log("🔄 Database: Connecting to MongoDB...");
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
-        maxPoolSize: 50,
-        serverSelectionTimeoutMS: 3e4,
-        // 30s → cluster select
-        socketTimeoutMS: 12e4,
-        // 2 min → slow queries
-        connectTimeoutMS: 3e4,
-        // 30s initial connect
+        maxPoolSize: 10,
+        // 🔥 FIX: Reduce from 50 to 10 to prevent connection overload
+        serverSelectionTimeoutMS: 1e4,
+        // 🔥 FIX: Reduce from 30s to 10s
+        socketTimeoutMS: 3e4,
+        // 🔥 FIX: Reduce from 2min to 30s for faster timeouts
+        connectTimeoutMS: 1e4,
+        // 🔥 FIX: Reduce from 30s to 10s
         retryWrites: true,
-        retryReads: true
+        retryReads: false,
+        // 🔥 FIX: Disable retry reads to prevent retry storms
+        maxIdleTimeMS: 3e4,
+        // 🔥 FIX: Close idle connections after 30s
+        heartbeatFrequencyMS: 3e4
+        // 🔥 FIX: Reduce heartbeat frequency
       });
       this.isConnected = true;
       console.log("✅ Database: Successfully connected to MongoDB");
@@ -1566,9 +1572,9 @@ const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProp
   updateMeetingApprovalByDetails
 }, Symbol.toStringTag, { value: "Module" }));
 let lastGeocodingTime = 0;
-const GEOCODING_DELAY = 1e3;
+const GEOCODING_DELAY = 2e3;
 const geocodeCache = /* @__PURE__ */ new Map();
-const GEOCACHE_TTL = 36e5;
+const GEOCACHE_TTL = 72e5;
 async function reverseGeocode(lat, lng) {
   if (lat === 0 && lng === 0) return "Location not available";
   const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
@@ -1598,7 +1604,8 @@ async function reverseGeocode(lat, lng) {
       headers: {
         "User-Agent": "EmployeeTrackingApp/1.0"
       },
-      timeout: 5e3
+      timeout: 8e3
+      // 🔥 FIX: Increase timeout from 5s to 8s to reduce failures
     });
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     console.log(`✅ Address resolved: ${address}`);
