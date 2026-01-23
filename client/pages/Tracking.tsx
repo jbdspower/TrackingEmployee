@@ -305,6 +305,8 @@ export default function Tracking() {
     initializeData();
   }, [employeeId, navigate]);
 
+  console.log("testing");
+  
   const fetchEmployee = async (retryCount = 0) => {
     try {
       console.log("Fetching employee:", { employeeId, retryCount });
