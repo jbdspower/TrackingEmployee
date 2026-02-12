@@ -97,21 +97,16 @@ export default function Tracking() {
   };
 
   const getAddressFromCoords = async (lat: number, lng: number) => {
-    const isMobile = isMobileDevice();
-
-    // Quick return for desktop to avoid slow API calls
-    if (!isMobile) {
-      return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    }
-
-    // Mobile: Use full address lookup
+    // Always try reverse geocoding for a human-readable address.
+    // Fallback to coordinates if the lookup fails or is slow.
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       const addressResponse = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        {
-          headers: { 'User-Agent': 'EmployeeTrackingApp/1.0' }
-        }
+        { signal: controller.signal }
       );
+      clearTimeout(timeoutId);
 
       if (addressResponse.ok) {
         const addressData = await addressResponse.json();
@@ -122,6 +117,30 @@ export default function Tracking() {
     }
 
     return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  };
+
+  const getFallbackMeetingLocation = () => {
+    // 1) Prefer the most recent browser location cache
+    if (cachedLocation) {
+      return {
+        lat: cachedLocation.coords.latitude,
+        lng: cachedLocation.coords.longitude,
+        address: `${cachedLocation.coords.latitude.toFixed(6)}, ${cachedLocation.coords.longitude.toFixed(6)}`,
+      };
+    }
+
+    // 2) Fallback to employee's last tracked server location
+    if (employee?.location) {
+      return {
+        lat: employee.location.lat,
+        lng: employee.location.lng,
+        address:
+          employee.location.address ||
+          `${employee.location.lat.toFixed(6)}, ${employee.location.lng.toFixed(6)}`,
+      };
+    }
+
+    return null;
   };
 
   const handleDutyCompletedClick = async () => {
@@ -1071,6 +1090,8 @@ export default function Tracking() {
       const response = await HttpClient.put(
         `/api/meetings/${meetingIdToEnd}`,
         updatePayload,
+        true,
+        { timeoutMs: 60000 },
       );
 
       if (response.ok) {
@@ -1303,13 +1324,9 @@ export default function Tracking() {
             console.log("Location permission status:", permissionStatus.state);
 
             if (permissionStatus.state === 'denied') {
-              toast({
-                title: "Location Permission Denied",
-                description: "Please enable location access in your browser settings and try again.",
-                variant: "destructive",
-              });
-              setIsStartingMeeting(false);
-              return;
+              // Some embedded browsers report denied prematurely.
+              // We still try getCurrentPosition once before fallback.
+              console.warn("Permission API reports denied; trying live geolocation anyway.");
             }
 
             if (permissionStatus.state === 'prompt') {
@@ -1413,6 +1430,21 @@ export default function Tracking() {
                   ? "Unable to determine your location. Please check your device's location settings."
                   : "Location request timed out. Please ensure location services are enabled and try again."
               : "Failed to access location. Please check your location settings and try again.";
+
+            const canUseFallbackLocation =
+              locationError instanceof GeolocationPositionError &&
+              locationError.code === 1;
+            if (canUseFallbackLocation) {
+              const fallbackLocation = getFallbackMeetingLocation();
+              if (fallbackLocation) {
+                startLocation = fallbackLocation;
+                toast({
+                  title: "Location Permission Denied",
+                  description: "Using last known location to start the meeting.",
+                });
+                break;
+              }
+            }
 
             toast({
               title: "Location Required",
@@ -1566,13 +1598,9 @@ const startMeetingFromFollowUp = async (
           console.log("Location permission status:", permissionStatus.state);
 
           if (permissionStatus.state === 'denied') {
-            toast({
-              title: "Location Permission Denied",
-              description: "Please enable location access in your browser settings and try again.",
-              variant: "destructive",
-            });
-            setIsStartingMeeting(false);
-            return;
+            // Some embedded browsers report denied prematurely.
+            // We still try getCurrentPosition once before fallback.
+            console.warn("Permission API reports denied; trying live geolocation anyway.");
           }
 
           if (permissionStatus.state === 'prompt') {
@@ -1662,6 +1690,21 @@ const startMeetingFromFollowUp = async (
                 ? "Unable to determine your location. Please check your device's location settings."
                 : "Location request timed out. Please ensure location services are enabled and try again."
             : "Failed to access location. Please check your location settings and try again.";
+
+          const canUseFallbackLocation =
+            locationError instanceof GeolocationPositionError &&
+            locationError.code === 1;
+          if (canUseFallbackLocation) {
+            const fallbackLocation = getFallbackMeetingLocation();
+            if (fallbackLocation) {
+              startLocation = fallbackLocation;
+              toast({
+                title: "Location Permission Denied",
+                description: "Using last known location to start the meeting.",
+              });
+              break;
+            }
+          }
 
           toast({
             title: "Location Required",

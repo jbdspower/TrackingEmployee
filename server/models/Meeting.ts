@@ -213,8 +213,16 @@ leadInfo: {
 
 // Create indexes for better query performance
 MeetingSchema.index({ employeeId: 1, startTime: -1 });
+// Helps all-employees-details when scanning many employees with startTime sort/range
+MeetingSchema.index({ startTime: -1, employeeId: 1 });
 MeetingSchema.index({ leadId: 1, startTime: -1 });
 MeetingSchema.index({ status: 1, startTime: -1 });
+// Fast path for active meeting lookup on end/start flows
+MeetingSchema.index({ employeeId: 1, status: 1, startTime: -1 });
+MeetingSchema.index({ followUpId: 1, status: 1, startTime: -1 });
+// Fast path for approval lookup by details and day-scoped meeting fetches
+MeetingSchema.index({ employeeId: 1, clientName: 1, startTime: -1 });
+MeetingSchema.index({ employeeId: 1, meetingStatus: 1, startTime: -1 });
 
 
 export const Meeting = mongoose.model<IMeeting>('Meeting', MeetingSchema);

@@ -5,6 +5,8 @@ import cors from "cors";
 import mongoose, { Schema } from "mongoose";
 import dotenv from "dotenv";
 import axios from "axios";
+import multer from "multer";
+import fs from "fs";
 import NodeCache from "node-cache";
 import { isToday, format, endOfDay, startOfDay, parseISO, endOfMonth, startOfMonth, endOfWeek, startOfWeek, subDays } from "date-fns";
 import { fileURLToPath } from "url";
@@ -19,19 +21,29 @@ async function createIndexes() {
     await db.collection("meetings").createIndex({ employeeId: 1 });
     await db.collection("meetings").createIndex({ startTime: -1 });
     await db.collection("meetings").createIndex({ employeeId: 1, startTime: -1 });
+    await db.collection("meetings").createIndex({ startTime: -1, employeeId: 1 });
     await db.collection("meetings").createIndex({ leadId: 1 });
     await db.collection("meetings").createIndex({ status: 1 });
+    await db.collection("meetings").createIndex({ employeeId: 1, status: 1, startTime: -1 });
+    await db.collection("meetings").createIndex({ followUpId: 1, status: 1, startTime: -1 });
+    await db.collection("meetings").createIndex({ employeeId: 1, clientName: 1, startTime: -1 });
+    await db.collection("meetings").createIndex({ employeeId: 1, meetingStatus: 1, startTime: -1 });
     console.log("✅ Meeting indexes created");
-    await db.collection("attendances").createIndex({ employeeId: 1, date: 1 }, { unique: true });
-    await db.collection("attendances").createIndex({ date: 1 });
-    await db.collection("attendances").createIndex({ employeeId: 1 });
+    await db.collection("attendance").createIndex({ employeeId: 1, date: 1 }, { unique: true });
+    await db.collection("attendance").createIndex({ date: 1 });
+    await db.collection("attendance").createIndex({ employeeId: 1 });
+    await db.collection("attendance").createIndex({ employeeId: 1, date: -1 });
+    await db.collection("attendance").createIndex({ date: -1, employeeId: 1 });
     console.log("✅ Attendance indexes created");
-    await db.collection("trackingsessions").createIndex({ employeeId: 1, startTime: -1 });
-    await db.collection("trackingsessions").createIndex({ startTime: -1 });
-    await db.collection("trackingsessions").createIndex({ status: 1 });
+    await db.collection("tracking_sessions").createIndex({ employeeId: 1, startTime: -1 });
+    await db.collection("tracking_sessions").createIndex({ startTime: -1 });
+    await db.collection("tracking_sessions").createIndex({ startTime: -1, employeeId: 1 });
+    await db.collection("tracking_sessions").createIndex({ status: 1 });
+    await db.collection("tracking_sessions").createIndex({ employeeId: 1, status: 1, startTime: -1 });
     console.log("✅ TrackingSession indexes created");
-    await db.collection("meetinghistories").createIndex({ employeeId: 1, meetingDate: -1 });
-    await db.collection("meetinghistories").createIndex({ leadId: 1 });
+    await db.collection("meeting_history").createIndex({ employeeId: 1, timestamp: -1 });
+    await db.collection("meeting_history").createIndex({ leadId: 1, timestamp: -1 });
+    await db.collection("meeting_history").createIndex({ sessionId: 1, timestamp: -1 });
     console.log("✅ MeetingHistory indexes created");
     console.log("🎉 All database indexes created successfully");
   } catch (error) {
@@ -65,10 +77,10 @@ class Database {
         dbName: dbConfig.DB_NAME,
         maxPoolSize: 10,
         // 🔥 FIX: Reduce from 50 to 10 to prevent connection overload
-        serverSelectionTimeoutMS: 1e4,
-        // 🔥 FIX: Reduce from 30s to 10s
-        socketTimeoutMS: 3e4,
-        // 🔥 FIX: Reduce from 2min to 30s for faster timeouts
+        serverSelectionTimeoutMS: 2e4,
+        // More tolerant for network latency to Atlas
+        socketTimeoutMS: 12e4,
+        // Avoid false 500s for heavy but valid read queries
         connectTimeoutMS: 1e4,
         // 🔥 FIX: Reduce from 30s to 10s
         retryWrites: true,
@@ -249,8 +261,13 @@ const MeetingSchema = new Schema({
   collection: "meetings"
 });
 MeetingSchema.index({ employeeId: 1, startTime: -1 });
+MeetingSchema.index({ startTime: -1, employeeId: 1 });
 MeetingSchema.index({ leadId: 1, startTime: -1 });
 MeetingSchema.index({ status: 1, startTime: -1 });
+MeetingSchema.index({ employeeId: 1, status: 1, startTime: -1 });
+MeetingSchema.index({ followUpId: 1, status: 1, startTime: -1 });
+MeetingSchema.index({ employeeId: 1, clientName: 1, startTime: -1 });
+MeetingSchema.index({ employeeId: 1, meetingStatus: 1, startTime: -1 });
 const Meeting = mongoose.model("Meeting", MeetingSchema);
 const CustomerContactSchema = new Schema({
   customerName: { type: String, required: true },
@@ -346,6 +363,7 @@ const AttendanceSchema = new Schema({
 });
 AttendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
 AttendanceSchema.index({ employeeId: 1, date: -1 });
+AttendanceSchema.index({ date: -1, employeeId: 1 });
 AttendanceSchema.index({ date: -1, attendanceStatus: 1 });
 const Attendance = mongoose.model("Attendance", AttendanceSchema);
 const LocationDataSchema$1 = new Schema({
@@ -401,6 +419,7 @@ const TrackingSessionSchema = new Schema({
   collection: "tracking_sessions"
 });
 TrackingSessionSchema.index({ employeeId: 1, startTime: -1 });
+TrackingSessionSchema.index({ startTime: -1, employeeId: 1 });
 TrackingSessionSchema.index({ status: 1, startTime: -1 });
 TrackingSessionSchema.index({ employeeId: 1, status: 1, startTime: -1 });
 const TrackingSession = mongoose.model("TrackingSession", TrackingSessionSchema);
@@ -932,6 +951,24 @@ const createEmployee = (req, res) => res.status(501).json({ error: "Use external
 const updateEmployee = (req, res) => res.status(501).json({ error: "Use external API for updates" });
 const deleteEmployee = (req, res) => res.status(501).json({ error: "Use external API for deletion" });
 const geocodeCache$1 = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const uploadsRoot = path.join(process.cwd(), "uploads", "meetings");
+const storage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const meetingId = req.params.id || "unknown";
+    const dir = path.join(uploadsRoot, meetingId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${safeName}`;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 let lastGeocodingTime$1 = 0;
 const GEOCODING_DELAY$1 = 1e3;
 async function reverseGeocode$1(lat, lng) {
@@ -1132,7 +1169,7 @@ const createMeeting = async (req, res) => {
     const address = await reverseGeocode$1(location.lat, location.lng);
     const meetingStartTime = startTime ?? (/* @__PURE__ */ new Date()).toISOString();
     const sanitizedLeadInfo = leadInfo && Object.keys(leadInfo).length > 0 ? leadInfo : void 0;
-    const meeting = await Meeting.create({
+    const meetingData = {
       employeeId,
       location: {
         ...location,
@@ -1149,12 +1186,65 @@ const createMeeting = async (req, res) => {
       leadInfo: sanitizedLeadInfo || void 0,
       followUpId,
       externalMeetingStatus
-    });
-    console.log("✅ START MEETING:", {
-      id: meeting._id,
-      startTime: meeting.startTime
-    });
-    const meetingLog = await convertMeetingToMeetingLog(meeting);
+    };
+    const db = Database.getInstance();
+    if (!db.isConnectionActive()) {
+      console.warn("⚠️ Database not connected, saving meeting in memory");
+      const meetingId2 = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const meetingLog2 = {
+        id: meetingId2,
+        employeeId: meetingData.employeeId,
+        location: meetingData.location,
+        startTime: meetingData.startTime,
+        endTime: void 0,
+        clientName: meetingData.clientName,
+        notes: meetingData.notes,
+        status: meetingData.status,
+        trackingSessionId: void 0,
+        leadId: meetingData.leadId,
+        leadInfo: meetingData.leadInfo,
+        followUpId: meetingData.followUpId,
+        meetingDetails: void 0,
+        approvalStatus: void 0,
+        approvalReason: void 0,
+        approvedBy: void 0
+      };
+      inMemoryMeetings.push(meetingLog2);
+      res.status(201).json(meetingLog2);
+      return;
+    }
+    try {
+      const meeting = await Meeting.create(meetingData);
+      console.log("✅ START MEETING:", {
+        id: meeting._id,
+        startTime: meeting.startTime
+      });
+      const meetingLog2 = await convertMeetingToMeetingLog(meeting);
+      res.status(201).json(meetingLog2);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
+    }
+    const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const meetingLog = {
+      id: meetingId,
+      employeeId: meetingData.employeeId,
+      location: meetingData.location,
+      startTime: meetingData.startTime,
+      endTime: void 0,
+      clientName: meetingData.clientName,
+      notes: meetingData.notes,
+      status: meetingData.status,
+      trackingSessionId: void 0,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+      followUpId: meetingData.followUpId,
+      meetingDetails: void 0,
+      approvalStatus: void 0,
+      approvalReason: void 0,
+      approvedBy: void 0
+    };
+    inMemoryMeetings.push(meetingLog);
     res.status(201).json(meetingLog);
   } catch (error) {
     console.error("❌ Error starting meeting:", error);
@@ -1256,6 +1346,43 @@ const updateMeeting = async (req, res) => {
     console.error("❌ Error ending meeting:", error);
     res.status(500).json({ error: "Failed to end meeting" });
   }
+};
+const uploadMeetingAttachments = (req, res) => {
+  upload.array("files", 10)(req, res, async (error) => {
+    if (error) {
+      return res.status(400).json({ error: error.message || "Upload failed" });
+    }
+    try {
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ error: "Meeting ID is required" });
+      }
+      const meeting = await Meeting.findById(id);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+      const files = req.files || [];
+      if (files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const attachmentUrls = files.map(
+        (file) => `${baseUrl}/uploads/meetings/${id}/${file.filename}`
+      );
+      meeting.attachments = [...meeting.attachments || [], ...attachmentUrls];
+      if (meeting.meetingDetails?.attachments) {
+        meeting.meetingDetails.attachments = [
+          ...meeting.meetingDetails.attachments,
+          ...attachmentUrls
+        ];
+      }
+      await meeting.save();
+      return res.status(200).json({ attachments: attachmentUrls });
+    } catch (err) {
+      console.error("❌ Error uploading meeting attachments:", err);
+      return res.status(500).json({ error: "Failed to upload attachments" });
+    }
+  });
 };
 const deleteMeeting = async (req, res) => {
   try {
@@ -1569,7 +1696,8 @@ const meetings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProp
   inMemoryMeetings,
   updateMeeting,
   updateMeetingApproval,
-  updateMeetingApprovalByDetails
+  updateMeetingApprovalByDetails,
+  uploadMeetingAttachments
 }, Symbol.toStringTag, { value: "Module" }));
 let lastGeocodingTime = 0;
 const GEOCODING_DELAY = 2e3;
@@ -2608,130 +2736,318 @@ const getEmployeeAnalytics = async (req, res) => {
   }
 };
 const getEmployeeDetails = async (req, res) => {
-  const resolveLocationAddress = (location) => {
-    if (!location) return "";
-    if (location.endLocation?.address) {
-      const endAddr = location.endLocation.address;
-      const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
-      if (isCoordinates) {
-        return location.address || "Location coordinates";
-      }
-      return endAddr;
-    }
-    if (typeof location.address === "string" && location.address.trim()) {
-      return location.address;
-    }
-    return "";
-  };
   try {
     const { employeeId } = req.params;
     const {
-      dateRange = "today",
+      dateRange: rawDateRange = "today",
       startDate,
       endDate,
       page = "1",
       limit = "20",
-      type = "meetings"
+      type = "meetings",
       // "meetings" or "days"
+      includeAttachments = "false"
     } = req.query;
+    const normalizedDateRange = String(rawDateRange || "today").split(",")[0].trim().toLowerCase();
+    const dateRange = normalizedDateRange || "today";
+    const isAllRange = dateRange === "all";
+    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
     const startTime = Date.now();
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
     const skip = (pageNum - 1) * limitNum;
-    const { start, end } = getDateRange(
-      dateRange,
-      startDate,
-      endDate
+    const { start, end } = getDateRange(dateRange, startDate, endDate);
+    const employeeIdFilters = [
+      employeeId
+    ];
+    if (mongoose.Types.ObjectId.isValid(employeeId)) {
+      employeeIdFilters.push(new mongoose.Types.ObjectId(employeeId));
+    }
+    try {
+      if (mongoose.Types.ObjectId.isValid(employeeId)) {
+        const employeeDoc = await Employee.findById(employeeId).select("id").lean();
+        const employeeExternalId = employeeDoc?.id;
+        if (employeeExternalId) {
+          employeeIdFilters.push(String(employeeExternalId));
+        }
+      } else {
+        const employeeDoc = await Employee.findOne({ id: employeeId }).select("_id").lean();
+        const resolvedId = employeeDoc?._id?.toString?.() || employeeDoc?._id;
+        if (resolvedId && mongoose.Types.ObjectId.isValid(resolvedId)) {
+          employeeIdFilters.push(new mongoose.Types.ObjectId(resolvedId));
+        }
+      }
+    } catch (resolveError) {
+      console.warn("⚠️ Failed to resolve employeeId mapping:", resolveError);
+    }
+    console.log(
+      `📊 Employee details for ${employeeId} - Date range: ${dateRange} (raw: ${String(rawDateRange)}), Page: ${pageNum}, Limit: ${limitNum}`
     );
-    console.log(`📊 Employee details for ${employeeId} - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}`);
+    console.log("🔎 EmployeeId filters:", employeeIdFilters);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const mixedStartTimeRangeFilter = {
+      $or: [
+        { startTime: { $gte: startIso, $lte: endIso } },
+        // startTime stored as string
+        { startTime: { $gte: start, $lte: end } }
+        // startTime stored as Date
+      ]
+    };
+    const meetingsSelectFields = shouldIncludeAttachments ? "employeeId startTime endTime clientName leadId status notes externalMeetingStatus meetingDetails location approvalStatus approvalReason approvedBy attachments" : "employeeId startTime endTime clientName leadId status notes externalMeetingStatus location approvalStatus approvalReason approvedBy meetingDetails.discussion meetingDetails.customers meetingDetails.customerEmployeeName meetingDetails.incomplete meetingDetails.incompleteReason";
     const [
       externalUsers,
       meetingsData,
       meetingsCount,
       trackingSessionsData,
       attendanceRecords,
-      allMeetingsForEmployee
+      dayMeetingsAggregate
     ] = await Promise.allSettled([
       // Get external users from cache
       cacheService.getExternalUsers(),
       // Fetch meetings with date range filter and pagination
       Meeting.find({
-        employeeId,
-        startTime: {
-          $gte: start.toISOString(),
-          $lte: end.toISOString()
-        }
-      }).select("startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy").sort({ startTime: -1 }).skip(skip).limit(limitNum).lean().exec(),
+        employeeId: { $in: employeeIdFilters },
+        ...mixedStartTimeRangeFilter
+      }).select(meetingsSelectFields).sort({ startTime: -1 }).skip(skip).limit(limitNum).lean().exec(),
       // Get total count of meetings for pagination
       Meeting.countDocuments({
-        employeeId,
-        startTime: {
-          $gte: start.toISOString(),
-          $lte: end.toISOString()
-        }
+        employeeId: { $in: employeeIdFilters },
+        ...mixedStartTimeRangeFilter
       }),
       // Fetch tracking sessions with date range filter
       TrackingSession.find({
-        employeeId,
-        startTime: {
-          $gte: start.toISOString(),
-          $lte: end.toISOString()
-        }
+        employeeId: { $in: employeeIdFilters },
+        ...mixedStartTimeRangeFilter
       }).select("startTime endTime startLocation endLocation status duration").lean().exec(),
       // Fetch attendance records
       Attendance.find({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         date: {
           $gte: format(start, "yyyy-MM-dd"),
           $lte: format(end, "yyyy-MM-dd")
         }
       }).select("date attendanceStatus attendanceReason attendenceCreated").lean().exec(),
-      // Get ALL meetings for this employee in the date range (not paginated)
-      Meeting.find({
-        employeeId,
-        startTime: {
-          $gte: start.toISOString(),
-          $lte: end.toISOString()
+      // Aggregate day-level meeting stats in MongoDB (faster than loading all rows)
+      Meeting.aggregate([
+        {
+          $match: {
+            employeeId: { $in: employeeIdFilters },
+            ...mixedStartTimeRangeFilter
+          }
+        },
+        {
+          $addFields: {
+            startDateObj: {
+              $convert: {
+                input: "$startTime",
+                to: "date",
+                onError: null,
+                onNull: null
+              }
+            },
+            endDateObj: {
+              $convert: {
+                input: "$endTime",
+                to: "date",
+                onError: null,
+                onNull: null
+              }
+            }
+          }
+        },
+        { $match: { startDateObj: { $ne: null } } },
+        {
+          $project: {
+            startTime: 1,
+            endTime: 1,
+            "location.address": 1,
+            "location.endLocation.address": 1,
+            startDateObj: 1,
+            endDateObj: 1
+          }
+        },
+        { $sort: { startDateObj: 1 } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: "%Y-%m-%d", date: "$startDateObj" }
+            },
+            totalMeetings: { $sum: 1 },
+            firstStartTime: { $first: "$startTime" },
+            firstLocationAddress: { $first: "$location.address" },
+            lastEndTime: { $last: "$endTime" },
+            lastLocationAddress: { $last: "$location.address" },
+            lastEndLocationAddress: { $last: "$location.endLocation.address" },
+            meetingTimeMs: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $ne: ["$startDateObj", null] }, { $ne: ["$endDateObj", null] }] },
+                  { $max: [0, { $subtract: ["$endDateObj", "$startDateObj"] }] },
+                  0
+                ]
+              }
+            }
+          }
         }
-      }).select("startTime endTime clientName leadId status meetingDetails location").sort({ startTime: -1 }).lean().exec()
+      ]).exec()
     ]);
     const externalUsersResult = externalUsers.status === "fulfilled" ? externalUsers.value : [];
     const meetingsDataResult = meetingsData.status === "fulfilled" ? meetingsData.value : [];
     const meetingsCountResult = meetingsCount.status === "fulfilled" ? meetingsCount.value : 0;
     const trackingSessionsResult = trackingSessionsData.status === "fulfilled" ? trackingSessionsData.value : [];
     const attendanceRecordsResult = attendanceRecords.status === "fulfilled" ? attendanceRecords.value : [];
-    const allMeetingsResult = allMeetingsForEmployee.status === "fulfilled" ? allMeetingsForEmployee.value : [];
+    const dayMeetingsAggregateResult = dayMeetingsAggregate.status === "fulfilled" ? dayMeetingsAggregate.value : [];
     if (externalUsers.status === "rejected") console.error("Error fetching external users:", externalUsers.reason);
     if (meetingsData.status === "rejected") console.error("Error fetching meetings:", meetingsData.reason);
     if (meetingsCount.status === "rejected") console.error("Error counting meetings:", meetingsCount.reason);
     if (trackingSessionsData.status === "rejected") console.error("Error fetching tracking sessions:", trackingSessionsData.reason);
     if (attendanceRecords.status === "rejected") console.error("Error fetching attendance:", attendanceRecords.reason);
-    if (allMeetingsForEmployee.status === "rejected") console.error("Error fetching all meetings:", allMeetingsForEmployee.reason);
-    const meetings2 = meetingsDataResult;
+    if (dayMeetingsAggregate.status === "rejected") console.error("Error aggregating day meetings:", dayMeetingsAggregate.reason);
+    let meetings2 = meetingsDataResult;
     const trackingSessions2 = trackingSessionsResult;
-    const allMeetings = allMeetingsResult;
-    console.log(`📈 Fetched data: ${meetings2.length} paginated meetings, ${allMeetings.length} total meetings (total count: ${meetingsCountResult}), ${trackingSessions2.length} sessions, ${attendanceRecordsResult.length} attendance records`);
-    const userMap = new Map(externalUsersResult.map((user) => [user._id, user.name]));
-    const allDatesInRange = [];
-    let currentDate = new Date(start);
-    const today = /* @__PURE__ */ new Date();
-    today.setHours(23, 59, 59, 999);
-    while (currentDate <= end && currentDate <= today) {
-      allDatesInRange.push(format(currentDate, "yyyy-MM-dd"));
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    console.log(`📅 Date range includes ${allDatesInRange.length} total days (excluding future dates)`);
-    const allMeetingsByDate = /* @__PURE__ */ new Map();
-    allMeetings.forEach((meeting) => {
+    if (meetingsCountResult > 0 && meetings2.length === 0) {
       try {
-        const date = format(new Date(meeting.startTime), "yyyy-MM-dd");
-        if (!allMeetingsByDate.has(date)) {
-          allMeetingsByDate.set(date, []);
-        }
-        allMeetingsByDate.get(date).push(meeting);
-      } catch (error) {
-        console.error("Error processing meeting date:", error);
+        console.warn(
+          "⚠️ meetingsCount > 0 but meetings page empty; running fallback meetings fetch"
+        );
+        meetings2 = await Meeting.find({
+          employeeId: { $in: employeeIdFilters },
+          ...mixedStartTimeRangeFilter
+        }).select(meetingsSelectFields).sort({ startTime: -1 }).skip(skip).limit(limitNum).lean().exec();
+      } catch (meetingsFallbackError) {
+        console.error("❌ Fallback meetings fetch failed:", meetingsFallbackError);
       }
+    }
+    console.log(`📈 Fetched data: ${meetings2.length} paginated meetings (total count: ${meetingsCountResult}), ${trackingSessions2.length} sessions, ${attendanceRecordsResult.length} attendance records, ${dayMeetingsAggregateResult.length} meeting-day aggregates`);
+    const userMap = new Map(externalUsersResult.map((user) => [user._id, user.name]));
+    const normalizedEmployeeIdFilters = employeeIdFilters.map((id) => id.toString());
+    let employeeDisplayName = normalizedEmployeeIdFilters.map((id) => userMap.get(id)).find((name) => typeof name === "string" && name.trim().length > 0) || "";
+    if (!employeeDisplayName) {
+      const meetingEmployeeId = meetings2?.find((m) => m?.employeeId)?.employeeId;
+      if (meetingEmployeeId) {
+        employeeDisplayName = userMap.get(String(meetingEmployeeId)) || "";
+      }
+    }
+    if (!employeeDisplayName) {
+      try {
+        const employeeDoc = await Employee.findOne({
+          $or: [
+            { id: employeeId },
+            ...mongoose.Types.ObjectId.isValid(employeeId) ? [{ _id: new mongoose.Types.ObjectId(employeeId) }] : []
+          ]
+        }).select("name").lean();
+        employeeDisplayName = employeeDoc?.name || "";
+      } catch (employeeLookupError) {
+        console.warn("⚠️ Failed to resolve employee display name:", employeeLookupError);
+      }
+    }
+    const meetingDayMap = /* @__PURE__ */ new Map();
+    dayMeetingsAggregateResult.forEach((row) => {
+      if (!row?._id) return;
+      meetingDayMap.set(row._id, row);
+    });
+    const paginatedMeetingDateKeys = /* @__PURE__ */ new Set();
+    meetings2.forEach((meeting) => {
+      if (!meeting?.startTime) return;
+      const d = new Date(meeting.startTime);
+      if (!isNaN(d.getTime())) {
+        paginatedMeetingDateKeys.add(format(d, "yyyy-MM-dd"));
+      }
+    });
+    const missingDayKeysFromPage = Array.from(paginatedMeetingDateKeys).filter(
+      (dateKey) => !meetingDayMap.has(dateKey)
+    );
+    if ((meetingDayMap.size === 0 || missingDayKeysFromPage.length > 0) && meetingsCountResult > 0) {
+      try {
+        const fallbackQuery = {
+          employeeId: { $in: employeeIdFilters }
+        };
+        if (meetingDayMap.size === 0) {
+          fallbackQuery.$or = mixedStartTimeRangeFilter.$or;
+        } else {
+          fallbackQuery.$or = missingDayKeysFromPage.map((dateKey) => ({
+            startTime: { $regex: `^${dateKey}` }
+          }));
+        }
+        const fallbackMeetingsForDays = await Meeting.find(fallbackQuery).select("startTime endTime location").sort({ startTime: 1 }).lean().exec();
+        fallbackMeetingsForDays.forEach((meeting) => {
+          if (!meeting?.startTime) return;
+          const startDate2 = new Date(meeting.startTime);
+          if (isNaN(startDate2.getTime())) return;
+          const dateKey = format(startDate2, "yyyy-MM-dd");
+          const existing = meetingDayMap.get(dateKey) || {
+            _id: dateKey,
+            totalMeetings: 0,
+            firstStartTime: "",
+            firstLocationAddress: "",
+            lastEndTime: "",
+            lastLocationAddress: "",
+            lastEndLocationAddress: "",
+            meetingTimeMs: 0
+          };
+          existing.totalMeetings = (existing.totalMeetings || 0) + 1;
+          if (!existing.firstStartTime || new Date(existing.firstStartTime).getTime() > startDate2.getTime()) {
+            existing.firstStartTime = meeting.startTime;
+            existing.firstLocationAddress = meeting.location?.address || meeting.location?.startLocation?.address || "";
+          }
+          const endDate2 = meeting.endTime ? new Date(meeting.endTime) : null;
+          if (endDate2 && !isNaN(endDate2.getTime())) {
+            const existingLastEnd = existing.lastEndTime ? new Date(existing.lastEndTime).getTime() : -1;
+            if (existingLastEnd < endDate2.getTime()) {
+              existing.lastEndTime = meeting.endTime;
+              existing.lastLocationAddress = meeting.location?.address || meeting.location?.startLocation?.address || "";
+              existing.lastEndLocationAddress = meeting.location?.endLocation?.address || meeting.location?.address || "";
+            }
+            const meetingDurationMs = endDate2.getTime() - startDate2.getTime();
+            if (meetingDurationMs > 0) {
+              existing.meetingTimeMs += meetingDurationMs;
+            }
+          }
+          meetingDayMap.set(dateKey, existing);
+        });
+        console.log(
+          `↩️ Merged day aggregates from fallback meetings query (${fallbackMeetingsForDays.length} rows). Total day keys: ${meetingDayMap.size}`
+        );
+      } catch (fallbackError) {
+        console.error("❌ Failed fallback day aggregation:", fallbackError);
+      }
+    }
+    const seededMeetingDayKeys = new Set(Array.from(meetingDayMap.keys()));
+    meetings2.forEach((meeting) => {
+      if (!meeting?.startTime) return;
+      const startDateObj = new Date(meeting.startTime);
+      if (isNaN(startDateObj.getTime())) return;
+      const dateKey = format(startDateObj, "yyyy-MM-dd");
+      const existing = meetingDayMap.get(dateKey) || {
+        _id: dateKey,
+        totalMeetings: 0,
+        firstStartTime: "",
+        firstLocationAddress: "",
+        lastEndTime: "",
+        lastLocationAddress: "",
+        lastEndLocationAddress: "",
+        meetingTimeMs: 0
+      };
+      if (seededMeetingDayKeys.has(dateKey)) {
+        existing.totalMeetings = existing.totalMeetings || 0;
+      } else {
+        existing.totalMeetings = (existing.totalMeetings || 0) + 1;
+      }
+      if (!existing.firstStartTime || new Date(existing.firstStartTime).getTime() > startDateObj.getTime()) {
+        existing.firstStartTime = meeting.startTime;
+        existing.firstLocationAddress = meeting.location?.address || meeting.location?.startLocation?.address || "";
+      }
+      const endDateObj = meeting.endTime ? new Date(meeting.endTime) : null;
+      if (endDateObj && !isNaN(endDateObj.getTime())) {
+        const existingLastEnd = existing.lastEndTime ? new Date(existing.lastEndTime).getTime() : -1;
+        if (existingLastEnd < endDateObj.getTime()) {
+          existing.lastEndTime = meeting.endTime;
+          existing.lastLocationAddress = meeting.location?.address || meeting.location?.startLocation?.address || "";
+          existing.lastEndLocationAddress = meeting.location?.endLocation?.address || meeting.location?.address || "";
+        }
+      }
+      meetingDayMap.set(dateKey, existing);
     });
     const sessionDateGroups = /* @__PURE__ */ new Map();
     trackingSessions2.forEach((session) => {
@@ -2745,42 +3061,101 @@ const getEmployeeDetails = async (req, res) => {
         console.error("Error processing session date:", error);
       }
     });
+    const today = /* @__PURE__ */ new Date();
+    today.setHours(23, 59, 59, 999);
+    let allDatesInRange = [];
+    if (isAllRange) {
+      const dateSet = /* @__PURE__ */ new Set();
+      meetingDayMap.forEach((_v, key) => dateSet.add(key));
+      sessionDateGroups.forEach((_v, key) => dateSet.add(key));
+      attendanceRecordsResult.forEach((att) => {
+        if (att?.date) dateSet.add(att.date);
+      });
+      allDatesInRange = Array.from(dateSet).filter((dateStr) => {
+        const d = new Date(dateStr);
+        return !isNaN(d.getTime()) && d <= today;
+      });
+      if (allDatesInRange.length === 0 && meetings2.length > 0) {
+        const meetingDates = /* @__PURE__ */ new Set();
+        meetings2.forEach((meeting) => {
+          if (!meeting?.startTime) return;
+          const d = new Date(meeting.startTime);
+          if (!isNaN(d.getTime()) && d <= today) {
+            meetingDates.add(format(d, "yyyy-MM-dd"));
+          }
+        });
+        allDatesInRange = Array.from(meetingDates);
+      }
+    } else {
+      const currentDate = new Date(start);
+      while (currentDate <= end && currentDate <= today) {
+        allDatesInRange.push(format(currentDate, "yyyy-MM-dd"));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    }
+    console.log(`📅 Building day records from ${allDatesInRange.length} dates`);
     const dayRecords = allDatesInRange.map((date) => {
-      const meetings22 = allMeetingsByDate.get(date) || [];
+      const meetingDay = meetingDayMap.get(date);
       const sessions = sessionDateGroups.get(date) || [];
-      const totalMeetings = meetings22.length;
-      const totalMeetingHours = meetings22.reduce((total, meeting) => {
-        return total + calculateMeetingDuration(meeting.startTime, meeting.endTime);
-      }, 0);
-      const sortedMeetings = [...meetings22].sort(
-        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-      );
-      const firstMeeting = sortedMeetings[0];
-      const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
-      const startLocationTime = firstMeeting?.startTime ? format(new Date(firstMeeting.startTime), "HH:mm:ss") : "";
-      const startLocationAddress = firstMeeting?.location?.address || "";
-      const outLocationTime = lastMeeting?.endTime ? format(new Date(lastMeeting.endTime), "HH:mm:ss") : "";
-      const outLocationAddress = lastMeeting?.endTime ? resolveLocationAddress(lastMeeting.location) || (lastMeeting?.location?.address || "") : "";
-      let totalDutyHours = 0;
-      if (firstMeeting?.startTime && lastMeeting?.endTime) {
+      const totalMeetings = meetingDay?.totalMeetings || 0;
+      const startLocationTime = meetingDay?.firstStartTime ? format(new Date(meetingDay.firstStartTime), "HH:mm:ss") : "";
+      const startLocationAddress = meetingDay?.firstLocationAddress || meetingDay?.firstStartLocationAddress || "";
+      const outLocationTime = meetingDay?.lastEndTime ? format(new Date(meetingDay.lastEndTime), "HH:mm:ss") : "";
+      const outLocationAddress = meetingDay?.lastEndLocationAddress || meetingDay?.lastLocationAddress || "";
+      let meetingTimeHours = 0;
+      if (meetingDay?.firstStartTime && meetingDay?.lastEndTime) {
         try {
-          const start2 = new Date(firstMeeting.startTime);
-          const end2 = new Date(lastMeeting.endTime);
-          const dutyDuration = (end2.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+          const meetingStart = new Date(meetingDay.firstStartTime);
+          const meetingEnd = new Date(meetingDay.lastEndTime);
+          const spanHours = (meetingEnd.getTime() - meetingStart.getTime()) / (1e3 * 60 * 60);
+          meetingTimeHours = Math.max(0, spanHours);
+        } catch {
+          meetingTimeHours = 0;
+        }
+      } else if (meetingDay?.firstStartTime) {
+        try {
+          const meetingStart = new Date(meetingDay.firstStartTime);
+          meetingTimeHours = Math.max(
+            0,
+            ((/* @__PURE__ */ new Date()).getTime() - meetingStart.getTime()) / (1e3 * 60 * 60)
+          );
+        } catch {
+          meetingTimeHours = 0;
+        }
+      }
+      let totalDutyHours = 0;
+      if (meetingDay?.firstStartTime && meetingDay?.lastEndTime) {
+        try {
+          const dutyStart = new Date(meetingDay.firstStartTime);
+          const dutyEnd = new Date(meetingDay.lastEndTime);
+          const dutyDuration = (dutyEnd.getTime() - dutyStart.getTime()) / (1e3 * 60 * 60);
           totalDutyHours = Math.max(0, dutyDuration);
         } catch (error) {
           console.error("Error calculating duty hours:", error);
           totalDutyHours = 0;
         }
-      } else if (firstMeeting?.startTime) {
+      } else if (meetingDay?.firstStartTime) {
         try {
-          const start2 = new Date(firstMeeting.startTime);
+          const dutyStart = new Date(meetingDay.firstStartTime);
           const now = /* @__PURE__ */ new Date();
-          const dutyDuration = (now.getTime() - start2.getTime()) / (1e3 * 60 * 60);
+          const dutyDuration = (now.getTime() - dutyStart.getTime()) / (1e3 * 60 * 60);
           totalDutyHours = Math.max(0, dutyDuration);
         } catch (error) {
           totalDutyHours = 0;
         }
+      }
+      if (totalDutyHours === 0 && sessions.length > 0) {
+        totalDutyHours = sessions.reduce((acc, session) => {
+          if (!session?.startTime || !session?.endTime) return acc;
+          try {
+            const s = new Date(session.startTime);
+            const e = new Date(session.endTime);
+            const h = (e.getTime() - s.getTime()) / (1e3 * 60 * 60);
+            return h > 0 ? acc + h : acc;
+          } catch {
+            return acc;
+          }
+        }, 0);
       }
       const attendance = attendanceRecordsResult.find((att) => att.date === date);
       const attendanceAddedBy = attendance?.attendenceCreated ? userMap.get(attendance.attendenceCreated) || attendance.attendenceCreated : null;
@@ -2792,18 +3167,20 @@ const getEmployeeDetails = async (req, res) => {
         outLocationTime,
         outLocationAddress,
         totalDutyHours: parseFloat(totalDutyHours.toFixed(2)),
-        meetingTime: parseFloat(totalMeetingHours.toFixed(2)),
-        travelAndLunchTime: Math.max(0, parseFloat((totalDutyHours - totalMeetingHours).toFixed(2))),
+        meetingTime: parseFloat(meetingTimeHours.toFixed(2)),
+        travelAndLunchTime: Math.max(0, parseFloat((totalDutyHours - meetingTimeHours).toFixed(2))),
         attendanceAddedBy
       };
     });
     const meetingRecords = meetings2.map((meeting) => {
+      const meetingDetails = meeting.meetingDetails;
       const meetingInTime = meeting.startTime ? format(new Date(meeting.startTime), "HH:mm:ss") : "";
       const meetingOutTime = meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress";
       let meetingOutLocation = "Meeting in progress";
       if (meeting.endTime) {
-        if (meeting.location?.endLocation?.address) {
-          const endAddr = meeting.location.endLocation.address;
+        const endLocation = meeting.location?.endLocation;
+        if (endLocation?.address) {
+          const endAddr = endLocation.address;
           const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
           if (isCoordinates) {
             meetingOutLocation = meeting.location?.address || "Location coordinates";
@@ -2833,8 +3210,7 @@ const getEmployeeDetails = async (req, res) => {
       }
       return {
         meetingId: meeting._id?.toString() || meeting.id,
-        employeeName: "",
-        // Will be filled by client
+        employeeName: employeeDisplayName || "Unknown Employee",
         companyName: meeting.clientName || "Unknown Company",
         date: meeting.startTime ? format(new Date(meeting.startTime), "yyyy-MM-dd") : "",
         leadId: meeting.leadId || "",
@@ -2848,13 +3224,13 @@ const getEmployeeDetails = async (req, res) => {
         meetingPerson,
         meetingStatus: meeting.status || "completed",
         externalMeetingStatus: meeting.externalMeetingStatus || "",
-        incomplete: meeting.meetingDetails?.incomplete || false,
-        incompleteReason: meeting.meetingDetails?.incompleteReason || "",
+        incomplete: meetingDetails?.incomplete || false,
+        incompleteReason: meetingDetails?.incompleteReason || "",
         approvalStatus: meeting.approvalStatus || void 0,
         approvalReason: meeting.approvalReason || void 0,
         approvedBy: meeting.approvedBy || void 0,
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0,
-        attachments: meeting.meetingDetails?.attachments || meeting.attachments || []
+        attachments: shouldIncludeAttachments ? meeting.meetingDetails?.attachments || meeting.attachments || [] : []
       };
     });
     const todayDate = /* @__PURE__ */ new Date();
@@ -3137,7 +3513,7 @@ const getAttendance = async (req, res) => {
 const getAllEmployeesDetails = async (req, res) => {
   try {
     const {
-      dateRange = "today",
+      dateRange: rawDateRange = "today",
       startDate,
       endDate,
       page = "1",
@@ -3146,15 +3522,13 @@ const getAllEmployeesDetails = async (req, res) => {
       sortBy = "employeeName",
       sortOrder = "asc"
     } = req.query;
+    const dateRange = String(rawDateRange || "today").trim().toLowerCase();
+    const isAllRange = dateRange === "all";
     const startTime = Date.now();
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
     const skip = (pageNum - 1) * limitNum;
-    const { start, end } = getDateRange(
-      dateRange,
-      startDate,
-      endDate
-    );
+    const { start, end } = getDateRange(dateRange, startDate, endDate);
     console.log(`📊 All employees details - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}, Search: "${search}"`);
     const externalUsers = await cacheService.getExternalUsers();
     console.log(`Found ${externalUsers.length} total employees from cache`);
@@ -3201,51 +3575,147 @@ const getAllEmployeesDetails = async (req, res) => {
         employees: []
       });
     }
-    const employeeIds = allEmployees.map((emp) => emp.userId || emp.id);
+    if (!Database.getInstance().isConnectionActive()) {
+      console.warn(
+        "⚠️ Database connection not active for all-employees-details; returning degraded response."
+      );
+      const sortDirection2 = sortOrder === "desc" ? -1 : 1;
+      const sortedEmployees = [...allEmployees].sort((a, b) => {
+        switch (sortBy) {
+          case "employeeName":
+            return sortDirection2 * a.name.localeCompare(b.name);
+          case "email":
+            return sortDirection2 * (a.email || "").localeCompare(b.email || "");
+          case "designation":
+            return sortDirection2 * (a.designation || "").localeCompare(b.designation || "");
+          case "department":
+            return sortDirection2 * (a.department || "").localeCompare(b.department || "");
+          default:
+            return sortDirection2 * a.name.localeCompare(b.name);
+        }
+      });
+      const totalEmployees2 = sortedEmployees.length;
+      const totalPages2 = Math.ceil(totalEmployees2 / limitNum);
+      const paginatedEmployees2 = sortedEmployees.slice(skip, skip + limitNum);
+      return res.json({
+        success: true,
+        degraded: true,
+        degradedReason: "database_not_connected",
+        dateRange: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+          label: dateRange
+        },
+        pagination: {
+          currentPage: pageNum,
+          pageSize: limitNum,
+          totalItems: totalEmployees2,
+          totalPages: totalPages2,
+          hasNextPage: pageNum < totalPages2,
+          hasPreviousPage: pageNum > 1,
+          nextPage: pageNum < totalPages2 ? pageNum + 1 : null,
+          previousPage: pageNum > 1 ? pageNum - 1 : null
+        },
+        search: search || null,
+        sort: {
+          by: sortBy,
+          order: sortOrder
+        },
+        employees: paginatedEmployees2.map((employee) => ({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          email: employee.email,
+          phone: employee.phone,
+          designation: employee.designation,
+          department: employee.department,
+          companyName: employee.companyName,
+          reportTo: employee.reportTo,
+          status: employee.status,
+          summary: {
+            totalMeetings: 0,
+            totalMeetingHours: 0,
+            daysWithMeetings: 0,
+            avgMeetingsPerDay: 0
+          },
+          dayRecords: [],
+          meetingRecords: []
+        }))
+      });
+    }
+    const employeeIds = allEmployees.map((emp) => (emp.userId || emp.id).toString());
+    const employeeIdsSet = new Set(employeeIds);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const mixedStartTimeRangeFilter = {
+      $or: [
+        { startTime: { $gte: start, $lte: end } },
+        { startTime: { $gte: startIso, $lte: endIso } }
+      ]
+    };
+    const meetingActivityFilter = isAllRange ? { employeeId: { $in: employeeIds } } : {
+      employeeId: { $in: employeeIds },
+      ...mixedStartTimeRangeFilter
+    };
+    const attendanceActivityFilter = isAllRange ? { employeeId: { $in: employeeIds } } : {
+      employeeId: { $in: employeeIds },
+      date: {
+        $gte: format(start, "yyyy-MM-dd"),
+        $lte: format(end, "yyyy-MM-dd")
+      }
+    };
+    const trackingActivityFilter = isAllRange ? { employeeId: { $in: employeeIds } } : {
+      employeeId: { $in: employeeIds },
+      ...mixedStartTimeRangeFilter
+    };
     const [
-      allEmployeeMeetings,
-      attendanceForEmployees,
-      trackingSessionsForEmployees
-    ] = await Promise.all([
-      // Fetch meetings for all employees in date range
-      Meeting.find({
-        employeeId: { $in: employeeIds },
-        $or: [
-          { startTime: { $gte: start, $lte: end } },
-          { startTime: { $gte: start.toISOString(), $lte: end.toISOString() } }
-        ]
-      }).select("employeeId startTime endTime clientName leadId status meetingDetails location").sort({ startTime: -1 }).lean().exec(),
-      // Fetch attendance records
-      Attendance.find({
-        employeeId: { $in: employeeIds },
-        date: {
-          $gte: format(start, "yyyy-MM-dd"),
-          $lte: format(end, "yyyy-MM-dd")
-        }
-      }).select("employeeId date attendanceStatus attendanceReason attendenceCreated").lean().exec(),
-      // Fetch tracking sessions for duty hour calculations
-      TrackingSession.find({
-        employeeId: { $in: employeeIds },
-        startTime: {
-          $gte: start.toISOString(),
-          $lte: end.toISOString()
-        }
-      }).select("employeeId startTime endTime startLocation endLocation status duration").lean().exec()
+      meetingEmployeeIdsResult,
+      attendanceEmployeeIdsResult,
+      trackingEmployeeIdsResult
+    ] = await Promise.allSettled([
+      Meeting.distinct("employeeId", meetingActivityFilter).maxTimeMS(3e4),
+      Attendance.distinct("employeeId", attendanceActivityFilter).maxTimeMS(2e4),
+      TrackingSession.distinct("employeeId", trackingActivityFilter).maxTimeMS(2e4)
     ]);
-    console.log(`📅 Found ${allEmployeeMeetings.length} meetings, ${attendanceForEmployees.length} attendance records, and ${trackingSessionsForEmployees.length} tracking sessions`);
+    const meetingEmployeeIds = meetingEmployeeIdsResult.status === "fulfilled" ? meetingEmployeeIdsResult.value : [];
+    const attendanceEmployeeIds = attendanceEmployeeIdsResult.status === "fulfilled" ? attendanceEmployeeIdsResult.value : [];
+    const trackingEmployeeIds = trackingEmployeeIdsResult.status === "fulfilled" ? trackingEmployeeIdsResult.value : [];
+    if (meetingEmployeeIdsResult.status === "rejected") {
+      console.error("❌ all-employees activity fetch (meetings) failed:", meetingEmployeeIdsResult.reason);
+    }
+    if (attendanceEmployeeIdsResult.status === "rejected") {
+      console.error(
+        "❌ all-employees activity fetch (attendance) failed:",
+        attendanceEmployeeIdsResult.reason
+      );
+    }
+    if (trackingEmployeeIdsResult.status === "rejected") {
+      console.error("❌ all-employees activity fetch (tracking) failed:", trackingEmployeeIdsResult.reason);
+    }
+    console.log(
+      `📅 Activity IDs - meetings: ${meetingEmployeeIds.length}, attendance: ${attendanceEmployeeIds.length}, tracking: ${trackingEmployeeIds.length}`
+    );
     const employeesWithActivity = /* @__PURE__ */ new Set();
-    allEmployeeMeetings.forEach((meeting) => {
-      employeesWithActivity.add(meeting.employeeId.toString());
+    meetingEmployeeIds.forEach((id) => {
+      const key = String(id);
+      if (employeeIdsSet.has(key)) employeesWithActivity.add(key);
     });
-    attendanceForEmployees.forEach((attendance) => {
-      employeesWithActivity.add(attendance.employeeId.toString());
+    attendanceEmployeeIds.forEach((id) => {
+      const key = String(id);
+      if (employeeIdsSet.has(key)) employeesWithActivity.add(key);
     });
-    trackingSessionsForEmployees.forEach((session) => {
-      employeesWithActivity.add(session.employeeId.toString());
+    trackingEmployeeIds.forEach((id) => {
+      const key = String(id);
+      if (employeeIdsSet.has(key)) employeesWithActivity.add(key);
     });
-    const employeesWithData = allEmployees.filter(
+    const activityQueriesFailed = meetingEmployeeIdsResult.status === "rejected" && attendanceEmployeeIdsResult.status === "rejected" && trackingEmployeeIdsResult.status === "rejected";
+    const employeesWithData = activityQueriesFailed ? allEmployees : allEmployees.filter(
       (emp) => employeesWithActivity.has((emp.userId || emp.id).toString())
     );
+    if (activityQueriesFailed) {
+      console.warn(
+        "⚠️ All activity queries failed, falling back to unfiltered employee list for this request."
+      );
+    }
     console.log(`Filtered to ${employeesWithData.length} employees with data`);
     if (employeesWithData.length === 0) {
       const endTime2 = Date.now();
@@ -3322,16 +3792,53 @@ const getAllEmployeesDetails = async (req, res) => {
         employees: []
       });
     }
-    const paginatedEmployeeIds = paginatedEmployees.map((emp) => emp.userId || emp.id);
-    const meetingsForPaginatedEmployees = allEmployeeMeetings.filter(
-      (meeting) => paginatedEmployeeIds.includes(meeting.employeeId)
-    );
-    const attendanceForPaginatedEmployees = attendanceForEmployees.filter(
-      (att) => paginatedEmployeeIds.includes(att.employeeId)
-    );
-    const trackingSessionsForPaginatedEmployees = trackingSessionsForEmployees.filter(
-      (session) => paginatedEmployeeIds.includes(session.employeeId)
-    );
+    const paginatedEmployeeIds = paginatedEmployees.map((emp) => (emp.userId || emp.id).toString());
+    const [
+      meetingsForPaginatedEmployeesResult,
+      attendanceForPaginatedEmployeesResult,
+      trackingSessionsForPaginatedEmployeesResult
+    ] = await Promise.allSettled([
+      Meeting.find({
+        employeeId: { $in: paginatedEmployeeIds },
+        ...isAllRange ? {} : mixedStartTimeRangeFilter
+      }).select(
+        "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy"
+      ).sort({ startTime: -1 }).maxTimeMS(6e4).lean().exec(),
+      Attendance.find({
+        employeeId: { $in: paginatedEmployeeIds },
+        ...isAllRange ? {} : {
+          date: {
+            $gte: format(start, "yyyy-MM-dd"),
+            $lte: format(end, "yyyy-MM-dd")
+          }
+        }
+      }).select("employeeId date attendanceStatus attendanceReason attendenceCreated").maxTimeMS(3e4).lean().exec(),
+      TrackingSession.find({
+        employeeId: { $in: paginatedEmployeeIds },
+        ...isAllRange ? {} : mixedStartTimeRangeFilter
+      }).select("employeeId startTime endTime startLocation endLocation status duration").maxTimeMS(3e4).lean().exec()
+    ]);
+    const meetingsForPaginatedEmployees = meetingsForPaginatedEmployeesResult.status === "fulfilled" ? meetingsForPaginatedEmployeesResult.value : [];
+    const attendanceForPaginatedEmployees = attendanceForPaginatedEmployeesResult.status === "fulfilled" ? attendanceForPaginatedEmployeesResult.value : [];
+    const trackingSessionsForPaginatedEmployees = trackingSessionsForPaginatedEmployeesResult.status === "fulfilled" ? trackingSessionsForPaginatedEmployeesResult.value : [];
+    if (meetingsForPaginatedEmployeesResult.status === "rejected") {
+      console.error(
+        "❌ all-employees paginated meetings fetch failed:",
+        meetingsForPaginatedEmployeesResult.reason
+      );
+    }
+    if (attendanceForPaginatedEmployeesResult.status === "rejected") {
+      console.error(
+        "❌ all-employees paginated attendance fetch failed:",
+        attendanceForPaginatedEmployeesResult.reason
+      );
+    }
+    if (trackingSessionsForPaginatedEmployeesResult.status === "rejected") {
+      console.error(
+        "❌ all-employees paginated tracking fetch failed:",
+        trackingSessionsForPaginatedEmployeesResult.reason
+      );
+    }
     const allMeetingsByEmployee = /* @__PURE__ */ new Map();
     meetingsForPaginatedEmployees.forEach((meeting) => {
       if (!allMeetingsByEmployee.has(meeting.employeeId)) {
@@ -3561,10 +4068,109 @@ const getAllEmployeesDetails = async (req, res) => {
   } catch (error) {
     console.error("Error fetching all employees details:", error);
     console.error("Error stack:", error.stack);
-    res.status(500).json({
-      error: "Failed to fetch all employees details",
-      message: error.message
-    });
+    const message = error?.message || "Unknown error";
+    try {
+      console.warn(
+        "⚠️ all-employees-details failed; returning degraded response instead of 500."
+      );
+      const {
+        dateRange: rawDateRange = "today",
+        startDate,
+        endDate,
+        page = "1",
+        limit = "10",
+        search = "",
+        sortBy = "employeeName",
+        sortOrder = "asc"
+      } = req.query;
+      const dateRange = String(rawDateRange || "today").trim().toLowerCase();
+      const { start, end } = getDateRange(dateRange, startDate, endDate);
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skip = (pageNum - 1) * limitNum;
+      let fallbackEmployees = (await cacheService.getExternalUsers()).map((user, index) => {
+        const employee = mapExternalUserToEmployee(user, index);
+        return {
+          ...employee,
+          userId: user._id
+        };
+      });
+      if (search) {
+        const searchLower = String(search).toLowerCase();
+        fallbackEmployees = fallbackEmployees.filter(
+          (emp) => (emp.name || "").toLowerCase().includes(searchLower) || (emp.email || "").toLowerCase().includes(searchLower) || (emp.designation || "").toLowerCase().includes(searchLower) || (emp.department || "").toLowerCase().includes(searchLower)
+        );
+      }
+      const sortDirection = sortOrder === "desc" ? -1 : 1;
+      fallbackEmployees.sort((a, b) => {
+        switch (sortBy) {
+          case "employeeName":
+            return sortDirection * a.name.localeCompare(b.name);
+          case "email":
+            return sortDirection * (a.email || "").localeCompare(b.email || "");
+          case "designation":
+            return sortDirection * (a.designation || "").localeCompare(b.designation || "");
+          case "department":
+            return sortDirection * (a.department || "").localeCompare(b.department || "");
+          default:
+            return sortDirection * a.name.localeCompare(b.name);
+        }
+      });
+      const totalEmployees = fallbackEmployees.length;
+      const totalPages = Math.ceil(totalEmployees / limitNum);
+      const paginatedEmployees = fallbackEmployees.slice(skip, skip + limitNum);
+      return res.json({
+        success: true,
+        degraded: true,
+        degradedReason: "database_unavailable",
+        degradedMessage: message,
+        dateRange: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+          label: dateRange
+        },
+        pagination: {
+          currentPage: pageNum,
+          pageSize: limitNum,
+          totalItems: totalEmployees,
+          totalPages,
+          hasNextPage: pageNum < totalPages,
+          hasPreviousPage: pageNum > 1,
+          nextPage: pageNum < totalPages ? pageNum + 1 : null,
+          previousPage: pageNum > 1 ? pageNum - 1 : null
+        },
+        search: search || null,
+        sort: {
+          by: sortBy,
+          order: sortOrder
+        },
+        employees: paginatedEmployees.map((employee) => ({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          email: employee.email,
+          phone: employee.phone,
+          designation: employee.designation,
+          department: employee.department,
+          companyName: employee.companyName,
+          reportTo: employee.reportTo,
+          status: employee.status,
+          summary: {
+            totalMeetings: 0,
+            totalMeetingHours: 0,
+            daysWithMeetings: 0,
+            avgMeetingsPerDay: 0
+          },
+          dayRecords: [],
+          meetingRecords: []
+        }))
+      });
+    } catch (fallbackError) {
+      console.error("❌ Failed to build degraded response:", fallbackError);
+      return res.status(500).json({
+        error: "Failed to fetch all employees details",
+        message
+      });
+    }
   }
 };
 const syncAllData = async (req, res) => {
@@ -4179,6 +4785,8 @@ function createServer() {
   app2.use(cors());
   app2.use(express__default.json({ limit: "20mb" }));
   app2.use(express__default.urlencoded({ extended: true, limit: "20mb" }));
+  const uploadsPath = path.join(process.cwd(), "uploads");
+  app2.use("/uploads", express__default.static(uploadsPath));
   app2.use((req, res, next) => {
     console.log(`${req.method} ${req.path} - ${(/* @__PURE__ */ new Date()).toISOString()}`);
     next();
@@ -4215,6 +4823,7 @@ function createServer() {
   app2.get("/api/meetings/today", getTodaysMeetings);
   app2.get("/api/meetings/:id", getMeeting);
   app2.put("/api/meetings/:id", updateMeeting);
+  app2.post("/api/meetings/:id/attachments", uploadMeetingAttachments);
   app2.put("/api/meetings/:id/approval", updateMeetingApproval);
   app2.put("/api/meetings/approval-by-details", updateMeetingApprovalByDetails);
   app2.delete("/api/meetings/:id", deleteMeeting);

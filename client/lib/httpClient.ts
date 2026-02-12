@@ -1,4 +1,5 @@
 // Robust HTTP client that works around third-party service interference like FullStory
+type RequestOptions = RequestInit & { timeoutMs?: number };
 export class HttpClient {
   private static baseUrl = "";
   private static isInitialized = false;
@@ -120,7 +121,7 @@ export class HttpClient {
   // Fallback fetch implementation using XMLHttpRequest when fetch fails
   private static async fallbackFetch(
     url: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
   ): Promise<Response> {
     console.log(`HttpClient: XMLHttpRequest attempt to ${url}`);
 
@@ -129,9 +130,12 @@ export class HttpClient {
       const method = options.method || "GET";
 
       try {
+        const timeoutMs = options.timeoutMs ?? 25000;
+
         // Add CORS support
         xhr.withCredentials = false;
         xhr.open(method, url);
+        xhr.timeout = timeoutMs;
 
         // Set headers (exclude signal-related headers)
         if (options.headers) {
@@ -226,7 +230,7 @@ export class HttpClient {
 
         xhr.ontimeout = () => {
           console.error("HttpClient: XHR timeout");
-          reject(new Error("XMLHttpRequest timeout after 25 seconds"));
+          reject(new Error(`XMLHttpRequest timeout after ${timeoutMs / 1000} seconds`));
         };
 
         xhr.onabort = () => {
@@ -252,7 +256,7 @@ export class HttpClient {
   // Enhanced fetch with fallback mechanism
   static async request(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
   ): Promise<Response> {
     this.ensureInitialized();
 
@@ -293,7 +297,7 @@ export class HttpClient {
       "Content-Type": "application/json",
     };
 
-    const baseOptions: RequestInit = {
+    const baseOptions: RequestOptions = {
       ...options,
       headers: {
         ...defaultHeaders,
@@ -320,7 +324,7 @@ export class HttpClient {
   // Separate method to execute the actual request
   private static async executeRequest(
     url: string,
-    baseOptions: RequestInit,
+    baseOptions: RequestOptions,
   ): Promise<Response> {
     // If FullStory or other interference detected, use XMLHttpRequest directly
     if (this.useXHROnly) {
@@ -338,19 +342,20 @@ export class HttpClient {
       controller = new AbortController();
 
       // Set up timeout
+      const { timeoutMs = 15000, ...fetchOptions } = baseOptions;
       timeoutId = setTimeout(() => {
         if (controller && !controller.signal.aborted) {
-          controller.abort("Request timeout after 15 seconds"); // 🔥 FIX: Reduce from 20s to 15s
+          controller.abort(`Request timeout after ${timeoutMs / 1000} seconds`);
         }
-      }, 15000); // 20 second timeout
+      }, timeoutMs);
 
-      const fetchOptions: RequestInit = {
-        ...baseOptions,
+      const fetchOptionsWithSignal: RequestInit = {
+        ...fetchOptions,
         signal: controller.signal,
       };
 
       console.log(`HttpClient: Attempting fetch to ${url}`);
-      const response = await fetch(url, fetchOptions);
+      const response = await fetch(url, fetchOptionsWithSignal);
 
       // Clear timeout on success
       if (timeoutId) {
@@ -381,7 +386,7 @@ export class HttpClient {
   // Retry mechanism for critical requests
   private static async requestWithRetry(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
     retries: number = 2,
   ): Promise<Response> {
     let lastError: Error | null = null;
@@ -453,37 +458,42 @@ export class HttpClient {
     endpoint: string,
     data?: any,
     useRetry: boolean = true,
+    options: RequestOptions = {},
   ): Promise<Response> {
-    const options = {
+    const requestOptions: RequestOptions = {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
+      ...options,
     };
     return useRetry
-      ? this.requestWithRetry(endpoint, options)
-      : this.request(endpoint, options);
+      ? this.requestWithRetry(endpoint, requestOptions)
+      : this.request(endpoint, requestOptions);
   }
 
   static async put(
     endpoint: string,
     data?: any,
     useRetry: boolean = true,
+    options: RequestOptions = {},
   ): Promise<Response> {
-    const options = {
+    const requestOptions: RequestOptions = {
       method: "PUT",
       body: data ? JSON.stringify(data) : undefined,
+      ...options,
     };
     return useRetry
-      ? this.requestWithRetry(endpoint, options)
-      : this.request(endpoint, options);
+      ? this.requestWithRetry(endpoint, requestOptions)
+      : this.request(endpoint, requestOptions);
   }
 
   static async delete(
     endpoint: string,
     useRetry: boolean = false,
+    options: RequestOptions = {},
   ): Promise<Response> {
     return useRetry
-      ? this.requestWithRetry(endpoint, { method: "DELETE" })
-      : this.request(endpoint, { method: "DELETE" });
+      ? this.requestWithRetry(endpoint, { method: "DELETE", ...options })
+      : this.request(endpoint, { method: "DELETE", ...options });
   }
 }
 

@@ -42,8 +42,8 @@ class Database {
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
         maxPoolSize: 10, // 🔥 FIX: Reduce from 50 to 10 to prevent connection overload
-        serverSelectionTimeoutMS: 10000, // 🔥 FIX: Reduce from 30s to 10s
-        socketTimeoutMS: 30000, // 🔥 FIX: Reduce from 2min to 30s for faster timeouts
+        serverSelectionTimeoutMS: 20000, // More tolerant for network latency to Atlas
+        socketTimeoutMS: 120000, // Avoid false 500s for heavy but valid read queries
         connectTimeoutMS: 10000, // 🔥 FIX: Reduce from 30s to 10s
         retryWrites: true,
         retryReads: false, // 🔥 FIX: Disable retry reads to prevent retry storms
