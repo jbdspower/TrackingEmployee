@@ -1,4 +1,7 @@
 import { RequestHandler } from "express";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
 import axios from 'axios';
 import NodeCache from 'node-cache';
 import {
@@ -7,10 +10,31 @@ import {
   CreateMeetingRequest,
 } from "@shared/api";
 import { Meeting, IMeeting } from "../models";
+import Database from "../config/database";
 import CacheService from "../services/cache";
 
 // Initialize cache with 1 hour TTL
 const geocodeCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+
+const uploadsRoot = path.join(process.cwd(), "uploads", "meetings");
+const storage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const meetingId = req.params.id || "unknown";
+    const dir = path.join(uploadsRoot, meetingId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${safeName}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // 🔹 Helper function to format time for IST display
 function formatTimeForIST(utcTime: string): string {
@@ -400,7 +424,7 @@ export const createMeeting: RequestHandler = async (req, res) => {
       leadInfo && Object.keys(leadInfo).length > 0 ? leadInfo : undefined;
 
 
-    const meeting = await Meeting.create({
+    const meetingData = {
       employeeId,
       location: {
         ...location,
@@ -416,14 +440,72 @@ export const createMeeting: RequestHandler = async (req, res) => {
       leadInfo: sanitizedLeadInfo || undefined,
       followUpId,
       externalMeetingStatus,
-    });
+    };
 
-    console.log("✅ START MEETING:", {
-      id: meeting._id,
-      startTime: meeting.startTime,
-    });
+    const db = Database.getInstance();
+    if (!db.isConnectionActive()) {
+      console.warn("⚠️ Database not connected, saving meeting in memory");
+      const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const meetingLog: MeetingLog = {
+        id: meetingId,
+        employeeId: meetingData.employeeId,
+        location: meetingData.location,
+        startTime: meetingData.startTime,
+        endTime: undefined,
+        clientName: meetingData.clientName,
+        notes: meetingData.notes,
+        status: meetingData.status,
+        trackingSessionId: undefined,
+        leadId: meetingData.leadId,
+        leadInfo: meetingData.leadInfo,
+        followUpId: meetingData.followUpId,
+        meetingDetails: undefined,
+        approvalStatus: undefined,
+        approvalReason: undefined,
+        approvedBy: undefined,
+      };
 
-    const meetingLog = await convertMeetingToMeetingLog(meeting);
+      inMemoryMeetings.push(meetingLog);
+      res.status(201).json(meetingLog);
+      return;
+    }
+
+    try {
+      const meeting = await Meeting.create(meetingData);
+
+      console.log("✅ START MEETING:", {
+        id: meeting._id,
+        startTime: meeting.startTime,
+      });
+
+      const meetingLog = await convertMeetingToMeetingLog(meeting);
+      res.status(201).json(meetingLog);
+      return;
+    } catch (dbError) {
+      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
+    }
+
+    const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const meetingLog: MeetingLog = {
+      id: meetingId,
+      employeeId: meetingData.employeeId,
+      location: meetingData.location,
+      startTime: meetingData.startTime,
+      endTime: undefined,
+      clientName: meetingData.clientName,
+      notes: meetingData.notes,
+      status: meetingData.status,
+      trackingSessionId: undefined,
+      leadId: meetingData.leadId,
+      leadInfo: meetingData.leadInfo,
+      followUpId: meetingData.followUpId,
+      meetingDetails: undefined,
+      approvalStatus: undefined,
+      approvalReason: undefined,
+      approvedBy: undefined,
+    };
+
+    inMemoryMeetings.push(meetingLog);
     res.status(201).json(meetingLog);
   } catch (error) {
     console.error("❌ Error starting meeting:", error);
@@ -565,6 +647,50 @@ export const updateMeeting: RequestHandler = async (req, res) => {
     console.error("❌ Error ending meeting:", error);
     res.status(500).json({ error: "Failed to end meeting" });
   }
+};
+
+export const uploadMeetingAttachments: RequestHandler = (req, res) => {
+  upload.array("files", 10)(req, res, async (error) => {
+    if (error) {
+      return res.status(400).json({ error: error.message || "Upload failed" });
+    }
+
+    try {
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ error: "Meeting ID is required" });
+      }
+
+      const meeting = await Meeting.findById(id);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      const files = (req.files as Express.Multer.File[]) || [];
+      if (files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const attachmentUrls = files.map(
+        (file) => `${baseUrl}/uploads/meetings/${id}/${file.filename}`,
+      );
+
+      meeting.attachments = [...(meeting.attachments || []), ...attachmentUrls];
+      if (meeting.meetingDetails?.attachments) {
+        meeting.meetingDetails.attachments = [
+          ...meeting.meetingDetails.attachments,
+          ...attachmentUrls,
+        ];
+      }
+
+      await meeting.save();
+      return res.status(200).json({ attachments: attachmentUrls });
+    } catch (err) {
+      console.error("❌ Error uploading meeting attachments:", err);
+      return res.status(500).json({ error: "Failed to upload attachments" });
+    }
+  });
 };
 
 

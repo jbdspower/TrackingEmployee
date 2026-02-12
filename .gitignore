@@ -12,6 +12,8 @@ node_modules
 
 # Environment files
 .env
+
+# Uploads
 .env.local
 .env.*.local
 

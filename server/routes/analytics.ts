@@ -12,9 +12,10 @@ import {
   parseISO,
 } from "date-fns";
 // We'll create our own functions here since the employees module doesn't export what we need
-import { ExternalUser, Employee } from "@shared/api";
-import { Meeting, Attendance, TrackingSession } from "../models/index.js";
+import { ExternalUser, Employee as EmployeeType } from "@shared/api";
+import { Meeting, Attendance, TrackingSession, Employee } from "../models/index.js";
 import { cacheService } from "../services/cache.service.js";
+import mongoose from "mongoose";
 
 // Replicate the external API fetch function
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
@@ -90,7 +91,7 @@ function getRealisticIndianLocation(index: number) {
 function mapExternalUserToEmployee(
   user: ExternalUser,
   index: number,
-): Employee {
+): EmployeeType {
   const userId = user._id;
 
   if (!employeeStatuses[userId]) {
@@ -446,8 +447,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     if (!location) return "";
 
     // If location has an endLocation, use that first
-    if (location.endLocation?.address) {
-      const endAddr = location.endLocation.address;
+    const endLocation = (location as any)?.endLocation;
+    if (endLocation?.address) {
+      const endAddr = endLocation.address;
       
       // Check if it's just coordinates (lat,lng format) like "28.277276, 76.885777"
       const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
@@ -494,7 +496,34 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       endDate as string,
     );
 
+    const employeeIdFilters: Array<string | mongoose.Types.ObjectId> = [
+      employeeId,
+    ];
+    if (mongoose.Types.ObjectId.isValid(employeeId)) {
+      employeeIdFilters.push(new mongoose.Types.ObjectId(employeeId));
+    }
+
+    // Resolve employeeId to include both employee.id and _id forms
+    try {
+      if (mongoose.Types.ObjectId.isValid(employeeId)) {
+        const employeeDoc = await Employee.findById(employeeId).select("id").lean();
+        const employeeExternalId = (employeeDoc as any)?.id;
+        if (employeeExternalId) {
+          employeeIdFilters.push(String(employeeExternalId));
+        }
+      } else {
+        const employeeDoc = await Employee.findOne({ id: employeeId }).select("_id").lean();
+        const resolvedId = (employeeDoc as any)?._id?.toString?.() || (employeeDoc as any)?._id;
+        if (resolvedId && mongoose.Types.ObjectId.isValid(resolvedId)) {
+          employeeIdFilters.push(new mongoose.Types.ObjectId(resolvedId));
+        }
+      }
+    } catch (resolveError) {
+      console.warn("⚠️ Failed to resolve employeeId mapping:", resolveError);
+    }
+
     console.log(`📊 Employee details for ${employeeId} - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}`);
+    console.log("🔎 EmployeeId filters:", employeeIdFilters);
 
     // PARALLELIZE DATA FETCHING
     const [
@@ -510,7 +539,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // Fetch meetings with date range filter and pagination
       Meeting.find({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         startTime: {
           $gte: start.toISOString(),
           $lte: end.toISOString()
@@ -525,7 +554,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // Get total count of meetings for pagination
       Meeting.countDocuments({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         startTime: {
           $gte: start.toISOString(),
           $lte: end.toISOString()
@@ -534,7 +563,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // Fetch tracking sessions with date range filter
       TrackingSession.find({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         startTime: {
           $gte: start.toISOString(),
           $lte: end.toISOString()
@@ -546,7 +575,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // Fetch attendance records
       Attendance.find({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         date: {
           $gte: format(start, "yyyy-MM-dd"),
           $lte: format(end, "yyyy-MM-dd")
@@ -558,7 +587,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
       // Get ALL meetings for this employee in the date range (not paginated)
       Meeting.find({
-        employeeId,
+        employeeId: { $in: employeeIdFilters },
         startTime: {
           $gte: start.toISOString(),
           $lte: end.toISOString()
@@ -586,11 +615,36 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     if (attendanceRecords.status === 'rejected') console.error('Error fetching attendance:', attendanceRecords.reason);
     if (allMeetingsForEmployee.status === 'rejected') console.error('Error fetching all meetings:', allMeetingsForEmployee.reason);
 
-    const meetings = meetingsDataResult;
+    let meetings = meetingsDataResult;
     const trackingSessions = trackingSessionsResult;
-    const allMeetings = allMeetingsResult;
+    let allMeetings = allMeetingsResult;
 
     console.log(`📈 Fetched data: ${meetings.length} paginated meetings, ${allMeetings.length} total meetings (total count: ${meetingsCountResult}), ${trackingSessions.length} sessions, ${attendanceRecordsResult.length} attendance records`);
+
+    // Fallback: if count > 0 but data arrays are empty, refetch to avoid empty results
+    if (meetingsCountResult > 0 && allMeetings.length === 0) {
+      console.warn("⚠️ Meetings count > 0 but allMeetings is empty. Refetching all meetings...");
+      try {
+        allMeetings = await Meeting.find({
+          employeeId: { $in: employeeIdFilters },
+          startTime: {
+            $gte: start.toISOString(),
+            $lte: end.toISOString(),
+          },
+        })
+          .select("startTime endTime clientName leadId status meetingDetails location approvalStatus approvalReason approvedBy")
+          .sort({ startTime: -1 })
+          .lean()
+          .exec();
+      } catch (refetchError) {
+        console.error("❌ Refetch all meetings failed:", refetchError);
+      }
+    }
+
+    if (meetingsCountResult > 0 && meetings.length === 0 && allMeetings.length > 0) {
+      console.warn("⚠️ Paginated meetings empty. Using allMeetings for current page.");
+      meetings = allMeetings.slice(skip, skip + limitNum);
+    }
 
     // Create user map for quick lookups
     const userMap = new Map(externalUsersResult.map(user => [user._id, user.name]));
@@ -712,6 +766,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
     // Generate meeting records from PAGINATED meetings only
     const meetingRecords = meetings.map((meeting) => {
+      const meetingDetails = meeting.meetingDetails as any;
       const meetingInTime = meeting.startTime ? format(new Date(meeting.startTime), "HH:mm:ss") : "";
       const meetingOutTime = meeting.endTime
         ? format(new Date(meeting.endTime), "HH:mm:ss")
@@ -721,8 +776,9 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       let meetingOutLocation = "Meeting in progress";
       
       if (meeting.endTime) {
-        if (meeting.location?.endLocation?.address) {
-          const endAddr = meeting.location.endLocation.address;
+        const endLocation = (meeting.location as any)?.endLocation;
+        if (endLocation?.address) {
+          const endAddr = endLocation.address;
           
           // Check if it's just coordinates (e.g., "28.277276, 76.885777")
           const isCoordinates = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(endAddr);
@@ -778,8 +834,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         meetingPerson,
         meetingStatus: meeting.status || "completed",
         externalMeetingStatus: meeting.externalMeetingStatus || "",
-        incomplete: meeting.meetingDetails?.incomplete || false,
-        incompleteReason: meeting.meetingDetails?.incompleteReason || "",
+        incomplete: meetingDetails?.incomplete || false,
+        incompleteReason: meetingDetails?.incompleteReason || "",
         approvalStatus: meeting.approvalStatus || undefined,
         approvalReason: meeting.approvalReason || undefined,
         approvedBy: meeting.approvedBy || undefined,

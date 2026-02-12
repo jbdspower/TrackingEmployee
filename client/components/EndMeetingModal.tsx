@@ -459,25 +459,63 @@ const handleSubmit = async (e: React.FormEvent) => {
   setIsSubmitting(true);
 
   try {
-    // 🔹 Convert files to base64
-    const attachmentPromises = attachedFiles.map(
-      (file) =>
-        new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        })
-    );
+    let attachmentUrls: string[] = [];
 
-    console.log("📎 Converting files to base64...");
-    const attachments = await Promise.all(attachmentPromises);
-    console.log(`✅ Converted ${attachments.length} files to base64`);
+    if (attachedFiles.length > 0) {
+      if (!currentMeeting?.id) {
+        toast({
+          title: "Missing Meeting ID",
+          description: "Cannot upload files without a meeting ID.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log("📎 Uploading attachments...");
+      toast({
+        title: "Uploading files",
+        description: "Please wait while files are uploaded...",
+      });
+
+      const uploadData = new FormData();
+      attachedFiles.forEach((file) => uploadData.append("files", file));
+
+      const controller = new AbortController();
+      const timeoutMs = 120000;
+      const timeoutId = setTimeout(() => {
+        controller.abort("Upload timeout");
+      }, timeoutMs);
+
+      const uploadResponse = await fetch(
+        `/api/meetings/${currentMeeting.id}/attachments`,
+        {
+          method: "POST",
+          body: uploadData,
+          signal: controller.signal,
+        },
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new Error(
+          errorText || `File upload failed with status ${uploadResponse.status}`,
+        );
+      }
+
+      const uploadResult = await uploadResponse.json();
+      attachmentUrls = Array.isArray(uploadResult.attachments)
+        ? uploadResult.attachments
+        : [];
+      console.log(`✅ Uploaded ${attachmentUrls.length} files`);
+    }
 
     // 🔹 Build meeting payload
     const meetingDetailsWithAttachments = {
       ...formData,
-      attachments: attachments.length > 0 ? attachments : undefined,
+      attachments: attachmentUrls.length > 0 ? attachmentUrls : undefined,
     };
 
     // 🔴 🔴 🔴 FIX STARTS HERE 🔴 🔴 🔴
@@ -708,7 +746,7 @@ const normalizedMeetingDetails = {
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Clock className="h-5 w-5 text-destructive" />
-            <span>End Meeting</span>
+            <span>End Meetin</span>
           </DialogTitle>
           <DialogDescription>
             Complete the meeting for{" "}
