@@ -48,6 +48,8 @@ AttendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
 
 // Create indexes for better query performance
 AttendanceSchema.index({ employeeId: 1, date: -1 });
+// Helps all-employees-details when date range is wide and employee list is large
+AttendanceSchema.index({ date: -1, employeeId: 1 });
 AttendanceSchema.index({ date: -1, attendanceStatus: 1 });
 
 export const Attendance = mongoose.model<IAttendance>('Attendance', AttendanceSchema);
