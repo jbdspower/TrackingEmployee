@@ -242,6 +242,30 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
 
     // Try to save to MongoDB first
     try {
+      // Atomic upsert for client-provided IDs to prevent race-condition duplicates.
+      if (id) {
+        const upsertResult: any = await TrackingSessionModel.updateOne(
+          { id: sessionData.id },
+          { $setOnInsert: sessionData },
+          { upsert: true },
+        );
+        const existingOrCreatedSession = await TrackingSessionModel.findOne({
+          id: sessionData.id,
+        }).lean();
+        if (existingOrCreatedSession) {
+          const wasCreated =
+            Boolean(upsertResult?.upsertedCount) ||
+            Boolean(upsertResult?.upsertedId);
+          console.log(
+            wasCreated
+              ? "Tracking session upsert-created in MongoDB:"
+              : "♻️ Tracking session already present in MongoDB:",
+            sessionData.id,
+          );
+          return res.status(wasCreated ? 201 : 200).json(existingOrCreatedSession);
+        }
+      }
+
       const newSession = new TrackingSessionModel(sessionData);
       const savedSession = await newSession.save();
 
@@ -251,9 +275,12 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
     } catch (dbError) {
       if (isDuplicateKeyError(dbError)) {
         try {
-          const existingSession = await TrackingSessionModel.findOne({ id: sessionData.id }).lean();
+          // Brief retry helps when duplicate is thrown before winner transaction becomes visible.
+          const existingSession = await TrackingSessionModel.findOne({
+            id: sessionData.id,
+          }).lean();
           if (existingSession) {
-            console.warn(
+            console.log(
               "♻️ Duplicate tracking session create detected; returning existing document:",
               sessionData.id,
             );
@@ -262,8 +289,14 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
         } catch (duplicateLookupError) {
           console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
         }
+        // Duplicate key errors are expected for retries; avoid noisy full-stack logs.
+        console.warn(
+          "⚠️ Duplicate tracking session id detected but existing document could not be fetched immediately:",
+          sessionData.id,
+        );
+      } else {
+        console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
       }
-      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
     }
 
     // Fallback to in-memory storage
