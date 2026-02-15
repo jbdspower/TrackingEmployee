@@ -1871,6 +1871,24 @@ const createTrackingSession = async (req, res) => {
       status: status || "active"
     };
     try {
+      if (id) {
+        const upsertResult = await TrackingSession.updateOne(
+          { id: sessionData.id },
+          { $setOnInsert: sessionData },
+          { upsert: true }
+        );
+        const existingOrCreatedSession = await TrackingSession.findOne({
+          id: sessionData.id
+        }).lean();
+        if (existingOrCreatedSession) {
+          const wasCreated = Boolean(upsertResult?.upsertedCount) || Boolean(upsertResult?.upsertedId);
+          console.log(
+            wasCreated ? "Tracking session upsert-created in MongoDB:" : "♻️ Tracking session already present in MongoDB:",
+            sessionData.id
+          );
+          return res.status(wasCreated ? 201 : 200).json(existingOrCreatedSession);
+        }
+      }
       const newSession2 = new TrackingSession(sessionData);
       const savedSession = await newSession2.save();
       console.log("Tracking session saved to MongoDB:", savedSession.id);
@@ -1879,9 +1897,11 @@ const createTrackingSession = async (req, res) => {
     } catch (dbError) {
       if (isDuplicateKeyError(dbError)) {
         try {
-          const existingSession = await TrackingSession.findOne({ id: sessionData.id }).lean();
+          const existingSession = await TrackingSession.findOne({
+            id: sessionData.id
+          }).lean();
           if (existingSession) {
-            console.warn(
+            console.log(
               "♻️ Duplicate tracking session create detected; returning existing document:",
               sessionData.id
             );
@@ -1890,8 +1910,13 @@ const createTrackingSession = async (req, res) => {
         } catch (duplicateLookupError) {
           console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
         }
+        console.warn(
+          "⚠️ Duplicate tracking session id detected but existing document could not be fetched immediately:",
+          sessionData.id
+        );
+      } else {
+        console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
       }
-      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
     }
     const newSession = sessionData;
     trackingSessions.push(newSession);
