@@ -71,6 +71,15 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
 let trackingSessions: TrackingSessionType[] = [];
 let sessionIdCounter = 1;
 
+const isDuplicateKeyError = (error: any): boolean =>
+  Boolean(error && (error.code === 11000 || error?.errorResponse?.code === 11000));
+
+const generateSessionId = (employeeId: string): string => {
+  const safeEmployeeId = String(employeeId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  return `session_${safeEmployeeId}_${Date.now()}_${randomSuffix}`;
+};
+
 // In-memory storage for meeting history with customer details
 let meetingHistory: Array<{
   id: string;
@@ -191,6 +200,19 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
 
     console.log("📍 Creating tracking session:", { id, employeeId, startTime });
 
+    // Idempotency guard: if client retries with same id, return existing session.
+    if (id) {
+      try {
+        const existingSession = await TrackingSessionModel.findOne({ id }).lean();
+        if (existingSession) {
+          console.log("♻️ Tracking session already exists, returning existing session:", id);
+          return res.status(200).json(existingSession);
+        }
+      } catch (lookupError) {
+        console.warn("⚠️ Failed duplicate-id precheck for tracking session:", lookupError);
+      }
+    }
+
     // 🔹 Resolve start location address if not already resolved
     let resolvedStartLocation = { ...startLocation };
     if (startLocation.lat && startLocation.lng) {
@@ -206,7 +228,7 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
     }
 
     const sessionData = {
-      id: id || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
+      id: id || generateSessionId(employeeId) || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
       employeeId,
       startTime: startTime || new Date().toISOString(),
       startLocation: {
@@ -227,6 +249,20 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
       res.status(201).json(savedSession);
       return;
     } catch (dbError) {
+      if (isDuplicateKeyError(dbError)) {
+        try {
+          const existingSession = await TrackingSessionModel.findOne({ id: sessionData.id }).lean();
+          if (existingSession) {
+            console.warn(
+              "♻️ Duplicate tracking session create detected; returning existing document:",
+              sessionData.id,
+            );
+            return res.status(200).json(existingSession);
+          }
+        } catch (duplicateLookupError) {
+          console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
+        }
+      }
       console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
     }
 

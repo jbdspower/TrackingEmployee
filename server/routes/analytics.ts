@@ -72,6 +72,74 @@ interface EmployeeStatus {
 }
 
 let employeeStatuses: Record<string, EmployeeStatus> = {};
+const FULL_ANALYTICS_ACCESS_EMAILS = new Set([
+  "info@jbdspower.com",
+  "hr@jbdspower.com",
+]);
+
+interface AnalyticsAccessScope {
+  requesterId: string;
+  requesterEmail: string;
+  isScopedRequest: boolean;
+  canAccessAll: boolean;
+  allowedEmployeeIds: Set<string>;
+}
+
+function normalizeEmail(email?: string): string {
+  return String(email || "").trim().toLowerCase();
+}
+
+function buildAnalyticsAccessScope(
+  externalUsers: ExternalUser[],
+  requesterIdRaw?: unknown,
+  requesterEmailRaw?: unknown,
+): AnalyticsAccessScope {
+  const requesterId = String(requesterIdRaw || "").trim();
+  const requesterEmail = normalizeEmail(requesterEmailRaw as string);
+  const isScopedRequest = Boolean(requesterId || requesterEmail);
+
+  const requesterById = requesterId
+    ? externalUsers.find((user) => String(user?._id || "") === requesterId)
+    : undefined;
+  const requesterByEmail = requesterEmail
+    ? externalUsers.find((user) => normalizeEmail(user?.email) === requesterEmail)
+    : undefined;
+  const requesterUser = requesterById || requesterByEmail;
+
+  const resolvedRequesterId = String(requesterUser?._id || requesterId || "").trim();
+  const resolvedRequesterEmail = normalizeEmail(
+    requesterUser?.email || requesterEmail,
+  );
+  const canAccessAll = FULL_ANALYTICS_ACCESS_EMAILS.has(resolvedRequesterEmail);
+
+  const allowedEmployeeIds = new Set<string>();
+  if (canAccessAll || !isScopedRequest) {
+    externalUsers.forEach((user) => {
+      if (user?._id) {
+        allowedEmployeeIds.add(String(user._id));
+      }
+    });
+  } else {
+    if (resolvedRequesterId) {
+      // Managers should be able to view their own records as well.
+      allowedEmployeeIds.add(resolvedRequesterId);
+    }
+    externalUsers.forEach((user) => {
+      const reportId = user?.report?._id;
+      if (reportId && String(reportId) === resolvedRequesterId) {
+        allowedEmployeeIds.add(String(user._id));
+      }
+    });
+  }
+
+  return {
+    requesterId: resolvedRequesterId,
+    requesterEmail: resolvedRequesterEmail,
+    isScopedRequest,
+    canAccessAll,
+    allowedEmployeeIds,
+  };
+}
 
 function getRealisticIndianLocation(index: number) {
   const locations = [
@@ -233,6 +301,8 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
       startDate,
       endDate,
       search,
+      requesterId,
+      requesterEmail,
     } = req.query;
 
     // Get date range
@@ -247,9 +317,20 @@ export const getEmployeeAnalytics: RequestHandler = async (req, res) => {
 
     // Fetch all employees
     const externalUsers = await fetchExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail,
+    );
     let employees = externalUsers.map((user, index) =>
       mapExternalUserToEmployee(user, index),
     );
+
+    if (accessScope.isScopedRequest) {
+      employees = employees.filter((emp) =>
+        accessScope.allowedEmployeeIds.has(String(emp.id)),
+      );
+    }
 
     // Filter by employee if specified
     if (employeeId && employeeId !== "all") {
@@ -481,6 +562,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       limit = "20",
       type = "meetings", // "meetings" or "days"
       includeAttachments = "false",
+      requesterId,
+      requesterEmail,
     } = req.query;
     const normalizedDateRange = String(rawDateRange || "today")
       .split(",")[0]
@@ -489,6 +572,12 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     const dateRange = normalizedDateRange || "today";
     const isAllRange = dateRange === "all";
     const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
+    const externalUsers = await cacheService.getExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail,
+    );
 
     // Start timing
     const startTime = Date.now();
@@ -527,6 +616,25 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       console.warn("⚠️ Failed to resolve employeeId mapping:", resolveError);
     }
 
+    const requestedEmployeeExternalId =
+      externalUsers.find((user) => String(user?._id || "") === String(employeeId))?._id ||
+      employeeIdFilters.find((id) => {
+        const idText = String(id);
+        return externalUsers.some((user) => String(user?._id || "") === idText);
+      }) ||
+      String(employeeId);
+
+    if (
+      accessScope.isScopedRequest &&
+      !accessScope.canAccessAll &&
+      !accessScope.allowedEmployeeIds.has(String(requestedEmployeeExternalId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "You are not allowed to access meetings/attendance for this employee.",
+      });
+    }
+
     console.log(
       `📊 Employee details for ${employeeId} - Date range: ${dateRange} (raw: ${String(rawDateRange)}), Page: ${pageNum}, Limit: ${limitNum}`,
     );
@@ -546,15 +654,14 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
     // PARALLELIZE DATA FETCHING
     const [
-      externalUsers,
+      externalUsersResultRaw,
       meetingsData,
       meetingsCount,
       trackingSessionsData,
       attendanceRecords,
       dayMeetingsAggregate
     ] = await Promise.allSettled([
-      // Get external users from cache
-      cacheService.getExternalUsers(),
+      Promise.resolve(externalUsers),
 
       // Fetch meetings with date range filter and pagination
       Meeting.find({
@@ -661,7 +768,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     ]);
 
     // Handle Promise results
-    const externalUsersResult = externalUsers.status === 'fulfilled' ? externalUsers.value : [];
+    const externalUsersResult = externalUsersResultRaw.status === 'fulfilled' ? externalUsersResultRaw.value : [];
     const meetingsDataResult = meetingsData.status === 'fulfilled' ? meetingsData.value : [];
     const meetingsCountResult = meetingsCount.status === 'fulfilled' ? meetingsCount.value : 0;
     const trackingSessionsResult = trackingSessionsData.status === 'fulfilled' ? trackingSessionsData.value : [];
@@ -669,7 +776,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     const dayMeetingsAggregateResult = dayMeetingsAggregate.status === 'fulfilled' ? dayMeetingsAggregate.value : [];
 
     // Log any errors
-    if (externalUsers.status === 'rejected') console.error('Error fetching external users:', externalUsers.reason);
+    if (externalUsersResultRaw.status === 'rejected') console.error('Error fetching external users:', externalUsersResultRaw.reason);
     if (meetingsData.status === 'rejected') console.error('Error fetching meetings:', meetingsData.reason);
     if (meetingsCount.status === 'rejected') console.error('Error counting meetings:', meetingsCount.reason);
     if (trackingSessionsData.status === 'rejected') console.error('Error fetching tracking sessions:', trackingSessionsData.reason);
@@ -1406,7 +1513,7 @@ export const getMeetingTrends: RequestHandler = async (req, res) => {
 
 export const getAttendance: RequestHandler = async (req, res) => {
   try {
-    const { employeeId, startDate, endDate, date } = req.query;
+    const { employeeId, startDate, endDate, date, requesterId, requesterEmail } = req.query;
 
     console.log(`Fetching attendance records:`, {
       employeeId,
@@ -1417,9 +1524,27 @@ export const getAttendance: RequestHandler = async (req, res) => {
 
     // Build query filter
     const filter: any = {};
+    const externalUsers = await cacheService.getExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail,
+    );
 
     if (employeeId) {
+      if (
+        accessScope.isScopedRequest &&
+        !accessScope.canAccessAll &&
+        !accessScope.allowedEmployeeIds.has(String(employeeId))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: "You are not allowed to access attendance for this employee.",
+        });
+      }
       filter.employeeId = employeeId;
+    } else if (accessScope.isScopedRequest && !accessScope.canAccessAll) {
+      filter.employeeId = { $in: Array.from(accessScope.allowedEmployeeIds) };
     }
 
     if (date) {
@@ -1496,7 +1621,9 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       limit = "10",
       search = "",
       sortBy = "employeeName",
-      sortOrder = "asc"
+      sortOrder = "asc",
+      requesterId,
+      requesterEmail,
     } = req.query;
     const dateRange = String(rawDateRange || "today").trim().toLowerCase();
     const isAllRange = dateRange === "all";
@@ -1526,6 +1653,17 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         userId: user._id
       };
     });
+
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail,
+    );
+    if (accessScope.isScopedRequest) {
+      allEmployees = allEmployees.filter((emp) =>
+        accessScope.allowedEmployeeIds.has(String(emp.userId || emp.id)),
+      );
+    }
 
     console.log(`Mapped ${allEmployees.length} total employees`);
 
