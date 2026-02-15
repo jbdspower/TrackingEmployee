@@ -1749,6 +1749,12 @@ async function reverseGeocode(lat, lng) {
 }
 let trackingSessions = [];
 let sessionIdCounter = 1;
+const isDuplicateKeyError = (error) => Boolean(error && (error.code === 11e3 || error?.errorResponse?.code === 11e3));
+const generateSessionId = (employeeId) => {
+  const safeEmployeeId = String(employeeId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  return `session_${safeEmployeeId}_${Date.now()}_${randomSuffix}`;
+};
 let meetingHistory = [];
 let historyIdCounter = 1;
 const getTrackingSessions = async (req, res) => {
@@ -1830,6 +1836,17 @@ const createTrackingSession = async (req, res) => {
       });
     }
     console.log("📍 Creating tracking session:", { id, employeeId, startTime });
+    if (id) {
+      try {
+        const existingSession = await TrackingSession.findOne({ id }).lean();
+        if (existingSession) {
+          console.log("♻️ Tracking session already exists, returning existing session:", id);
+          return res.status(200).json(existingSession);
+        }
+      } catch (lookupError) {
+        console.warn("⚠️ Failed duplicate-id precheck for tracking session:", lookupError);
+      }
+    }
     let resolvedStartLocation = { ...startLocation };
     if (startLocation.lat && startLocation.lng) {
       try {
@@ -1842,7 +1859,7 @@ const createTrackingSession = async (req, res) => {
       }
     }
     const sessionData = {
-      id: id || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
+      id: id || generateSessionId(employeeId) || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
       employeeId,
       startTime: startTime || (/* @__PURE__ */ new Date()).toISOString(),
       startLocation: {
@@ -1860,6 +1877,20 @@ const createTrackingSession = async (req, res) => {
       res.status(201).json(savedSession);
       return;
     } catch (dbError) {
+      if (isDuplicateKeyError(dbError)) {
+        try {
+          const existingSession = await TrackingSession.findOne({ id: sessionData.id }).lean();
+          if (existingSession) {
+            console.warn(
+              "♻️ Duplicate tracking session create detected; returning existing document:",
+              sessionData.id
+            );
+            return res.status(200).json(existingSession);
+          }
+        } catch (duplicateLookupError) {
+          console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
+        }
+      }
       console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
     }
     const newSession = sessionData;
@@ -2493,6 +2524,51 @@ async function fetchExternalUsers() {
   }
 }
 let employeeStatuses = {};
+const FULL_ANALYTICS_ACCESS_EMAILS = /* @__PURE__ */ new Set([
+  "info@jbdspower.com",
+  "hr@jbdspower.com"
+]);
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+function buildAnalyticsAccessScope(externalUsers, requesterIdRaw, requesterEmailRaw) {
+  const requesterId = String(requesterIdRaw || "").trim();
+  const requesterEmail = normalizeEmail(requesterEmailRaw);
+  const isScopedRequest = Boolean(requesterId || requesterEmail);
+  const requesterById = requesterId ? externalUsers.find((user) => String(user?._id || "") === requesterId) : void 0;
+  const requesterByEmail = requesterEmail ? externalUsers.find((user) => normalizeEmail(user?.email) === requesterEmail) : void 0;
+  const requesterUser = requesterById || requesterByEmail;
+  const resolvedRequesterId = String(requesterUser?._id || requesterId || "").trim();
+  const resolvedRequesterEmail = normalizeEmail(
+    requesterUser?.email || requesterEmail
+  );
+  const canAccessAll = FULL_ANALYTICS_ACCESS_EMAILS.has(resolvedRequesterEmail);
+  const allowedEmployeeIds = /* @__PURE__ */ new Set();
+  if (canAccessAll || !isScopedRequest) {
+    externalUsers.forEach((user) => {
+      if (user?._id) {
+        allowedEmployeeIds.add(String(user._id));
+      }
+    });
+  } else {
+    if (resolvedRequesterId) {
+      allowedEmployeeIds.add(resolvedRequesterId);
+    }
+    externalUsers.forEach((user) => {
+      const reportId = user?.report?._id;
+      if (reportId && String(reportId) === resolvedRequesterId) {
+        allowedEmployeeIds.add(String(user._id));
+      }
+    });
+  }
+  return {
+    requesterId: resolvedRequesterId,
+    requesterEmail: resolvedRequesterEmail,
+    isScopedRequest,
+    canAccessAll,
+    allowedEmployeeIds
+  };
+}
 function getRealisticIndianLocation(index) {
   const locations = [
     { lat: 28.6139, lng: 77.209, address: "New Delhi, India" },
@@ -2620,7 +2696,9 @@ const getEmployeeAnalytics = async (req, res) => {
       dateRange = "today",
       startDate,
       endDate,
-      search
+      search,
+      requesterId,
+      requesterEmail
     } = req.query;
     const { start, end } = getDateRange(
       dateRange,
@@ -2630,9 +2708,19 @@ const getEmployeeAnalytics = async (req, res) => {
     console.log(`Analytics date filter - Range: ${dateRange}, Start: ${startDate}, End: ${endDate}`);
     console.log(`Calculated date range: ${start.toISOString()} to ${end.toISOString()}`);
     const externalUsers = await fetchExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail
+    );
     let employees = externalUsers.map(
       (user, index) => mapExternalUserToEmployee(user, index)
     );
+    if (accessScope.isScopedRequest) {
+      employees = employees.filter(
+        (emp) => accessScope.allowedEmployeeIds.has(String(emp.id))
+      );
+    }
     if (employeeId && employeeId !== "all") {
       employees = employees.filter((emp) => emp.id === employeeId);
     }
@@ -2746,12 +2834,20 @@ const getEmployeeDetails = async (req, res) => {
       limit = "20",
       type = "meetings",
       // "meetings" or "days"
-      includeAttachments = "false"
+      includeAttachments = "false",
+      requesterId,
+      requesterEmail
     } = req.query;
     const normalizedDateRange = String(rawDateRange || "today").split(",")[0].trim().toLowerCase();
     const dateRange = normalizedDateRange || "today";
     const isAllRange = dateRange === "all";
     const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
+    const externalUsers = await cacheService.getExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail
+    );
     const startTime = Date.now();
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
@@ -2780,6 +2876,16 @@ const getEmployeeDetails = async (req, res) => {
     } catch (resolveError) {
       console.warn("⚠️ Failed to resolve employeeId mapping:", resolveError);
     }
+    const requestedEmployeeExternalId = externalUsers.find((user) => String(user?._id || "") === String(employeeId))?._id || employeeIdFilters.find((id) => {
+      const idText = String(id);
+      return externalUsers.some((user) => String(user?._id || "") === idText);
+    }) || String(employeeId);
+    if (accessScope.isScopedRequest && !accessScope.canAccessAll && !accessScope.allowedEmployeeIds.has(String(requestedEmployeeExternalId))) {
+      return res.status(403).json({
+        success: false,
+        error: "You are not allowed to access meetings/attendance for this employee."
+      });
+    }
     console.log(
       `📊 Employee details for ${employeeId} - Date range: ${dateRange} (raw: ${String(rawDateRange)}), Page: ${pageNum}, Limit: ${limitNum}`
     );
@@ -2796,15 +2902,14 @@ const getEmployeeDetails = async (req, res) => {
     };
     const meetingsSelectFields = shouldIncludeAttachments ? "employeeId startTime endTime clientName leadId status notes externalMeetingStatus meetingDetails location approvalStatus approvalReason approvedBy attachments" : "employeeId startTime endTime clientName leadId status notes externalMeetingStatus location approvalStatus approvalReason approvedBy meetingDetails.discussion meetingDetails.customers meetingDetails.customerEmployeeName meetingDetails.incomplete meetingDetails.incompleteReason";
     const [
-      externalUsers,
+      externalUsersResultRaw,
       meetingsData,
       meetingsCount,
       trackingSessionsData,
       attendanceRecords,
       dayMeetingsAggregate
     ] = await Promise.allSettled([
-      // Get external users from cache
-      cacheService.getExternalUsers(),
+      Promise.resolve(externalUsers),
       // Fetch meetings with date range filter and pagination
       Meeting.find({
         employeeId: { $in: employeeIdFilters },
@@ -2892,13 +2997,13 @@ const getEmployeeDetails = async (req, res) => {
         }
       ]).exec()
     ]);
-    const externalUsersResult = externalUsers.status === "fulfilled" ? externalUsers.value : [];
+    const externalUsersResult = externalUsersResultRaw.status === "fulfilled" ? externalUsersResultRaw.value : [];
     const meetingsDataResult = meetingsData.status === "fulfilled" ? meetingsData.value : [];
     const meetingsCountResult = meetingsCount.status === "fulfilled" ? meetingsCount.value : 0;
     const trackingSessionsResult = trackingSessionsData.status === "fulfilled" ? trackingSessionsData.value : [];
     const attendanceRecordsResult = attendanceRecords.status === "fulfilled" ? attendanceRecords.value : [];
     const dayMeetingsAggregateResult = dayMeetingsAggregate.status === "fulfilled" ? dayMeetingsAggregate.value : [];
-    if (externalUsers.status === "rejected") console.error("Error fetching external users:", externalUsers.reason);
+    if (externalUsersResultRaw.status === "rejected") console.error("Error fetching external users:", externalUsersResultRaw.reason);
     if (meetingsData.status === "rejected") console.error("Error fetching meetings:", meetingsData.reason);
     if (meetingsCount.status === "rejected") console.error("Error counting meetings:", meetingsCount.reason);
     if (trackingSessionsData.status === "rejected") console.error("Error fetching tracking sessions:", trackingSessionsData.reason);
@@ -3454,7 +3559,7 @@ const getMeetingTrends = async (req, res) => {
 };
 const getAttendance = async (req, res) => {
   try {
-    const { employeeId, startDate, endDate, date } = req.query;
+    const { employeeId, startDate, endDate, date, requesterId, requesterEmail } = req.query;
     console.log(`Fetching attendance records:`, {
       employeeId,
       startDate,
@@ -3462,8 +3567,22 @@ const getAttendance = async (req, res) => {
       date
     });
     const filter = {};
+    const externalUsers = await cacheService.getExternalUsers();
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail
+    );
     if (employeeId) {
+      if (accessScope.isScopedRequest && !accessScope.canAccessAll && !accessScope.allowedEmployeeIds.has(String(employeeId))) {
+        return res.status(403).json({
+          success: false,
+          error: "You are not allowed to access attendance for this employee."
+        });
+      }
       filter.employeeId = employeeId;
+    } else if (accessScope.isScopedRequest && !accessScope.canAccessAll) {
+      filter.employeeId = { $in: Array.from(accessScope.allowedEmployeeIds) };
     }
     if (date) {
       filter.date = date;
@@ -3476,8 +3595,8 @@ const getAttendance = async (req, res) => {
     try {
       const attendanceRecords = await Attendance.find(filter).sort({ date: -1 }).lean();
       console.log(`Found ${attendanceRecords.length} attendance records`);
-      const externalUsers = await fetchExternalUsers();
-      const userMap = new Map(externalUsers.map((user) => [user._id, user.name]));
+      const externalUsers2 = await fetchExternalUsers();
+      const userMap = new Map(externalUsers2.map((user) => [user._id, user.name]));
       const formattedRecords = attendanceRecords.map((record) => ({
         id: record._id.toString(),
         employeeId: record.employeeId,
@@ -3520,7 +3639,9 @@ const getAllEmployeesDetails = async (req, res) => {
       limit = "10",
       search = "",
       sortBy = "employeeName",
-      sortOrder = "asc"
+      sortOrder = "asc",
+      requesterId,
+      requesterEmail
     } = req.query;
     const dateRange = String(rawDateRange || "today").trim().toLowerCase();
     const isAllRange = dateRange === "all";
@@ -3539,6 +3660,16 @@ const getAllEmployeesDetails = async (req, res) => {
         userId: user._id
       };
     });
+    const accessScope = buildAnalyticsAccessScope(
+      externalUsers,
+      requesterId,
+      requesterEmail
+    );
+    if (accessScope.isScopedRequest) {
+      allEmployees = allEmployees.filter(
+        (emp) => accessScope.allowedEmployeeIds.has(String(emp.userId || emp.id))
+      );
+    }
     console.log(`Mapped ${allEmployees.length} total employees`);
     if (search) {
       const searchLower = search.toLowerCase();
