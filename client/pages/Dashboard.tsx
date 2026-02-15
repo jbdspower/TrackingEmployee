@@ -277,20 +277,17 @@ useEffect(() => {
 
       // Get user from localStorage
       const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const isSuperAdmin = user?.role === "super_admin";
+      const requesterId = String(user?._id || "").trim();
+      const requesterEmail = String(user?.email || "").trim();
 
       // Build query parameters
       const queryParams = new URLSearchParams();
 
-      if (isSuperAdmin) {
-        if (filters.employeeId && filters.employeeId !== "all") {
-          queryParams.append("employeeId", filters.employeeId);
-        }
-      } else if (user?._id) {
-        // If not super admin and user has valid ID, filter by logged-in user's ID
-        queryParams.append("employeeId", user._id);
+      if (filters.employeeId && filters.employeeId !== "all") {
+        queryParams.append("employeeId", filters.employeeId);
       }
-      // If no valid user ID, fetch all analytics (super admin view)
+      if (requesterId) queryParams.append("requesterId", requesterId);
+      if (requesterEmail) queryParams.append("requesterEmail", requesterEmail);
 
       queryParams.append("dateRange", filters.dateRange);
       if (filters.startDate) queryParams.append("startDate", filters.startDate);
@@ -464,12 +461,19 @@ useEffect(() => {
     setSelectedEmployee(employeeId);
     setLoadingDetails(true);
     try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const requesterId = String(user?._id || "").trim();
+      const requesterEmail = String(user?.email || "").trim();
+
       // Fetch detailed employee data
-      const detailsUrl = `/api/analytics/employee-details/${employeeId}?${new URLSearchParams({
+      const detailsParams = new URLSearchParams({
         dateRange: filters.dateRange,
         ...(filters.startDate && { startDate: filters.startDate }),
         ...(filters.endDate && { endDate: filters.endDate }),
-      })}`;
+      });
+      if (requesterId) detailsParams.append("requesterId", requesterId);
+      if (requesterEmail) detailsParams.append("requesterEmail", requesterEmail);
+      const detailsUrl = `/api/analytics/employee-details/${employeeId}?${detailsParams.toString()}`;
 
       console.log(`🔍 Fetching employee details from: ${detailsUrl}`);
       const response = await HttpClient.get(detailsUrl);
@@ -510,6 +514,8 @@ useEffect(() => {
           const attendanceParams = new URLSearchParams({ employeeId });
           if (filters.startDate) attendanceParams.append("startDate", filters.startDate);
           if (filters.endDate) attendanceParams.append("endDate", filters.endDate);
+          if (requesterId) attendanceParams.append("requesterId", requesterId);
+          if (requesterEmail) attendanceParams.append("requesterEmail", requesterEmail);
 
           const attendanceUrl = `/api/analytics/attendance?${attendanceParams}`;
           console.log(`📋 Fetching attendance from: ${attendanceUrl}`);
