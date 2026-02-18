@@ -1750,6 +1750,7 @@ async function reverseGeocode(lat, lng) {
 let trackingSessions = [];
 let sessionIdCounter = 1;
 const isDuplicateKeyError = (error) => Boolean(error && (error.code === 11e3 || error?.errorResponse?.code === 11e3));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const generateSessionId = (employeeId) => {
   const safeEmployeeId = String(employeeId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
   const randomSuffix = Math.random().toString(36).slice(2, 8);
@@ -1871,47 +1872,52 @@ const createTrackingSession = async (req, res) => {
       status: status || "active"
     };
     try {
-      if (id) {
-        const upsertResult = await TrackingSession.updateOne(
-          { id: sessionData.id },
-          { $setOnInsert: sessionData },
-          { upsert: true }
-        );
-        const existingOrCreatedSession = await TrackingSession.findOne({
-          id: sessionData.id
-        }).lean();
-        if (existingOrCreatedSession) {
-          const wasCreated = Boolean(upsertResult?.upsertedCount) || Boolean(upsertResult?.upsertedId);
-          console.log(
-            wasCreated ? "Tracking session upsert-created in MongoDB:" : "♻️ Tracking session already present in MongoDB:",
-            sessionData.id
-          );
-          return res.status(wasCreated ? 201 : 200).json(existingOrCreatedSession);
+      const upsertResult = await TrackingSession.findOneAndUpdate(
+        { id: sessionData.id },
+        { $setOnInsert: sessionData },
+        {
+          upsert: true,
+          new: true,
+          rawResult: true,
+          runValidators: true
         }
+      );
+      const savedSession = upsertResult?.value;
+      if (savedSession) {
+        const wasCreated = Boolean(upsertResult?.lastErrorObject?.upserted);
+        console.log(
+          wasCreated ? "Tracking session upsert-created in MongoDB:" : "♻️ Tracking session already present in MongoDB:",
+          sessionData.id
+        );
+        return res.status(wasCreated ? 201 : 200).json(savedSession);
       }
-      const newSession2 = new TrackingSession(sessionData);
-      const savedSession = await newSession2.save();
-      console.log("Tracking session saved to MongoDB:", savedSession.id);
-      res.status(201).json(savedSession);
-      return;
+      const fetchedSession = await TrackingSession.findOne({
+        id: sessionData.id
+      }).lean();
+      if (fetchedSession) {
+        return res.status(200).json(fetchedSession);
+      }
     } catch (dbError) {
       if (isDuplicateKeyError(dbError)) {
         try {
-          const existingSession = await TrackingSession.findOne({
-            id: sessionData.id
-          }).lean();
-          if (existingSession) {
-            console.log(
-              "♻️ Duplicate tracking session create detected; returning existing document:",
-              sessionData.id
-            );
-            return res.status(200).json(existingSession);
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const existingSession = await TrackingSession.findOne({
+              id: sessionData.id
+            }).lean();
+            if (existingSession) {
+              console.log(
+                "♻️ Duplicate tracking session create detected; returning existing document:",
+                sessionData.id
+              );
+              return res.status(200).json(existingSession);
+            }
+            await sleep(60);
           }
         } catch (duplicateLookupError) {
           console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
         }
         console.warn(
-          "⚠️ Duplicate tracking session id detected but existing document could not be fetched immediately:",
+          "⚠️ Duplicate tracking session id detected; existing document not visible yet:",
           sessionData.id
         );
       } else {

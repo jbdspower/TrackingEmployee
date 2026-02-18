@@ -468,6 +468,7 @@ useEffect(() => {
       // Fetch detailed employee data
       const detailsParams = new URLSearchParams({
         dateRange: filters.dateRange,
+        includeAttachments: "true",
         ...(filters.startDate && { startDate: filters.startDate }),
         ...(filters.endDate && { endDate: filters.endDate }),
       });

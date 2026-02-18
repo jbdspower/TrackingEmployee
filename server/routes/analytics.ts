@@ -278,6 +278,19 @@ function calculateMeetingDuration(startTime: string, endTime?: string): number {
   }
 }
 
+function extractMeetingAttachments(meeting: any): string[] {
+  const topLevelAttachments = Array.isArray(meeting?.attachments)
+    ? meeting.attachments.filter((item: any) => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const detailsAttachments = Array.isArray(meeting?.meetingDetails?.attachments)
+    ? meeting.meetingDetails.attachments.filter(
+        (item: any) => typeof item === "string" && item.trim().length > 0,
+      )
+    : [];
+
+  return Array.from(new Set([...detailsAttachments, ...topLevelAttachments]));
+}
+
 // Function to calculate duty hours (placeholder - would need tracking data)
 function calculateDutyHours(
   employeeId: string,
@@ -1233,9 +1246,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         approvalReason: meeting.approvalReason || undefined,
         approvedBy: meeting.approvedBy || undefined,
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined,
-        attachments: shouldIncludeAttachments
-          ? meeting.meetingDetails?.attachments || meeting.attachments || []
-          : [],
+        attachments: shouldIncludeAttachments ? extractMeetingAttachments(meeting) : [],
       };
     });
 
@@ -1622,11 +1633,13 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       search = "",
       sortBy = "employeeName",
       sortOrder = "asc",
+      includeAttachments = "false",
       requesterId,
       requesterEmail,
     } = req.query;
     const dateRange = String(rawDateRange || "today").trim().toLowerCase();
     const isAllRange = dateRange === "all";
+    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
 
     // Start timing
     const startTime = Date.now();
@@ -1991,7 +2004,9 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         ...(isAllRange ? {} : mixedStartTimeRangeFilter),
       })
         .select(
-          "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy",
+          shouldIncludeAttachments
+            ? "employeeId startTime endTime clientName leadId status location attachments meetingDetails approvalStatus approvalReason approvedBy"
+            : "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy",
         )
         .sort({ startTime: -1 })
         .maxTimeMS(60000)
@@ -2254,7 +2269,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           approvedBy: meeting.approvedBy,
           approvedByName: meeting.approvedBy ?
             (userMap.get(meeting.approvedBy)?.name || meeting.approvedBy) : undefined,
-          attachments: meeting.meetingDetails?.attachments || [],
+          attachments: shouldIncludeAttachments ? extractMeetingAttachments(meeting) : [],
         };
       });
 

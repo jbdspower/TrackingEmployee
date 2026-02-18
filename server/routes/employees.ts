@@ -136,7 +136,7 @@ async function getEmployeeLatestLocation(employeeId: string) {
   try {
     // First try Employee model with timeout
     const employee = (await Promise.race([
-      EmployeeModel.findOne({ id: employeeId }).lean(),
+      EmployeeModel.findOne({ id: employeeId }).maxTimeMS(450).lean(),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("db timeout")), 500),
       ),
@@ -162,6 +162,7 @@ async function getEmployeeLatestLocation(employeeId: string) {
         employeeId,
         $or: [{ status: "active" }, { status: "completed" }],
       })
+        .maxTimeMS(450)
         .sort({ startTime: -1 })
         .lean(),
       new Promise((_, reject) =>
@@ -194,7 +195,12 @@ async function getEmployeeLatestLocation(employeeId: string) {
 
     return null;
   } catch (error) {
-    console.warn(`Location lookup failed for ${employeeId}:`, error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    // DB timeouts are expected under load; keep logs clean and continue with fallback location.
+    if (message === "db timeout" || message.includes("timed out")) {
+      return null;
+    }
+    console.warn(`Location lookup failed for ${employeeId}:`, message);
     return null;
   }
 }
