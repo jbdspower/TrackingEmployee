@@ -437,17 +437,17 @@ useEffect(() => {
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
 
-  console.log("🔵 EndMeetingModal: Form submit triggered");
-  console.log("EndMeetingModal: Form data before validation:", formData);
-  console.log("EndMeetingModal: Selected customers:", selectedCustomers);
-  console.log("EndMeetingModal: Discussion:", formData.discussion);
-  console.log("EndMeetingModal: Attached files:", attachedFiles.length);
-
   const isValid = validateForm();
   console.log("EndMeetingModal: Validation result:", isValid);
 
   if (!isValid) {
     console.log("EndMeetingModal: Form validation failed with errors:", errors);
+    toast({
+      title: "Please complete required fields",
+      description:
+        "Add at least one customer contact with email/mobile and fill discussion details.",
+      variant: "destructive",
+    });
     const firstErrorElement = document.querySelector(".border-destructive");
     if (firstErrorElement) {
       firstErrorElement.scrollIntoView({ behavior: "smooth", block: "center" });

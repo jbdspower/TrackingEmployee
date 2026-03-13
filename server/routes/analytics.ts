@@ -17,6 +17,8 @@ import { Meeting, Attendance, TrackingSession, Employee } from "../models/index.
 import { cacheService } from "../services/cache.service.js";
 import Database from "../config/database.js";
 import mongoose from "mongoose";
+import fs from "fs";
+import path from "path";
 
 // Replicate the external API fetch function
 const EXTERNAL_API_URL = "https://jbdspower.in/LeafNetServer/api/user";
@@ -278,17 +280,93 @@ function calculateMeetingDuration(startTime: string, endTime?: string): number {
   }
 }
 
-function extractMeetingAttachments(meeting: any): string[] {
+function normalizeAttachmentValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  // Some historical payloads store attachment objects instead of plain strings.
+  const maybeObject = value as Record<string, unknown>;
+  const candidates = [
+    maybeObject.url,
+    maybeObject.fileUrl,
+    maybeObject.path,
+    maybeObject.uri,
+    maybeObject.location,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
+function toAbsoluteAttachmentUrl(req: any, attachment: string): string {
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const value = attachment.trim();
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith("/uploads/")) {
+    return `${baseUrl}${value}`;
+  }
+
+  if (value.startsWith("uploads/")) {
+    return `${baseUrl}/${value}`;
+  }
+
+  return value;
+}
+
+function getAttachmentUrlsFromDisk(req: any, meetingId?: string): string[] {
+  if (!meetingId) return [];
+
+  try {
+    const meetingDir = path.join(process.cwd(), "uploads", "meetings", meetingId);
+    if (!fs.existsSync(meetingDir)) {
+      return [];
+    }
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    return fs
+      .readdirSync(meetingDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => `${baseUrl}/uploads/meetings/${meetingId}/${entry.name}`);
+  } catch (error) {
+    console.warn("⚠️ Failed to read meeting attachment directory:", error);
+    return [];
+  }
+}
+
+function extractMeetingAttachments(req: any, meeting: any): string[] {
   const topLevelAttachments = Array.isArray(meeting?.attachments)
-    ? meeting.attachments.filter((item: any) => typeof item === "string" && item.trim().length > 0)
+    ? meeting.attachments
+        .map((item: unknown) => normalizeAttachmentValue(item))
+        .filter((item: string | null): item is string => Boolean(item))
     : [];
   const detailsAttachments = Array.isArray(meeting?.meetingDetails?.attachments)
-    ? meeting.meetingDetails.attachments.filter(
-        (item: any) => typeof item === "string" && item.trim().length > 0,
-      )
+    ? meeting.meetingDetails.attachments
+        .map((item: unknown) => normalizeAttachmentValue(item))
+        .filter((item: string | null): item is string => Boolean(item))
     : [];
 
-  return Array.from(new Set([...detailsAttachments, ...topLevelAttachments]));
+  const meetingId = String(meeting?._id || meeting?.id || "").trim();
+  const diskAttachments = getAttachmentUrlsFromDisk(req, meetingId);
+  const merged = [...detailsAttachments, ...topLevelAttachments, ...diskAttachments].map(
+    (attachment) => toAbsoluteAttachmentUrl(req, attachment),
+  );
+
+  return Array.from(new Set(merged));
 }
 
 // Function to calculate duty hours (placeholder - would need tracking data)
@@ -574,7 +652,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       page = "1",
       limit = "20",
       type = "meetings", // "meetings" or "days"
-      includeAttachments = "false",
+      includeAttachments = "true",
       requesterId,
       requesterEmail,
     } = req.query;
@@ -584,7 +662,8 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
       .toLowerCase();
     const dateRange = normalizedDateRange || "today";
     const isAllRange = dateRange === "all";
-    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
+    const shouldIncludeAttachments =
+      String(includeAttachments).trim().toLowerCase() !== "false";
     const externalUsers = await cacheService.getExternalUsers();
     const accessScope = buildAnalyticsAccessScope(
       externalUsers,
@@ -1246,7 +1325,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         approvalReason: meeting.approvalReason || undefined,
         approvedBy: meeting.approvedBy || undefined,
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : undefined,
-        attachments: shouldIncludeAttachments ? extractMeetingAttachments(meeting) : [],
+        attachments: shouldIncludeAttachments ? extractMeetingAttachments(req, meeting) : [],
       };
     });
 
@@ -2269,7 +2348,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           approvedBy: meeting.approvedBy,
           approvedByName: meeting.approvedBy ?
             (userMap.get(meeting.approvedBy)?.name || meeting.approvedBy) : undefined,
-          attachments: shouldIncludeAttachments ? extractMeetingAttachments(meeting) : [],
+          attachments: shouldIncludeAttachments ? extractMeetingAttachments(req, meeting) : [],
         };
       });
 

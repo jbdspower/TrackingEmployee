@@ -807,7 +807,7 @@ export default function Tracking() {
     }
   };
 
-  const handleEndMeetingAttempt = () => {
+  const handleEndMeetingAttempt = async () => {
     console.log("End meeting attempt. Employee status:", employee?.status, "Available meetings:", meetings);
 
     const activeMeeting = meetings.find(
@@ -816,14 +816,58 @@ export default function Tracking() {
 
     if (activeMeeting) {
       handleEndMeetingClick(activeMeeting.id);
-    } else {
-      console.error("No active meeting found to end. Available meetings:", meetings);
-      toast({
-        title: "No Active Meeting",
-        description: "No active meeting found for this employee. Please start a meeting first.",
-        variant: "destructive",
-      });
+      return;
     }
+
+    // Fallback 1: ask backend for current active meeting
+    try {
+      if (employeeId) {
+        console.log("🔎 No local active meeting. Trying backend active meeting lookup...");
+        const activeResponse = await HttpClient.get(
+          `/api/meetings/active?employeeId=${employeeId}`,
+        );
+        if (activeResponse.ok) {
+          const activeMeetingFromApi = await activeResponse.json();
+          if (activeMeetingFromApi?.id) {
+            console.log(
+              "✅ Found active meeting from backend lookup:",
+              activeMeetingFromApi.id,
+            );
+            setActiveMeetingId(activeMeetingFromApi.id);
+            setIsEndMeetingModalOpen(true);
+            return;
+          }
+        }
+      }
+    } catch (lookupError) {
+      console.warn("⚠️ Backend active meeting lookup failed:", lookupError);
+    }
+
+    // Fallback 2: if follow-up API says a meeting is active, route through existing recovery flow
+    const activeFollowUp = todaysFollowUpMeetings.find(
+      (meeting) =>
+        meeting.meetingStatus === "meeting on-going" ||
+        meeting.meetingStatus === "In Progress" ||
+        meeting.meetingStatus === "IN_PROGRESS" ||
+        meeting.meetingStatus === "Started",
+    );
+
+    if (activeFollowUp) {
+      console.log(
+        "🔄 Active follow-up found, using follow-up end flow:",
+        activeFollowUp._id,
+      );
+      await handleEndMeetingFromFollowUp(activeFollowUp._id, "");
+      return;
+    }
+
+    console.error("No active meeting found to end. Available meetings:", meetings);
+    toast({
+      title: "No Active Meeting",
+      description:
+        "No active meeting found in local cache or backend. Please refresh once and try again.",
+      variant: "destructive",
+    });
   };
 
   const handleEndMeetingWithDetails = async (
