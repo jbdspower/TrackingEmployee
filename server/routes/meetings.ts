@@ -36,6 +36,88 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+const dataUrlRegex = /^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,(.+)$/;
+const mimeToExtension: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+};
+
+function toSafeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function getFileExtensionForMime(mimeType: string): string {
+  return mimeToExtension[mimeType.toLowerCase()] || "bin";
+}
+
+async function normalizeAttachmentInputsToUrls(
+  req: any,
+  meetingId: string,
+  attachmentsInput: unknown,
+): Promise<string[]> {
+  if (!Array.isArray(attachmentsInput)) {
+    return [];
+  }
+
+  const dir = path.join(uploadsRoot, meetingId);
+  fs.mkdirSync(dir, { recursive: true });
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const normalizedUrls: string[] = [];
+
+  for (const item of attachmentsInput) {
+    if (typeof item !== "string") {
+      continue;
+    }
+
+    const value = item.trim();
+    if (!value) {
+      continue;
+    }
+
+    const dataUrlMatch = value.match(dataUrlRegex);
+    if (!dataUrlMatch) {
+      // Keep already-uploaded URL/path strings as-is
+      normalizedUrls.push(value);
+      continue;
+    }
+
+    try {
+      const mimeType = dataUrlMatch[1];
+      const base64Payload = dataUrlMatch[2];
+      const fileBuffer = Buffer.from(base64Payload, "base64");
+      if (!fileBuffer.length) {
+        continue;
+      }
+
+      if (fileBuffer.length > MAX_ATTACHMENT_SIZE_BYTES) {
+        console.warn(
+          `⚠️ Skipping oversized base64 attachment for meeting ${meetingId}: ${fileBuffer.length} bytes`,
+        );
+        continue;
+      }
+
+      const extension = getFileExtensionForMime(mimeType);
+      const fileName = toSafeFileName(
+        `${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`,
+      );
+      const filePath = path.join(dir, fileName);
+      await fs.promises.writeFile(filePath, fileBuffer);
+
+      normalizedUrls.push(`${baseUrl}/uploads/meetings/${meetingId}/${fileName}`);
+    } catch (attachmentError) {
+      console.error("❌ Failed to normalize base64 attachment:", attachmentError);
+    }
+  }
+
+  return Array.from(new Set(normalizedUrls));
+}
+
 // 🔹 Helper function to format time for IST display
 function formatTimeForIST(utcTime: string): string {
   const date = new Date(utcTime);
@@ -603,7 +685,24 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
     // Optional fields (only if provided)
     if (updates.meetingDetails) {
+      const normalizedAttachmentUrls = await normalizeAttachmentInputsToUrls(
+        req,
+        meeting._id.toString(),
+        updates.meetingDetails.attachments,
+      );
+
       meeting.meetingDetails = updates.meetingDetails;
+      if (normalizedAttachmentUrls.length > 0) {
+        meeting.meetingDetails.attachments = normalizedAttachmentUrls;
+        meeting.attachments = Array.from(
+          new Set([...(meeting.attachments || []), ...normalizedAttachmentUrls]),
+        );
+      } else if (Array.isArray(meeting.meetingDetails?.attachments)) {
+        // Explicitly block base64 payload persistence in meetingDetails
+        meeting.meetingDetails.attachments = meeting.meetingDetails.attachments.filter(
+          (value) => typeof value === "string" && !value.trim().startsWith("data:"),
+        );
+      }
     }
 
     if (updates.externalMeetingStatus) {

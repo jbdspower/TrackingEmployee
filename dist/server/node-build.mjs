@@ -630,7 +630,7 @@ async function getAddressFromCoordinates(lat, lng) {
 async function getEmployeeLatestLocation(employeeId) {
   try {
     const employee = await Promise.race([
-      Employee.findOne({ id: employeeId }).lean(),
+      Employee.findOne({ id: employeeId }).maxTimeMS(450).lean(),
       new Promise(
         (_, reject) => setTimeout(() => reject(new Error("db timeout")), 500)
       )
@@ -649,7 +649,7 @@ async function getEmployeeLatestLocation(employeeId) {
       TrackingSession.findOne({
         employeeId,
         $or: [{ status: "active" }, { status: "completed" }]
-      }).sort({ startTime: -1 }).lean(),
+      }).maxTimeMS(450).sort({ startTime: -1 }).lean(),
       new Promise(
         (_, reject) => setTimeout(() => reject(new Error("db timeout")), 500)
       )
@@ -669,7 +669,11 @@ async function getEmployeeLatestLocation(employeeId) {
     }
     return null;
   } catch (error) {
-    console.warn(`Location lookup failed for ${employeeId}:`, error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "db timeout" || message.includes("timed out")) {
+      return null;
+    }
+    console.warn(`Location lookup failed for ${employeeId}:`, message);
     return null;
   }
 }
@@ -969,6 +973,70 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }
 });
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+const dataUrlRegex = /^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,(.+)$/;
+const mimeToExtension = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "application/pdf": "pdf",
+  "text/plain": "txt"
+};
+function toSafeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+function getFileExtensionForMime(mimeType) {
+  return mimeToExtension[mimeType.toLowerCase()] || "bin";
+}
+async function normalizeAttachmentInputsToUrls(req, meetingId, attachmentsInput) {
+  if (!Array.isArray(attachmentsInput)) {
+    return [];
+  }
+  const dir = path.join(uploadsRoot, meetingId);
+  fs.mkdirSync(dir, { recursive: true });
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const normalizedUrls = [];
+  for (const item of attachmentsInput) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const value = item.trim();
+    if (!value) {
+      continue;
+    }
+    const dataUrlMatch = value.match(dataUrlRegex);
+    if (!dataUrlMatch) {
+      normalizedUrls.push(value);
+      continue;
+    }
+    try {
+      const mimeType = dataUrlMatch[1];
+      const base64Payload = dataUrlMatch[2];
+      const fileBuffer = Buffer.from(base64Payload, "base64");
+      if (!fileBuffer.length) {
+        continue;
+      }
+      if (fileBuffer.length > MAX_ATTACHMENT_SIZE_BYTES) {
+        console.warn(
+          `⚠️ Skipping oversized base64 attachment for meeting ${meetingId}: ${fileBuffer.length} bytes`
+        );
+        continue;
+      }
+      const extension = getFileExtensionForMime(mimeType);
+      const fileName = toSafeFileName(
+        `${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`
+      );
+      const filePath = path.join(dir, fileName);
+      await fs.promises.writeFile(filePath, fileBuffer);
+      normalizedUrls.push(`${baseUrl}/uploads/meetings/${meetingId}/${fileName}`);
+    } catch (attachmentError) {
+      console.error("❌ Failed to normalize base64 attachment:", attachmentError);
+    }
+  }
+  return Array.from(new Set(normalizedUrls));
+}
 let lastGeocodingTime$1 = 0;
 const GEOCODING_DELAY$1 = 1e3;
 async function reverseGeocode$1(lat, lng) {
@@ -1313,7 +1381,22 @@ const updateMeeting = async (req, res) => {
     meeting.meetingStatus = "complete";
     meeting.endTime = updates.endTime || (/* @__PURE__ */ new Date()).toISOString();
     if (updates.meetingDetails) {
+      const normalizedAttachmentUrls = await normalizeAttachmentInputsToUrls(
+        req,
+        meeting._id.toString(),
+        updates.meetingDetails.attachments
+      );
       meeting.meetingDetails = updates.meetingDetails;
+      if (normalizedAttachmentUrls.length > 0) {
+        meeting.meetingDetails.attachments = normalizedAttachmentUrls;
+        meeting.attachments = Array.from(
+          /* @__PURE__ */ new Set([...meeting.attachments || [], ...normalizedAttachmentUrls])
+        );
+      } else if (Array.isArray(meeting.meetingDetails?.attachments)) {
+        meeting.meetingDetails.attachments = meeting.meetingDetails.attachments.filter(
+          (value) => typeof value === "string" && !value.trim().startsWith("data:")
+        );
+      }
     }
     if (updates.externalMeetingStatus) {
       meeting.externalMeetingStatus = updates.externalMeetingStatus;
@@ -1749,7 +1832,15 @@ async function reverseGeocode(lat, lng) {
 }
 let trackingSessions = [];
 let sessionIdCounter = 1;
-const isDuplicateKeyError = (error) => Boolean(error && (error.code === 11e3 || error?.errorResponse?.code === 11e3));
+const isDuplicateKeyError = (error) => {
+  if (!error) return false;
+  const code = error.code ?? error?.errorResponse?.code ?? error?.cause?.code;
+  const message = String(
+    error?.message || error?.errmsg || error?.errorResponse?.errmsg || error?.cause?.message || ""
+  );
+  return code === 11e3 || message.includes("E11000") || message.includes("duplicate key");
+};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const generateSessionId = (employeeId) => {
   const safeEmployeeId = String(employeeId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
   const randomSuffix = Math.random().toString(36).slice(2, 8);
@@ -1871,55 +1962,63 @@ const createTrackingSession = async (req, res) => {
       status: status || "active"
     };
     try {
-      if (id) {
-        const upsertResult = await TrackingSession.updateOne(
-          { id: sessionData.id },
-          { $setOnInsert: sessionData },
-          { upsert: true }
-        );
-        const existingOrCreatedSession = await TrackingSession.findOne({
-          id: sessionData.id
-        }).lean();
-        if (existingOrCreatedSession) {
-          const wasCreated = Boolean(upsertResult?.upsertedCount) || Boolean(upsertResult?.upsertedId);
-          console.log(
-            wasCreated ? "Tracking session upsert-created in MongoDB:" : "♻️ Tracking session already present in MongoDB:",
-            sessionData.id
-          );
-          return res.status(wasCreated ? 201 : 200).json(existingOrCreatedSession);
+      const upsertResult = await TrackingSession.findOneAndUpdate(
+        { id: sessionData.id },
+        { $setOnInsert: sessionData },
+        {
+          upsert: true,
+          new: true,
+          rawResult: true,
+          runValidators: true
         }
+      );
+      const savedSession = upsertResult?.value;
+      if (savedSession) {
+        const wasCreated = Boolean(upsertResult?.lastErrorObject?.upserted);
+        console.log(
+          wasCreated ? "Tracking session upsert-created in MongoDB:" : "♻️ Tracking session already present in MongoDB:",
+          sessionData.id
+        );
+        return res.status(wasCreated ? 201 : 200).json(savedSession);
       }
-      const newSession2 = new TrackingSession(sessionData);
-      const savedSession = await newSession2.save();
-      console.log("Tracking session saved to MongoDB:", savedSession.id);
-      res.status(201).json(savedSession);
-      return;
+      const fetchedSession = await TrackingSession.findOne({
+        id: sessionData.id
+      }).lean();
+      if (fetchedSession) {
+        return res.status(200).json(fetchedSession);
+      }
     } catch (dbError) {
       if (isDuplicateKeyError(dbError)) {
         try {
-          const existingSession = await TrackingSession.findOne({
-            id: sessionData.id
-          }).lean();
-          if (existingSession) {
-            console.log(
-              "♻️ Duplicate tracking session create detected; returning existing document:",
-              sessionData.id
-            );
-            return res.status(200).json(existingSession);
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const existingSession = await TrackingSession.findOne({
+              id: sessionData.id
+            }).lean();
+            if (existingSession) {
+              console.log(
+                "♻️ Duplicate tracking session create detected; returning existing document:",
+                sessionData.id
+              );
+              return res.status(200).json(existingSession);
+            }
+            await sleep(60);
           }
         } catch (duplicateLookupError) {
           console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
         }
         console.warn(
-          "⚠️ Duplicate tracking session id detected but existing document could not be fetched immediately:",
+          "⚠️ Duplicate tracking session id detected; returning idempotent response:",
           sessionData.id
         );
+        return res.status(200).json(sessionData);
       } else {
         console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
       }
     }
     const newSession = sessionData;
-    trackingSessions.push(newSession);
+    if (!trackingSessions.some((session) => session.id === newSession.id)) {
+      trackingSessions.push(newSession);
+    }
     console.log("Tracking session saved to memory:", newSession.id);
     res.status(201).json(newSession);
   } catch (error) {
@@ -2708,6 +2807,67 @@ function calculateMeetingDuration(startTime, endTime) {
     return 0;
   }
 }
+function normalizeAttachmentValue(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const maybeObject = value;
+  const candidates = [
+    maybeObject.url,
+    maybeObject.fileUrl,
+    maybeObject.path,
+    maybeObject.uri,
+    maybeObject.location
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+function toAbsoluteAttachmentUrl(req, attachment) {
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const value = attachment.trim();
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (value.startsWith("/uploads/")) {
+    return `${baseUrl}${value}`;
+  }
+  if (value.startsWith("uploads/")) {
+    return `${baseUrl}/${value}`;
+  }
+  return value;
+}
+function getAttachmentUrlsFromDisk(req, meetingId) {
+  if (!meetingId) return [];
+  try {
+    const meetingDir = path.join(process.cwd(), "uploads", "meetings", meetingId);
+    if (!fs.existsSync(meetingDir)) {
+      return [];
+    }
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    return fs.readdirSync(meetingDir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => `${baseUrl}/uploads/meetings/${meetingId}/${entry.name}`);
+  } catch (error) {
+    console.warn("⚠️ Failed to read meeting attachment directory:", error);
+    return [];
+  }
+}
+function extractMeetingAttachments(req, meeting) {
+  const topLevelAttachments = Array.isArray(meeting?.attachments) ? meeting.attachments.map((item) => normalizeAttachmentValue(item)).filter((item) => Boolean(item)) : [];
+  const detailsAttachments = Array.isArray(meeting?.meetingDetails?.attachments) ? meeting.meetingDetails.attachments.map((item) => normalizeAttachmentValue(item)).filter((item) => Boolean(item)) : [];
+  const meetingId = String(meeting?._id || meeting?.id || "").trim();
+  const diskAttachments = getAttachmentUrlsFromDisk(req, meetingId);
+  const merged = [...detailsAttachments, ...topLevelAttachments, ...diskAttachments].map(
+    (attachment) => toAbsoluteAttachmentUrl(req, attachment)
+  );
+  return Array.from(new Set(merged));
+}
 function calculateDutyHours(employeeId, dateRange) {
   const daysInRange = Math.ceil(
     (dateRange.end.getTime() - dateRange.start.getTime()) / (1e3 * 60 * 60 * 24)
@@ -2859,14 +3019,14 @@ const getEmployeeDetails = async (req, res) => {
       limit = "20",
       type = "meetings",
       // "meetings" or "days"
-      includeAttachments = "false",
+      includeAttachments = "true",
       requesterId,
       requesterEmail
     } = req.query;
     const normalizedDateRange = String(rawDateRange || "today").split(",")[0].trim().toLowerCase();
     const dateRange = normalizedDateRange || "today";
     const isAllRange = dateRange === "all";
-    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
+    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() !== "false";
     const externalUsers = await cacheService.getExternalUsers();
     const accessScope = buildAnalyticsAccessScope(
       externalUsers,
@@ -3360,7 +3520,7 @@ const getEmployeeDetails = async (req, res) => {
         approvalReason: meeting.approvalReason || void 0,
         approvedBy: meeting.approvedBy || void 0,
         approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy) || meeting.approvedBy : void 0,
-        attachments: shouldIncludeAttachments ? meeting.meetingDetails?.attachments || meeting.attachments || [] : []
+        attachments: shouldIncludeAttachments ? extractMeetingAttachments(req, meeting) : []
       };
     });
     const todayDate = /* @__PURE__ */ new Date();
@@ -3665,11 +3825,13 @@ const getAllEmployeesDetails = async (req, res) => {
       search = "",
       sortBy = "employeeName",
       sortOrder = "asc",
+      includeAttachments = "false",
       requesterId,
       requesterEmail
     } = req.query;
     const dateRange = String(rawDateRange || "today").trim().toLowerCase();
     const isAllRange = dateRange === "all";
+    const shouldIncludeAttachments = String(includeAttachments).trim().toLowerCase() === "true";
     const startTime = Date.now();
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
@@ -3958,7 +4120,7 @@ const getAllEmployeesDetails = async (req, res) => {
         employeeId: { $in: paginatedEmployeeIds },
         ...isAllRange ? {} : mixedStartTimeRangeFilter
       }).select(
-        "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy"
+        shouldIncludeAttachments ? "employeeId startTime endTime clientName leadId status location attachments meetingDetails approvalStatus approvalReason approvedBy" : "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy"
       ).sort({ startTime: -1 }).maxTimeMS(6e4).lean().exec(),
       Attendance.find({
         employeeId: { $in: paginatedEmployeeIds },
@@ -4153,7 +4315,7 @@ const getAllEmployeesDetails = async (req, res) => {
           approvalReason: meeting.approvalReason,
           approvedBy: meeting.approvedBy,
           approvedByName: meeting.approvedBy ? userMap.get(meeting.approvedBy)?.name || meeting.approvedBy : void 0,
-          attachments: meeting.meetingDetails?.attachments || []
+          attachments: shouldIncludeAttachments ? extractMeetingAttachments(req, meeting) : []
         };
       });
       const totalMeetings = allMeetings.length;

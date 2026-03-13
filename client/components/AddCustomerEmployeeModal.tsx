@@ -25,7 +25,7 @@ interface NewCustomerEmployeeData {
 
 // CRM API configuration
 const CRM_API_BASE_URL = "https://jbdspower.in/LeafNetServer/api";
-const CUSTOMER_COMPANY_ID = "68340889566d91e049668f07";
+const CRM_CUSTOMER_LIST_URL = `${CRM_API_BASE_URL}/customer`;
 
 interface AddCustomerEmployeeModalProps {
   isOpen: boolean;
@@ -55,8 +55,85 @@ export function AddCustomerEmployeeModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [createLead, setCreateLead] = useState(false);
+  const [createLead, setCreateLead] = useState(true);
   const { toast } = useToast();
+
+  const getAuthToken = (): string => {
+    const directToken =
+      localStorage.getItem("idToken") ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken");
+    if (directToken) return directToken;
+
+    try {
+      const userStr = localStorage.getItem("user");
+      if (!userStr) return "";
+      const parsedUser = JSON.parse(userStr);
+      return (
+        parsedUser?.idToken ||
+        parsedUser?.token ||
+        parsedUser?.authToken ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  };
+
+  const withAuthQuery = (url: string, token?: string): string => {
+    if (!token?.trim()) {
+      return url;
+    }
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}auth=${encodeURIComponent(token)}`;
+  };
+
+  const normalizeCompanyName = (value: string): string =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[\s\-_]+/g, " ")
+      .replace(/[^\w\s]/g, "");
+
+  const getCustomerIdByCompanyName = async (
+    companyName: string,
+    token?: string,
+  ): Promise<string | null> => {
+    const response = await fetch(withAuthQuery(CRM_CUSTOMER_LIST_URL, token));
+    if (!response.ok) {
+      throw new Error(`Failed to fetch customers: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const customers: Customer[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.customers)
+        ? data.customers
+        : [];
+    const normalizedInput = normalizeCompanyName(companyName);
+    if (!normalizedInput) return null;
+
+    const exactMatch = customers.find((customer) => {
+      const customerName = customer.CustomerCompanyName;
+      return (
+        typeof customerName === "string" &&
+        normalizeCompanyName(customerName) === normalizedInput
+      );
+    });
+    if (exactMatch?._id) return exactMatch._id;
+
+    const fuzzyMatch = customers.find((customer) => {
+      const customerName = customer.CustomerCompanyName;
+      if (typeof customerName !== "string") return false;
+      const normalizedCustomer = normalizeCompanyName(customerName);
+      return (
+        normalizedCustomer.includes(normalizedInput) ||
+        normalizedInput.includes(normalizedCustomer)
+      );
+    });
+
+    return fuzzyMatch?._id || null;
+  };
 
   // Auto-fill customer name when modal opens if defaultCustomerName is provided
   useEffect(() => {
@@ -136,6 +213,13 @@ export function AddCustomerEmployeeModal({
 
     setIsSubmitting(true);
     try {
+      const token = getAuthToken();
+
+      const customerCompanyId = await getCustomerIdByCompanyName(
+        formData.customerName,
+        token,
+      );
+
       // First, save to CRM database
       const crmPayload = {
         CustomerEmpName: formData.customerEmployeeName,
@@ -147,25 +231,51 @@ export function AddCustomerEmployeeModal({
 
       console.log("Saving employee to CRM:", crmPayload);
 
-      const crmResponse = await fetch(
-        `${CRM_API_BASE_URL}/addcustomerEmployee/${CUSTOMER_COMPANY_ID}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(crmPayload),
+      if (customerCompanyId) {
+        const crmResponse = await fetch(
+          withAuthQuery(
+            `${CRM_API_BASE_URL}/addcustomerEmployee/${customerCompanyId}`,
+            token,
+          ),
+          {
+            method: "POST",
+            headers: token
+              ? {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                }
+              : {
+                  "Content-Type": "application/json",
+                },
+            body: JSON.stringify(crmPayload),
+          }
+        );
+
+        if (!crmResponse.ok) {
+          const errorText = await crmResponse.text();
+          console.error("CRM API error:", errorText);
+          throw new Error(
+            `Failed to save to CRM (${crmResponse.status}): ${errorText || "Unknown error"}`,
+          );
         }
-      );
 
-      if (!crmResponse.ok) {
-        const errorText = await crmResponse.text();
-        console.error("CRM API error:", errorText);
-        throw new Error(`Failed to save to CRM: ${crmResponse.status}`);
+        let crmResult: unknown = null;
+        try {
+          crmResult = await crmResponse.json();
+        } catch {
+          // Some CRM responses are plain text/empty. Treat HTTP success as success.
+        }
+        console.log("Employee saved to CRM successfully:", crmResult);
+      } else {
+        console.warn(
+          `CRM customer not found for "${formData.customerName}". Continuing with local add only.`,
+        );
+        toast({
+          title: "Added locally",
+          description:
+            "Customer company not found in CRM. Employee added in this meeting only.",
+        });
       }
-
-      const crmResult = await crmResponse.json();
-      console.log("Employee saved to CRM successfully:", crmResult);
 
       // Then, call the parent's onAddEmployee callback (if needed for local database)
       await onAddEmployee(formData);
@@ -175,11 +285,17 @@ export function AddCustomerEmployeeModal({
         await handleCreateLead();
       }
       
-      handleClose();
+      handleClose(true);
     } catch (error) {
       console.error("Error adding customer employee:", error);
-      // Error is handled by parent component
-      throw error;
+      toast({
+        title: "Failed to add employee",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while adding customer employee.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -189,13 +305,12 @@ export function AddCustomerEmployeeModal({
     console.log("🚀 Creating lead from customer employee data");
     
     // Get token from localStorage
-    const token = localStorage.getItem("idToken");
+    const token = getAuthToken();
     
     if (!token) {
       toast({
-        title: "Authentication Error",
-        description: "No authentication token found. Please log in again.",
-        variant: "destructive",
+        title: "Lead not created",
+        description: "Employee was added, but login is required to create lead.",
       });
       return;
     }
@@ -269,8 +384,8 @@ export function AddCustomerEmployeeModal({
     }
   };
 
-  const handleClose = () => {
-    if (isSubmitting || isLoading) return;
+  const handleClose = (force = false) => {
+    if (!force && (isSubmitting || isLoading)) return;
 
     setFormData({
       customerName: "",
@@ -281,14 +396,21 @@ export function AddCustomerEmployeeModal({
       department: "",
     });
     setErrors({});
-    setCreateLead(false);
+    setCreateLead(true);
     onClose();
   };
 
   const isFormDisabled = isSubmitting || isLoading;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          handleClose();
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
@@ -491,7 +613,7 @@ export function AddCustomerEmployeeModal({
             <Button
               type="button"
               variant="outline"
-              onClick={handleClose}
+              onClick={() => handleClose()}
               disabled={isFormDisabled}
             >
               Cancel
