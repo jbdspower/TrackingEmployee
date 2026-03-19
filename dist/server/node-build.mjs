@@ -5087,6 +5087,111 @@ const getFollowUpHistory = async (req, res) => {
     });
   }
 };
+const EXTERNAL_CRM_URL = process.env.VITE_EXTERNAL_LEAD_API?.replace(/\/$/, "") || "https://jbdspower.in/LeafNetServer/api";
+const CUSTOMER_ENDPOINT = `${EXTERNAL_CRM_URL}/customer`;
+const LEADS_ENDPOINT = `${EXTERNAL_CRM_URL}/getAllLead`;
+const CACHE_TTL_MS = 5 * 60 * 1e3;
+const SERVER_REQUEST_TIMEOUT_MS = 12e4;
+const customerCacheByKey = /* @__PURE__ */ new Map();
+async function getCrmCustomers(req, res) {
+  const auth = typeof req.query.auth === "string" ? req.query.auth : void 0;
+  const cacheKey = auth ?? "default";
+  const now = Date.now();
+  const cached = customerCacheByKey.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.json(cached.data);
+  }
+  const url = auth ? `${CUSTOMER_ENDPOINT}?auth=${encodeURIComponent(auth)}` : CUSTOMER_ENDPOINT;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    SERVER_REQUEST_TIMEOUT_MS
+  );
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+      headers: { Accept: "application/json" }
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(
+        `CRM customers proxy error: ${response.status} ${response.statusText}`,
+        text?.slice(0, 200)
+      );
+      return res.status(response.status).json({
+        error: `Upstream error: ${response.statusText}`
+      });
+    }
+    const data = await response.json();
+    customerCacheByKey.set(cacheKey, {
+      data,
+      expiresAt: now + CACHE_TTL_MS
+    });
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.json(data);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err?.name === "AbortError" || /timeout|abort/i.test(message);
+    console.error("CRM customers proxy fetch failed:", message);
+    return res.status(504).json({
+      error: isTimeout ? "Request timed out. Please check your connection and try again." : "Failed to load companies."
+    });
+  }
+}
+const leadsCacheByKey = /* @__PURE__ */ new Map();
+async function getCrmLeads(req, res) {
+  const auth = typeof req.query.auth === "string" ? req.query.auth : void 0;
+  const cacheKey = auth ?? "default";
+  const now = Date.now();
+  const cached = leadsCacheByKey.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.json(cached.data);
+  }
+  const url = auth ? `${LEADS_ENDPOINT}?auth=${encodeURIComponent(auth)}` : LEADS_ENDPOINT;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    SERVER_REQUEST_TIMEOUT_MS
+  );
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+      headers: { Accept: "application/json" }
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(
+        `CRM leads proxy error: ${response.status} ${response.statusText}`,
+        text?.slice(0, 200)
+      );
+      return res.status(response.status).json({
+        error: `Upstream error: ${response.statusText}`
+      });
+    }
+    const data = await response.json();
+    leadsCacheByKey.set(cacheKey, {
+      data,
+      expiresAt: now + CACHE_TTL_MS
+    });
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.json(data);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err?.name === "AbortError" || /timeout|abort/i.test(message);
+    console.error("CRM leads proxy fetch failed:", message);
+    return res.status(504).json({
+      error: isTimeout ? "Request timed out. Please check your connection and try again." : "Failed to load leads."
+    });
+  }
+}
 const __filename = fileURLToPath(import.meta.url);
 const __dirname$1 = path.dirname(__filename);
 function createServer() {
@@ -5181,6 +5286,8 @@ function createServer() {
   app2.get("/api/employees/:employeeId/snapshots", getEmployeeSnapshots);
   app2.get("/api/follow-ups", getFollowUpHistory);
   app2.put("/api/follow-ups/:id", updateFollowUpStatus);
+  app2.get("/api/crm/customers", getCrmCustomers);
+  app2.get("/api/crm/leads", getCrmLeads);
   {
     const distPath2 = path.join(__dirname$1, "../spa");
     console.log("📦 Serving static files from:", distPath2);
