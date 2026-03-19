@@ -40,28 +40,64 @@ export const CompanySelector = forwardRef<
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch customers from external API
+    // Fetch customers: try same-origin proxy first, fall back to external API if proxy returns HTML (e.g. wrong host)
     const fetchCustomers = async () => {
       setLoading(true);
       setError(null);
-      try {
-        console.log("Fetching companies from external API...");
-        const response = await fetch(
-          "https://jbdspower.in/LeafNetServer/api/customer",
-        );
-        if (!response.ok) {
-          throw new Error(`Failed to fetch customers: ${response.statusText}`);
-        }
-        const data = await response.json();
+      const EXTERNAL_CUSTOMER_URL = "https://jbdspower.in/LeafNetServer/api/customer";
+      // API can return large payload (~1.3MB+); allow time to download on slow networks
+      const timeoutMs = 120000; // 2 minutes
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-        // The API returns an array directly
+      const tryParseJson = async (res: Response): Promise<unknown> => {
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) return null;
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      };
+
+      try {
+        const proxyUrl =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/api/crm/customers`
+            : "/api/crm/customers";
+        console.log("Fetching companies (proxy first)...");
+        let response = await fetch(proxyUrl, { signal: controller.signal });
+        let data: unknown = null;
+        if (response.ok) data = await tryParseJson(response);
+        if (!response.ok || data === null) {
+          clearTimeout(timeoutId);
+          const extController = new AbortController();
+          const extTimeout = setTimeout(() => extController.abort(), timeoutMs);
+          console.log("Proxy unavailable or returned non-JSON, trying external API...");
+          response = await fetch(EXTERNAL_CUSTOMER_URL, {
+            signal: extController.signal,
+          });
+          clearTimeout(extTimeout);
+          if (!response.ok)
+            throw new Error(`Failed to fetch customers: ${response.statusText}`);
+          data = await tryParseJson(response);
+          if (data === null) throw new Error("Invalid response from server");
+        }
+        clearTimeout(timeoutId);
+
         const customerArray = Array.isArray(data) ? data : [];
         console.log(`Fetched ${customerArray.length} companies`);
         setCustomers(customerArray);
       } catch (err) {
+        clearTimeout(timeoutId);
         console.error("Error fetching customers:", err);
+        const message =
+          err instanceof Error ? err.message : "Failed to fetch customers";
         setError(
-          err instanceof Error ? err.message : "Failed to fetch customers",
+          (err as { name?: string })?.name === "AbortError"
+            ? "Request timed out. Please try again."
+            : message,
         );
       } finally {
         setLoading(false);

@@ -63,6 +63,7 @@ import {
   getEmployeeSnapshots,
 } from "./routes/route-snapshots";
 import { updateFollowUpStatus, getFollowUpHistory } from "./routes/follow-ups";
+import { getCrmCustomers, getCrmLeads } from "./routes/crm";
 import { fileURLToPath } from "url";
 
 // ES module equivalent of __dirname
@@ -199,6 +200,10 @@ export function createServer() {
   // Follow-up meeting routes
   app.get("/api/follow-ups", getFollowUpHistory);
   app.put("/api/follow-ups/:id", updateFollowUpStatus);
+
+  // CRM proxy (cached customer/lead list for fast load on start meeting)
+  app.get("/api/crm/customers", getCrmCustomers);
+  app.get("/api/crm/leads", getCrmLeads);
 
   // Serve static files in production
   if (process.env.NODE_ENV === 'production') {
