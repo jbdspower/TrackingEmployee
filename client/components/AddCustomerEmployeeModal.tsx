@@ -23,9 +23,9 @@ interface NewCustomerEmployeeData {
   department: string;
 }
 
-// CRM API configuration
+// CRM API configuration (customer list via our cached proxy for speed)
 const CRM_API_BASE_URL = "https://jbdspower.in/LeafNetServer/api";
-const CRM_CUSTOMER_LIST_URL = `${CRM_API_BASE_URL}/customer`;
+const CRM_CUSTOMER_LIST_PROXY = "/api/crm/customers";
 
 interface AddCustomerEmployeeModalProps {
   isOpen: boolean;
@@ -99,16 +99,55 @@ export function AddCustomerEmployeeModal({
     companyName: string,
     token?: string,
   ): Promise<string | null> => {
-    const response = await fetch(withAuthQuery(CRM_CUSTOMER_LIST_URL, token));
-    if (!response.ok) {
-      throw new Error(`Failed to fetch customers: ${response.status}`);
+    // API can return large payload (~1.3MB+); allow time to download on slow networks
+    const timeoutMs = 120000; // 2 minutes
+    const tryParseJson = async (res: Response): Promise<unknown> => {
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) return null;
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return null;
+      }
+    };
+
+    const proxyUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}${withAuthQuery(CRM_CUSTOMER_LIST_PROXY, token)}`
+        : withAuthQuery(CRM_CUSTOMER_LIST_PROXY, token);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(proxyUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    let data: unknown = null;
+    if (response.ok) data = await tryParseJson(response);
+    if (!response.ok || data === null) {
+      const externalUrl = withAuthQuery(
+        `${CRM_API_BASE_URL}/customer`,
+        token,
+      );
+      const extController = new AbortController();
+      const extTimeout = setTimeout(() => extController.abort(), timeoutMs);
+      try {
+        response = await fetch(externalUrl, { signal: extController.signal });
+      } finally {
+        clearTimeout(extTimeout);
+      }
+      if (!response.ok)
+        throw new Error(`Failed to fetch customers: ${response.status}`);
+      data = await tryParseJson(response);
+      if (data === null) throw new Error("Invalid response from server");
     }
 
-    const data = await response.json();
     const customers: Customer[] = Array.isArray(data)
       ? data
-      : Array.isArray(data?.customers)
-        ? data.customers
+      : Array.isArray((data as { customers?: unknown })?.customers)
+        ? (data as { customers: Customer[] }).customers
         : [];
     const normalizedInput = normalizeCompanyName(companyName);
     if (!normalizedInput) return null;

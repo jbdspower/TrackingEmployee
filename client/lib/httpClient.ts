@@ -155,8 +155,7 @@ export class HttpClient {
           });
         }
 
-        // Handle timeout
-        xhr.timeout = 15000; // 🔥 FIX: Reduce from 25s to 15s for faster failures
+        // timeout already set above from options.timeoutMs (e.g. 120s for large CRM payloads)
 
         xhr.onreadystatechange = () => {
           console.log(
