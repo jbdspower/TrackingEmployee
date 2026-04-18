@@ -2252,15 +2252,24 @@ async function fetchExternalUsers() {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const users = await response.json();
+    let data = [];
+    if (users && Array.isArray(users.data)) {
+      data = users.data;
+    } else if (Array.isArray(users)) {
+      data = users;
+    }
+    if (!Array.isArray(data)) {
+      data = [];
+    }
     console.log(
-      `External API response: { count: ${users.length}, sample: ${JSON.stringify(users[0] || {}, null, 2)} }`
+      `External API response: { count: ${data.length}, sample: ${JSON.stringify(data[0] || {}, null, 2)} }`
     );
-    return users;
+    return data;
   } catch (error) {
     console.error("Error fetching external users:", error);
-    if (error.name === "AbortError") {
+    if (error && typeof error === "object" && "name" in error && error.name === "AbortError") {
       console.error("External API request timed out after 30 seconds");
-    } else if (error.message.includes("fetch")) {
+    } else if (error && typeof error === "object" && "message" in error && error.message.includes("fetch")) {
       console.error("Network error connecting to external API");
     }
     return [];
@@ -2309,8 +2318,10 @@ function mapExternalUserToEmployee(user, index) {
     deviceId: `device_${userId.slice(-6)}`,
     designation: user.designation,
     department: user.department,
-    companyName: user.companyName[0]?.companyName,
-    reportTo: user.report?.name
+    // Use companyName.companyName if available, else fallback to string or empty
+    companyName: user.companyName?.companyName || user.companyName || "",
+    // Use officialDetails.reportingManager.employeeName if available
+    reportTo: user.officialDetails?.reportingManager?.employeeName || ""
   };
 }
 function getDateRange(dateRange, startDate, endDate) {
