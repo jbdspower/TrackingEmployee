@@ -84,7 +84,7 @@ export interface CustomerContact {
 
 // Enhanced meeting data with multiple customer contacts
 export interface MeetingDetails {
-  incomplete: boolean;
+  incomplete?: boolean;
   customers: CustomerContact[]; // Array of customer contacts
   discussion: string; // mandatory
   attachments?: string[]; // Array of attachment file URLs/paths
@@ -116,7 +116,7 @@ export interface MeetingLog {
   };
   followUpId?: string; // Follow-up meeting ID from external API
   meetingDetails?: MeetingDetails;
-  approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+  approvalStatus?: 'ok' | 'not_ok' | 'pending'; // Meeting approval status
   approvalReason?: string; // Reason for approval/rejection
   approvedBy?: string | null; // userId who approved the meeting
   attachments?: string[]; // Array of attachment file URLs/paths
@@ -376,7 +376,7 @@ export interface AttendanceRecord {
   id?: string;
   employeeId: string;
   date: string; // YYYY-MM-DD format
-  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot' | 'absent';
   attendanceReason?: string;
   attendenceCreated?: string | null; // userId who created the attendance (null for tracking employee, userId from CRM dashboard)
   createdAt?: string;
@@ -386,7 +386,7 @@ export interface AttendanceRecord {
 export interface SaveAttendanceRequest {
   employeeId: string;
   date: string; // YYYY-MM-DD format
-  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot';
+  attendanceStatus: 'full_day' | 'half_day' | 'off' | 'short_leave' | 'ot' | 'absent';
   attendanceReason?: string;
   attendenceCreated?: string | null; // null by default for tracking employee
 }
@@ -401,4 +401,18 @@ export interface GetAttendanceResponse {
   success: boolean;
   count: number;
   data: AttendanceRecord[];
+}
+
+// Today's meetings summary for duty completion
+export interface TodaysMeetingsSummary {
+  totalMeetings: number;
+  completedMeetings: number;
+  totalDutyHours: number;
+  attendanceStatus: string;
+  badgeClass: string;
+}
+
+export interface TodaysMeetingsResponse {
+  meetings: MeetingLog[];
+  summary: TodaysMeetingsSummary;
 }

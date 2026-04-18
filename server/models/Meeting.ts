@@ -55,7 +55,8 @@ export interface IMeeting extends Document {
  followUpId?: string; // Follow-up meeting ID from external API
  meetingDetails?: MeetingDetails;
  externalMeetingStatus?: string; // Status from external follow-up API
- approvalStatus?: 'ok' | 'not_ok'; // Meeting approval status
+ meetingStatus?: string; // Meeting completion status (complete/incomplete)
+ approvalStatus?: 'ok' | 'not_ok' | 'pending'; // Meeting approval status
  approvalReason?: string; // Reason for approval/rejection
  approvedBy?: string | null; // userId who approved the meeting
  attachments?: string[]; // Array of attachment file URLs/paths
@@ -111,11 +112,22 @@ const LocationSchema = new Schema({
 
 
 // Lead info schema
-const LeadInfoSchema = new Schema({
- id: { type: String, required: true },
- companyName: { type: String, required: true },
- contactName: { type: String, required: true }
-});
+// const LeadInfoSchema = new Schema({
+//  id: { type: String, required: true },
+//  companyName: { type: String, required: true },
+//  contactName: { type: String, required: true }
+// });
+
+// Lead info schema (FULLY OPTIONAL)
+const LeadInfoSchema = new Schema(
+  {
+    id: {type: String },
+    companyName: { type: String },
+    contactName: { type: String}
+  },
+  // { _id: false } // optional but recommended
+);
+
 
 
 // Main meeting schema
@@ -156,7 +168,15 @@ const MeetingSchema = new Schema({
    type: String,
    index: true
  },
- leadInfo: LeadInfoSchema,
+//  leadInfo: LeadInfoSchema,
+//  followUpId: {
+//    type: String,
+//    index: true
+//  },
+leadInfo: {
+  type: LeadInfoSchema,
+  default: null // ✅ IMPORTANT
+},
  followUpId: {
    type: String,
    index: true
@@ -165,9 +185,13 @@ const MeetingSchema = new Schema({
  externalMeetingStatus: {
    type: String
  },
+ meetingStatus: {
+   type: String,
+   index: true
+ },
  approvalStatus: {
    type: String,
-   enum: ['ok', 'not_ok'],
+   enum: ['ok', 'not_ok', 'pending'],
    index: true
  },
  approvalReason: {
@@ -189,8 +213,16 @@ const MeetingSchema = new Schema({
 
 // Create indexes for better query performance
 MeetingSchema.index({ employeeId: 1, startTime: -1 });
+// Helps all-employees-details when scanning many employees with startTime sort/range
+MeetingSchema.index({ startTime: -1, employeeId: 1 });
 MeetingSchema.index({ leadId: 1, startTime: -1 });
 MeetingSchema.index({ status: 1, startTime: -1 });
+// Fast path for active meeting lookup on end/start flows
+MeetingSchema.index({ employeeId: 1, status: 1, startTime: -1 });
+MeetingSchema.index({ followUpId: 1, status: 1, startTime: -1 });
+// Fast path for approval lookup by details and day-scoped meeting fetches
+MeetingSchema.index({ employeeId: 1, clientName: 1, startTime: -1 });
+MeetingSchema.index({ employeeId: 1, meetingStatus: 1, startTime: -1 });
 
 
 export const Meeting = mongoose.model<IMeeting>('Meeting', MeetingSchema);

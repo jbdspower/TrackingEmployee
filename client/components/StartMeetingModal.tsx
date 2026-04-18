@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import { Clock, MapPin, User, Loader2, AlertCircle, FileText, Plus, Building2 } 
 import { Customer, Lead } from "@shared/api";
 import { BasicSelect, BasicSelectOption } from "@/components/ui/basic-select";
 import { HttpClient } from "@/lib/httpClient";
-import { useToast } from "@/hooks/use-toast";
+import { getCurrentTimeIST } from "@/lib/timeUtils";
 
 interface StartMeetingModalProps {
   isOpen: boolean;
@@ -101,24 +102,48 @@ export function StartMeetingModal({
   
   const { toast } = useToast();
 
-  // Fetch customers from external API
+  const EXTERNAL_CRM = "https://jbdspower.in/LeafNetServer/api";
+  // Customer/lead APIs can return large payloads (~1.3MB+); allow time to download on slow networks
+  const timeoutMs = 120000; // 2 minutes
+
+  const tryParseJson = async (res: Response): Promise<unknown> => {
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) return null;
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+
+  // Fetch customers: try proxy first (fast/cached), fall back to external if proxy returns HTML
   const fetchCustomers = async () => {
     setLoadingCustomers(true);
     setCustomerError(null);
     try {
-      console.log("Fetching companies from external API for start meeting...");
-      const response = await HttpClient.request(
-        "https://jbdspower.in/LeafNetServer/api/customer",
-        { method: "GET" }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch customers: ${response.statusText}`);
+      console.log("Fetching companies (proxy first) for start meeting...");
+      const proxyUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/api/crm/customers`
+          : "/api/crm/customers";
+      let response = await HttpClient.request(proxyUrl, {
+        method: "GET",
+        timeoutMs,
+      });
+      let data: unknown = null;
+      if (response.ok) data = await tryParseJson(response);
+      if (!response.ok || data === null) {
+        console.log("Proxy unavailable or non-JSON, trying external customers API...");
+        response = await HttpClient.request(`${EXTERNAL_CRM}/customer`, {
+          method: "GET",
+          timeoutMs,
+        });
+        if (!response.ok)
+          throw new Error(`Failed to fetch customers: ${response.statusText}`);
+        data = await tryParseJson(response);
+        if (data === null) throw new Error("Invalid response from server");
       }
-      const data = await response.json();
-      console.log("Customer API raw response:", data);
-
-      // The API returns an array directly
       const customerArray = Array.isArray(data) ? data : [];
       console.log(`Fetched ${customerArray.length} companies for start meeting`, customerArray.slice(0, 3));
       setCustomers(customerArray);
@@ -132,24 +157,33 @@ export function StartMeetingModal({
     }
   };
 
-  // Fetch leads from external API
+  // Fetch leads: try proxy first, fall back to external if proxy returns HTML or times out
   const fetchLeads = async () => {
     setLoadingLeads(true);
     setLeadError(null);
     try {
-      console.log("Fetching leads from external API for start meeting...");
-      const response = await HttpClient.request(
-        "https://jbdspower.in/LeafNetServer/api/getAllLead",
-        { method: "GET" }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch leads: ${response.statusText}`);
+      console.log("Fetching leads (proxy first) for start meeting...");
+      const proxyUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/api/crm/leads`
+          : "/api/crm/leads";
+      let response = await HttpClient.request(proxyUrl, {
+        method: "GET",
+        timeoutMs,
+      });
+      let data: unknown = null;
+      if (response.ok) data = await tryParseJson(response);
+      if (!response.ok || data === null) {
+        console.log("Proxy unavailable or non-JSON, trying external leads API...");
+        response = await HttpClient.request(`${EXTERNAL_CRM}/getAllLead`, {
+          method: "GET",
+          timeoutMs,
+        });
+        if (!response.ok)
+          throw new Error(`Failed to fetch leads: ${response.statusText}`);
+        data = await tryParseJson(response);
+        if (data === null) throw new Error("Invalid response from server");
       }
-      const data = await response.json();
-      console.log("Leads API raw response:", data);
-
-      // The API returns an array directly
       const leadArray = Array.isArray(data) ? data : [];
       console.log(`Fetched ${leadArray.length} leads for start meeting`, leadArray.slice(0, 3));
       setLeads(leadArray);
@@ -363,7 +397,7 @@ export function StartMeetingModal({
       reason,
       notes: notes.trim(),
       leadId: selectedLead || undefined,
-      leadInfo: selectedLeadInfo
+      leadInfo: selectedLeadInfo || {}
     });
 
     // Clear errors and submit
@@ -374,7 +408,7 @@ export function StartMeetingModal({
       notes: notes.trim(),
       leadId: selectedLead || undefined,
       leadInfo: selectedLeadInfo ? {
-        id: selectedLeadInfo.Id,
+        id: selectedLeadInfo?.Id || {},
         companyName: selectedLeadInfo.CompanyName,
         contactName: selectedLeadInfo.Name,
       } : undefined,
@@ -733,7 +767,7 @@ export function StartMeetingModal({
             </div>
             <div className="flex items-center space-x-2">
               <Clock className="h-4 w-4 text-primary" />
-              <span>Start Time: {new Date().toLocaleString()}</span>
+              <span>Start Time: {getCurrentTimeIST()}</span>
             </div>
           </div>
         </div>

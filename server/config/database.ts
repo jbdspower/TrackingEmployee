@@ -1,5 +1,7 @@
+// config/database.ts
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { createIndexes } from './database-indexes';
 
 // Load environment variables
 dotenv.config();
@@ -9,7 +11,7 @@ interface DatabaseConfig {
   DB_NAME: string;
 }
 
-// Default configuration - replace these with your local MongoDB URLs
+// Default configuration
 export const dbConfig: DatabaseConfig = {
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://powerjbds:powerjbds@jbds.hk6xeqm.mongodb.net/',
   DB_NAME: process.env.DB_NAME || 'employee-tracking'
@@ -35,15 +37,26 @@ class Database {
     }
 
     try {
-      console.log('���� Database: Connecting to MongoDB...');
-      console.log('📦 Database: URI:', dbConfig.MONGODB_URI);
+      console.log('🔄 Database: Connecting to MongoDB...');
       
       await mongoose.connect(dbConfig.MONGODB_URI, {
         dbName: dbConfig.DB_NAME,
+        maxPoolSize: 10, // 🔥 FIX: Reduce from 50 to 10 to prevent connection overload
+        serverSelectionTimeoutMS: 20000, // More tolerant for network latency to Atlas
+        socketTimeoutMS: 120000, // Avoid false 500s for heavy but valid read queries
+        connectTimeoutMS: 10000, // 🔥 FIX: Reduce from 30s to 10s
+        retryWrites: true,
+        retryReads: false, // 🔥 FIX: Disable retry reads to prevent retry storms
+        maxIdleTimeMS: 30000, // 🔥 FIX: Close idle connections after 30s
+        heartbeatFrequencyMS: 30000, // 🔥 FIX: Reduce heartbeat frequency
       });
+
 
       this.isConnected = true;
       console.log('✅ Database: Successfully connected to MongoDB');
+      
+      // 🔥 Create indexes after successful connection
+      await createIndexes();
       
       // Handle connection events
       mongoose.connection.on('error', (error) => {

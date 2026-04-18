@@ -370,18 +370,18 @@ export function LocationTracker({
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
 
-      // Smart rate limiting based on movement and accuracy
+      // 🔥 CRITICAL FIX: Aggressive rate limiting to reduce CPU load
       const shouldUpdate = (() => {
         // Always update if it's the first location
         if (lastUpdateTime === 0) return true;
 
-        // Minimum 2 seconds between updates for real-time tracking
-        if (timeSinceLastUpdate < 2000) return false;
+        // 🔥 FIX: Minimum 30 seconds between updates (was 2 seconds)
+        if (timeSinceLastUpdate < 30000) return false;
 
-        // Force update every 15 seconds regardless for continuous real-time updates
-        if (timeSinceLastUpdate >= 15000) return true;
+        // 🔥 FIX: Force update every 2 minutes (was 15 seconds)
+        if (timeSinceLastUpdate >= 120000) return true;
 
-        // Check if we've moved significantly since last update
+        // 🔥 FIX: Only update if moved significantly (10m instead of 2m)
         if (routeCoordinates.length > 0) {
           const lastPoint = routeCoordinates[routeCoordinates.length - 1];
           const distance = calculateDistance(
@@ -391,8 +391,8 @@ export function LocationTracker({
             longitude,
           );
 
-          // Update if moved more than 2m (highly sensitive for real-time tracking) or accuracy is very good
-          if (distance > 2 || (accuracy && accuracy < 15)) {
+          // 🔥 FIX: Update only if moved more than 10m (was 2m) to reduce API calls
+          if (distance > 10) {
             return true;
           }
         }
@@ -425,17 +425,17 @@ export function LocationTracker({
               longitude,
             );
 
-            // Add point if moved more than 2 meters (highly sensitive for real-time tracking)
-            if (distance > 2) return true;
+            // 🔥 FIX: Add point only if moved more than 10 meters (was 2m) to reduce route points
+            if (distance > 10) return true;
 
-            // Add point if accuracy is significantly better
-            if (accuracy && accuracy < 15 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.8)) {
+            // 🔥 FIX: Reduce accuracy-based updates to prevent excessive API calls
+            if (accuracy && accuracy < 10 && (!lastPoint.accuracy || accuracy < lastPoint.accuracy * 0.5)) {
               return true;
             }
 
-            // Add point occasionally for long stationary periods (every 3 minutes)
+            // 🔥 FIX: Add point occasionally for long stationary periods (every 10 minutes instead of 3)
             const timeSinceLastPoint = new Date().getTime() - new Date(lastPoint.timestamp).getTime();
-            if (timeSinceLastPoint > 3 * 60 * 1000) return true;
+            if (timeSinceLastPoint > 10 * 60 * 1000) return true;
 
             return false;
           })();
@@ -447,8 +447,8 @@ export function LocationTracker({
               latitude,
               longitude,
             );
-            if (distanceMoved > 0.5) { // Only log if there was some movement
-              console.log(`Route point filtered: moved ${distanceMoved.toFixed(1)}m (threshold: 2m)`);
+            if (distanceMoved > 2) { // Only log if there was some movement
+              console.log(`Route point filtered: moved ${distanceMoved.toFixed(1)}m (threshold: 10m)`);
             }
             return prevRoute;
           }
@@ -518,6 +518,10 @@ export function LocationTracker({
         retryCount,
       });
 
+      // 🔥 FIX: Add request timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await HttpClient.put(
         `/api/employees/${employeeId}/location`,
         {
@@ -525,7 +529,12 @@ export function LocationTracker({
           lng,
           accuracy: acc,
         },
+        {
+          signal: controller.signal,
+        }
       );
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -541,16 +550,17 @@ export function LocationTracker({
     } catch (error) {
       console.error("Error updating location:", error);
 
-      // Retry once if it's a network error and we haven't retried yet
+      // 🔥 FIX: Reduce retry attempts from unlimited to 1 to prevent retry storms
       if (
         retryCount < 1 &&
-        error instanceof TypeError &&
-        error.message.includes("fetch")
+        (error instanceof TypeError && error.message.includes("fetch")) ||
+        (error.name === 'AbortError')
       ) {
-        console.log("Retrying location update after network error...");
+        console.log("Retrying location update after error...");
+        // 🔥 FIX: Increase retry delay to 10 seconds to reduce server load
         setTimeout(
           () => updateLocationOnServer(lat, lng, acc, retryCount + 1),
-          3000,
+          10000,
         );
         return;
       }
@@ -558,8 +568,8 @@ export function LocationTracker({
       setUpdateError(error instanceof Error ? error.message : "Unknown error");
       setFailureCount((prev) => prev + 1);
 
-      // Disable tracking after 3 consecutive failures to prevent spam
-      if (failureCount >= 2) {
+      // 🔥 FIX: Disable tracking after 2 consecutive failures (was 3) to prevent spam
+      if (failureCount >= 1) {
         setIsTracking(false);
         console.warn("Disabling tracking due to repeated failures");
       }

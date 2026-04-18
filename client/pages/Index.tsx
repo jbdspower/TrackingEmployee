@@ -84,8 +84,8 @@ export default function Index() {
 
   useEffect(() => {
     fetchEmployees();
-    // Set up auto-refresh every 60 seconds (reduced from 30s)
-    const interval = setInterval(fetchEmployees, 60000);
+    // Set up auto-refresh every 2 minutes (reduced from 60s to reduce server load)
+    const interval = setInterval(fetchEmployees, 120000);
     return () => clearInterval(interval);
   }, []);
 

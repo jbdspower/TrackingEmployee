@@ -81,6 +81,8 @@ const TrackingSessionSchema = new Schema({
 
 // Create indexes for better query performance
 TrackingSessionSchema.index({ employeeId: 1, startTime: -1 });
+// Helps all-employees-details when querying broad date windows across many employees
+TrackingSessionSchema.index({ startTime: -1, employeeId: 1 });
 TrackingSessionSchema.index({ status: 1, startTime: -1 });
 TrackingSessionSchema.index({ employeeId: 1, status: 1, startTime: -1 });
 

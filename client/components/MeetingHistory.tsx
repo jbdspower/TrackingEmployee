@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { HttpClient } from "@/lib/httpClient";
+import { formatTimeIST, formatDateIST } from "@/lib/timeUtils";
 import { MeetingDetails } from "@shared/api";
 import {
   Calendar,
@@ -181,13 +182,7 @@ export function MeetingHistory({
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatTimeIST(dateString);
   };
 
   const handlePrevPage = () => {
@@ -304,7 +299,7 @@ export function MeetingHistory({
                                 <div className="flex items-center space-x-2">
                                   <Target className="h-4 w-4 text-blue-500" />
                                   <span className="text-sm font-medium text-blue-600">
-                                    Lead: {meeting.leadInfo.id}
+                                    Lead: {meeting.leadInfo?.id || null}
                                   </span>
                                 </div>
                               )}
@@ -670,7 +665,7 @@ export function MeetingHistory({
                     <div className="flex items-center space-x-2">
                       <Target className="h-4 w-4 text-blue-500" />
                       <span className="text-sm font-medium text-blue-700">
-                        Lead ID: {selectedMeeting.leadInfo.id}
+                        Lead ID: {selectedMeeting.leadInfo?.id || null}
                       </span>
                     </div>
                     <div className="text-sm text-blue-600">

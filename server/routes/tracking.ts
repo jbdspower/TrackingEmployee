@@ -12,9 +12,9 @@ import type { IMeetingHistory, ITrackingSession } from "../models";
 
 // Rate limiting for Nominatim API (max 1 request per second)
 let lastGeocodingTime = 0;
-const GEOCODING_DELAY = 1000; // 1 second
+const GEOCODING_DELAY = 2000; // 🔥 FIX: Increase from 1s to 2s to reduce API load
 const geocodeCache = new Map<string, { address: string; expires: number }>();
-const GEOCACHE_TTL = 3600000; // 1 hour
+const GEOCACHE_TTL = 7200000; // 🔥 FIX: Increase cache from 1 hour to 2 hours
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   if (lat === 0 && lng === 0) return "Location not available";
@@ -49,7 +49,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
       headers: {
         'User-Agent': 'EmployeeTrackingApp/1.0'
       },
-      timeout: 5000
+      timeout: 8000 // 🔥 FIX: Increase timeout from 5s to 8s to reduce failures
     });
 
     const address = response.data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -70,6 +70,27 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
 // In-memory storage for demo purposes
 let trackingSessions: TrackingSessionType[] = [];
 let sessionIdCounter = 1;
+
+const isDuplicateKeyError = (error: any): boolean => {
+  if (!error) return false;
+  const code = error.code ?? error?.errorResponse?.code ?? error?.cause?.code;
+  const message = String(
+    error?.message ||
+      error?.errmsg ||
+      error?.errorResponse?.errmsg ||
+      error?.cause?.message ||
+      "",
+  );
+  return code === 11000 || message.includes("E11000") || message.includes("duplicate key");
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const generateSessionId = (employeeId: string): string => {
+  const safeEmployeeId = String(employeeId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  return `session_${safeEmployeeId}_${Date.now()}_${randomSuffix}`;
+};
 
 // In-memory storage for meeting history with customer details
 let meetingHistory: Array<{
@@ -191,6 +212,19 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
 
     console.log("📍 Creating tracking session:", { id, employeeId, startTime });
 
+    // Idempotency guard: if client retries with same id, return existing session.
+    if (id) {
+      try {
+        const existingSession = await TrackingSessionModel.findOne({ id }).lean();
+        if (existingSession) {
+          console.log("♻️ Tracking session already exists, returning existing session:", id);
+          return res.status(200).json(existingSession);
+        }
+      } catch (lookupError) {
+        console.warn("⚠️ Failed duplicate-id precheck for tracking session:", lookupError);
+      }
+    }
+
     // 🔹 Resolve start location address if not already resolved
     let resolvedStartLocation = { ...startLocation };
     if (startLocation.lat && startLocation.lng) {
@@ -206,7 +240,7 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
     }
 
     const sessionData = {
-      id: id || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
+      id: id || generateSessionId(employeeId) || `session_${String(sessionIdCounter++).padStart(3, "0")}`,
       employeeId,
       startTime: startTime || new Date().toISOString(),
       startLocation: {
@@ -218,21 +252,75 @@ export const createTrackingSession: RequestHandler = async (req, res) => {
       status: status || "active" as const,
     };
 
-    // Try to save to MongoDB first
+    // Try to save to MongoDB first (single atomic upsert path).
     try {
-      const newSession = new TrackingSessionModel(sessionData);
-      const savedSession = await newSession.save();
+      const upsertResult: any = await TrackingSessionModel.findOneAndUpdate(
+        { id: sessionData.id },
+        { $setOnInsert: sessionData },
+        {
+          upsert: true,
+          new: true,
+          rawResult: true,
+          runValidators: true,
+        },
+      );
 
-      console.log("Tracking session saved to MongoDB:", savedSession.id);
-      res.status(201).json(savedSession);
-      return;
+      const savedSession = upsertResult?.value;
+      if (savedSession) {
+        const wasCreated = Boolean(upsertResult?.lastErrorObject?.upserted);
+        console.log(
+          wasCreated
+            ? "Tracking session upsert-created in MongoDB:"
+            : "♻️ Tracking session already present in MongoDB:",
+          sessionData.id,
+        );
+        return res.status(wasCreated ? 201 : 200).json(savedSession);
+      }
+
+      // Extremely defensive fallback: fetch once if driver did not return value.
+      const fetchedSession = await TrackingSessionModel.findOne({
+        id: sessionData.id,
+      }).lean();
+      if (fetchedSession) {
+        return res.status(200).json(fetchedSession);
+      }
     } catch (dbError) {
-      console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
+      if (isDuplicateKeyError(dbError)) {
+        try {
+          // Retry fetch a few times: duplicate can occur during concurrent upserts.
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const existingSession = await TrackingSessionModel.findOne({
+              id: sessionData.id,
+            }).lean();
+            if (existingSession) {
+              console.log(
+                "♻️ Duplicate tracking session create detected; returning existing document:",
+                sessionData.id,
+              );
+              return res.status(200).json(existingSession);
+            }
+            await sleep(60);
+          }
+        } catch (duplicateLookupError) {
+          console.error("❌ Failed to load duplicate tracking session after E11000:", duplicateLookupError);
+        }
+        // Duplicate key errors are expected for retries; avoid noisy full-stack logs
+        // and avoid in-memory fallback because this session likely already exists in DB.
+        console.warn(
+          "⚠️ Duplicate tracking session id detected; returning idempotent response:",
+          sessionData.id,
+        );
+        return res.status(200).json(sessionData);
+      } else {
+        console.warn("MongoDB save failed, falling back to in-memory storage:", dbError);
+      }
     }
 
     // Fallback to in-memory storage
     const newSession = sessionData;
-    trackingSessions.push(newSession);
+    if (!trackingSessions.some((session) => session.id === newSession.id)) {
+      trackingSessions.push(newSession);
+    }
 
     console.log("Tracking session saved to memory:", newSession.id);
     res.status(201).json(newSession);

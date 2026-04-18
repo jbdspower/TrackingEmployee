@@ -1,4 +1,5 @@
 // Robust HTTP client that works around third-party service interference like FullStory
+type RequestOptions = RequestInit & { timeoutMs?: number };
 export class HttpClient {
   private static baseUrl = "";
   private static isInitialized = false;
@@ -120,7 +121,7 @@ export class HttpClient {
   // Fallback fetch implementation using XMLHttpRequest when fetch fails
   private static async fallbackFetch(
     url: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
   ): Promise<Response> {
     console.log(`HttpClient: XMLHttpRequest attempt to ${url}`);
 
@@ -129,9 +130,12 @@ export class HttpClient {
       const method = options.method || "GET";
 
       try {
+        const timeoutMs = options.timeoutMs ?? 25000;
+
         // Add CORS support
         xhr.withCredentials = false;
         xhr.open(method, url);
+        xhr.timeout = timeoutMs;
 
         // Set headers (exclude signal-related headers)
         if (options.headers) {
@@ -151,8 +155,7 @@ export class HttpClient {
           });
         }
 
-        // Handle timeout
-        xhr.timeout = 25000; // 25 seconds (longer than fetch timeout)
+        // timeout already set above from options.timeoutMs (e.g. 120s for large CRM payloads)
 
         xhr.onreadystatechange = () => {
           console.log(
@@ -226,13 +229,13 @@ export class HttpClient {
 
         xhr.ontimeout = () => {
           console.error("HttpClient: XHR timeout");
-          reject(new Error("XMLHttpRequest timeout after 25 seconds"));
+          reject(new Error(`XMLHttpRequest timeout after ${timeoutMs / 1000} seconds`));
         };
 
         xhr.onabort = () => {
-          console.error("HttpClient: XHR aborted");
-          reject(new Error("XMLHttpRequest was aborted"));
-        };
+  console.log("HttpClient: XHR aborted (expected)");
+};
+
 
         // Send request
         console.log(`HttpClient: Sending XHR ${method} request to ${url}`);
@@ -252,7 +255,7 @@ export class HttpClient {
   // Enhanced fetch with fallback mechanism
   static async request(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
   ): Promise<Response> {
     this.ensureInitialized();
 
@@ -262,7 +265,11 @@ export class HttpClient {
 
     // Create request key for deduplication (only for GET requests)
     const method = options.method || "GET";
-    const requestKey = method === "GET" ? `${method}:${url}` : null;
+    const requestKey =
+  method === "GET" && !url.includes("?")
+    ? `${method}:${url}`
+    : null;
+
 
     // Check for pending identical request
     if (requestKey && this.pendingRequests.has(requestKey)) {
@@ -289,7 +296,7 @@ export class HttpClient {
       "Content-Type": "application/json",
     };
 
-    const baseOptions: RequestInit = {
+    const baseOptions: RequestOptions = {
       ...options,
       headers: {
         ...defaultHeaders,
@@ -316,7 +323,7 @@ export class HttpClient {
   // Separate method to execute the actual request
   private static async executeRequest(
     url: string,
-    baseOptions: RequestInit,
+    baseOptions: RequestOptions,
   ): Promise<Response> {
     // If FullStory or other interference detected, use XMLHttpRequest directly
     if (this.useXHROnly) {
@@ -334,19 +341,20 @@ export class HttpClient {
       controller = new AbortController();
 
       // Set up timeout
+      const { timeoutMs = 15000, ...fetchOptions } = baseOptions;
       timeoutId = setTimeout(() => {
         if (controller && !controller.signal.aborted) {
-          controller.abort("Request timeout after 20 seconds");
+          controller.abort(`Request timeout after ${timeoutMs / 1000} seconds`);
         }
-      }, 20000); // 20 second timeout
+      }, timeoutMs);
 
-      const fetchOptions: RequestInit = {
-        ...baseOptions,
+      const fetchOptionsWithSignal: RequestInit = {
+        ...fetchOptions,
         signal: controller.signal,
       };
 
       console.log(`HttpClient: Attempting fetch to ${url}`);
-      const response = await fetch(url, fetchOptions);
+      const response = await fetch(url, fetchOptionsWithSignal);
 
       // Clear timeout on success
       if (timeoutId) {
@@ -356,61 +364,28 @@ export class HttpClient {
 
       console.log(`HttpClient: Fetch successful to ${url}`, response.status);
       return response;
-    } catch (error) {
-      // Clear timeout on error
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
+    } catch (error: any) {
+  // 🔑 THIS IS THE KEY FIX
+  if (error?.name === "AbortError") {
+    console.log(`HttpClient: Request aborted for ${url}`);
+    throw error; // DO NOT fallback
+  }
 
-      console.warn(
-        `HttpClient: Fetch failed, trying fallback for ${url}:`,
-        error,
-      );
+  console.warn(
+    `HttpClient: Fetch failed, trying fallback for ${url}:`,
+    error
+  );
 
-      // If this is a FullStory interference error, switch to XHR mode permanently
-      if (
-        error instanceof TypeError &&
-        (error.message.includes("fetch") ||
-          error.message.includes("Failed to fetch") ||
-          error.stack?.includes("fullstory") ||
-          error.stack?.includes("fs.js"))
-      ) {
-        console.log(
-          "HttpClient: Detected FullStory interference, switching to XMLHttpRequest mode permanently",
-        );
-        this.useXHROnly = true;
-      }
+  // fallback only for real failures
+  return this.fallbackFetch(url, baseOptions);
+}
 
-      // Check if error is due to abort and not a network issue
-      if (error instanceof Error && error.name === "AbortError") {
-        console.log(
-          `HttpClient: Request was aborted, trying fallback without signal`,
-        );
-      }
-
-      // Fallback to XMLHttpRequest if fetch fails
-      try {
-        const response = await this.fallbackFetch(url, baseOptions);
-        console.log(
-          `HttpClient: Fallback successful to ${url}`,
-          response.status,
-        );
-        return response;
-      } catch (fallbackError) {
-        console.error(
-          `HttpClient: Both fetch and fallback failed for ${url}:`,
-          fallbackError,
-        );
-        throw fallbackError;
-      }
-    }
   }
 
   // Retry mechanism for critical requests
   private static async requestWithRetry(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
     retries: number = 2,
   ): Promise<Response> {
     let lastError: Error | null = null;
@@ -482,37 +457,42 @@ export class HttpClient {
     endpoint: string,
     data?: any,
     useRetry: boolean = true,
+    options: RequestOptions = {},
   ): Promise<Response> {
-    const options = {
+    const requestOptions: RequestOptions = {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
+      ...options,
     };
     return useRetry
-      ? this.requestWithRetry(endpoint, options)
-      : this.request(endpoint, options);
+      ? this.requestWithRetry(endpoint, requestOptions)
+      : this.request(endpoint, requestOptions);
   }
 
   static async put(
     endpoint: string,
     data?: any,
     useRetry: boolean = true,
+    options: RequestOptions = {},
   ): Promise<Response> {
-    const options = {
+    const requestOptions: RequestOptions = {
       method: "PUT",
       body: data ? JSON.stringify(data) : undefined,
+      ...options,
     };
     return useRetry
-      ? this.requestWithRetry(endpoint, options)
-      : this.request(endpoint, options);
+      ? this.requestWithRetry(endpoint, requestOptions)
+      : this.request(endpoint, requestOptions);
   }
 
   static async delete(
     endpoint: string,
     useRetry: boolean = false,
+    options: RequestOptions = {},
   ): Promise<Response> {
     return useRetry
-      ? this.requestWithRetry(endpoint, { method: "DELETE" })
-      : this.request(endpoint, { method: "DELETE" });
+      ? this.requestWithRetry(endpoint, { method: "DELETE", ...options })
+      : this.request(endpoint, { method: "DELETE", ...options });
   }
 }
 

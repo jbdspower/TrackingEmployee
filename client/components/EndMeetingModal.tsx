@@ -85,20 +85,24 @@ export function EndMeetingModal({
     useState<Customer | null>(null);
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
 
+  const [missingContactError, setMissingContactError] = useState(false);
+  const addEmployeeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+
   // Ref for customer employee selector
   const customerSelectorRef = useRef<CustomerEmployeeSelectorRef>(null);
-  
+
   // File attachment state
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const { toast } = useToast();
 
   // Prefill form with follow-up meeting data when modal opens
   useEffect(() => {
     if (isOpen && followUpMeetingData) {
       console.log("📋 Prefilling form with follow-up meeting data:", followUpMeetingData);
-      
+
       // Create customer contact from follow-up data
       const customerContact: CustomerContact = {
         customerName: followUpMeetingData.companyName,
@@ -110,7 +114,7 @@ export function EndMeetingModal({
       };
 
       console.log("✅ Created customer contact from follow-up:", customerContact);
-      
+
       setSelectedCustomers([customerContact]);
       setFormData(prev => {
         const newData = {
@@ -126,17 +130,34 @@ export function EndMeetingModal({
         console.log("✅ Updated formData with customer:", newData);
         return newData;
       });
-      
+
       console.log("✅ Form prefilled with customer data");
     } else if (isOpen && !followUpMeetingData) {
       console.log("⚠️ Modal opened but no followUpMeetingData provided");
     }
   }, [isOpen, followUpMeetingData]);
-  
+
   // Debug: Log when selectedCustomers changes
   useEffect(() => {
     console.log("🔄 selectedCustomers changed:", selectedCustomers.length, selectedCustomers);
   }, [selectedCustomers]);
+
+  // 🔴 Detect missing email/mobile and control validation UI
+useEffect(() => {
+  if (selectedCustomers.length === 0) {
+    setMissingContactError(false);
+    return;
+  }
+
+  const hasMissingContact = selectedCustomers.some(
+    (c) =>
+      !c.customerEmail?.trim() ||
+      !c.customerMobile?.trim()
+  );
+
+  setMissingContactError(hasMissingContact);
+}, [selectedCustomers]);
+
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -150,35 +171,21 @@ export function EndMeetingModal({
       console.log("Validation failed: No customers selected");
     }
 
-    // Validate each customer in the array
     selectedCustomers.forEach((customer, index) => {
-      // Email validation if provided (only validate if not empty)
-      if (
-        customer.customerEmail &&
-        customer.customerEmail.trim() !== "" &&
-        typeof customer.customerEmail === 'string' &&
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.customerEmail)
-      ) {
-        newErrors[`customer_${index}_email`] = `Invalid email for ${customer.customerEmployeeName}`;
-        console.log(`Validation failed: Invalid email for customer ${index}`);
+      if (!customer.customerEmail?.trim()) {
+        newErrors[`customer_${index}_email`] =
+          `Email is required for ${customer.customerEmployeeName}`;
       }
 
-      // Mobile validation if provided (only validate if not empty)
-      if (
-        customer.customerMobile &&
-        customer.customerMobile.trim() !== "" &&
-        typeof customer.customerMobile === 'string' &&
-        customer.customerMobile.length > 0
-      ) {
-        // Remove formatting characters for validation
-        const cleanMobile = customer.customerMobile.replace(/[\s\-\(\)]/g, "");
-        // More lenient mobile validation - just check if it has digits
-        if (!/^\+?\d{7,15}$/.test(cleanMobile)) {
-          newErrors[`customer_${index}_mobile`] = `Invalid mobile for ${customer.customerEmployeeName}`;
-          console.log(`Validation failed: Invalid mobile for customer ${index}:`, customer.customerMobile);
-        }
+      if (!customer.customerMobile?.trim()) {
+        newErrors[`customer_${index}_mobile`] =
+          `Mobile number is required for ${customer.customerEmployeeName}`;
       }
     });
+
+
+
+
 
     // Discussion is mandatory
     if (!formData.discussion.trim()) {
@@ -211,6 +218,18 @@ export function EndMeetingModal({
 
     console.log("Validation errors:", newErrors);
     setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      // Auto-scroll to "+ Add new employee"
+      setTimeout(() => {
+        addEmployeeButtonRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 300);
+    }
+
+
     return Object.keys(newErrors).length === 0;
   };
 
@@ -312,6 +331,9 @@ export function EndMeetingModal({
     );
   };
 
+
+
+
   // Handle adding new customer employee
   const handleAddNewEmployee = async (
     employeeData: NewCustomerEmployeeData,
@@ -396,8 +418,10 @@ export function EndMeetingModal({
 
       // Automatically select the newly created employee
       setTimeout(() => {
-        console.log("Auto-selecting newly created employee...");
         handleCustomerEmployeeSelect(newEmployee, newCustomer);
+
+        // Optional UX polish
+        addEmployeeButtonRef.current?.blur();
       }, 100);
 
       console.log("Customer employee added successfully!");
@@ -408,82 +432,132 @@ export function EndMeetingModal({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
 
-    console.log("🔵 EndMeetingModal: Form submit triggered");
-    console.log("EndMeetingModal: Form data before validation:", formData);
-    console.log("EndMeetingModal: Selected customers:", selectedCustomers);
-    console.log("EndMeetingModal: Discussion:", formData.discussion);
-    console.log("EndMeetingModal: Attached files:", attachedFiles.length);
 
-    const isValid = validateForm();
-    console.log("EndMeetingModal: Validation result:", isValid);
-    
-    if (!isValid) {
-      console.log("EndMeetingModal: Form validation failed with errors:", errors);
-      // Scroll to first error
-      const firstErrorElement = document.querySelector('.border-destructive');
-      if (firstErrorElement) {
-        firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      return;
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  const isValid = validateForm();
+  console.log("EndMeetingModal: Validation result:", isValid);
+
+  if (!isValid) {
+    console.log("EndMeetingModal: Form validation failed with errors:", errors);
+    toast({
+      title: "Please complete required fields",
+      description:
+        "Add at least one customer contact with email/mobile and fill discussion details.",
+      variant: "destructive",
+    });
+    const firstErrorElement = document.querySelector(".border-destructive");
+    if (firstErrorElement) {
+      firstErrorElement.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+    return;
+  }
 
-    console.log("✅ EndMeetingModal: Validation passed, processing files...");
-    setIsSubmitting(true);
-    try {
-      // Convert files to base64 for storage
-      const attachmentPromises = attachedFiles.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = reader.result as string;
-            // Store as data URL (includes file type)
-            resolve(base64);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+  console.log("✅ EndMeetingModal: Validation passed, processing files...");
+  setIsSubmitting(true);
+
+  try {
+    let attachmentUrls: string[] = [];
+
+    if (attachedFiles.length > 0) {
+      if (!currentMeeting?.id) {
+        toast({
+          title: "Missing Meeting ID",
+          description: "Cannot upload files without a meeting ID.",
+          variant: "destructive",
         });
-      });
-
-      console.log("📎 Converting files to base64...");
-      const attachments = await Promise.all(attachmentPromises);
-      console.log(`✅ Converted ${attachments.length} files to base64`);
-
-      // Include attachments in meeting details
-      const meetingDetailsWithAttachments = {
-        ...formData,
-        attachments: attachments.length > 0 ? attachments : undefined
-      };
-
-      console.log("EndMeetingModal: Calling onEndMeeting with attachments:", {
-        ...meetingDetailsWithAttachments,
-        attachments: attachments.length > 0 ? `${attachments.length} files` : 'none'
-      });
-      
-      await onEndMeeting(meetingDetailsWithAttachments);
-      console.log("✅ Meeting ended successfully, clearing temp employees");
-      // Clear temporary employees after successful meeting end
-      if (customerSelectorRef.current) {
-        customerSelectorRef.current.clearTempEmployees();
+        setIsSubmitting(false);
+        return;
       }
-      handleClose();
-    } catch (error) {
-      console.error("❌ Error ending meeting:", error);
+
+      console.log("📎 Uploading attachments...");
       toast({
-        title: "Error",
-        description: "Failed to end meeting. Please try again.",
-        variant: "destructive",
+        title: "Uploading files",
+        description: "Please wait while files are uploaded...",
       });
-    } finally {
-      setIsSubmitting(false);
+
+      const uploadData = new FormData();
+      attachedFiles.forEach((file) => uploadData.append("files", file));
+
+      const controller = new AbortController();
+      const timeoutMs = 120000;
+      const timeoutId = setTimeout(() => {
+        controller.abort("Upload timeout");
+      }, timeoutMs);
+
+      const uploadResponse = await fetch(
+        `/api/meetings/${currentMeeting.id}/attachments`,
+        {
+          method: "POST",
+          body: uploadData,
+          signal: controller.signal,
+        },
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new Error(
+          errorText || `File upload failed with status ${uploadResponse.status}`,
+        );
+      }
+
+      const uploadResult = await uploadResponse.json();
+      attachmentUrls = Array.isArray(uploadResult.attachments)
+        ? uploadResult.attachments
+        : [];
+      console.log(`✅ Uploaded ${attachmentUrls.length} files`);
     }
-  };
+
+    // 🔹 Build meeting payload
+    const meetingDetailsWithAttachments = {
+      ...formData,
+      attachments: attachmentUrls.length > 0 ? attachmentUrls : undefined,
+    };
+
+    // 🔴 🔴 🔴 FIX STARTS HERE 🔴 🔴 🔴
+    // Normalize outLocation so it never stays as raw { lat, long }
+// In your frontend EndMeetingModal's handleSubmit function:
+const normalizedMeetingDetails = {
+  ...meetingDetailsWithAttachments,
+  // Ensure outLocation is a string address, not an object
+  outLocation: typeof (meetingDetailsWithAttachments as any).outLocation === "object"
+    ? (meetingDetailsWithAttachments as any).outLocation?.address || 
+      `${(meetingDetailsWithAttachments as any).outLocation?.lat}, ${(meetingDetailsWithAttachments as any).outLocation?.lng}`
+    : (meetingDetailsWithAttachments as any).outLocation,
+};
+    // 🔴 🔴 🔴 FIX ENDS HERE 🔴 🔴 🔴
+
+    console.log("EndMeetingModal: Final payload:", normalizedMeetingDetails);
+
+    await onEndMeeting(normalizedMeetingDetails);
+
+    console.log("✅ Meeting ended successfully, clearing temp employees");
+
+    if (customerSelectorRef.current) {
+      customerSelectorRef.current.clearTempEmployees();
+    }
+
+    handleClose();
+  } catch (error) {
+    console.error("❌ Error ending meeting:", error);
+    toast({
+      title: "Error",
+      description: "Failed to end meeting. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
 
   const handleCreateLead = async () => {
     console.log("🚀 Creating lead from meeting data");
-    
+
     // Validate that we have at least one customer selected
     if (selectedCustomers.length === 0) {
       toast({
@@ -496,10 +570,10 @@ export function EndMeetingModal({
 
     // Get the first customer for lead creation
     const customer = selectedCustomers[0];
-    
+
     // Get token from localStorage
     const token = localStorage.getItem("idToken");
-    
+
     if (!token) {
       toast({
         title: "Authentication Error",
@@ -513,7 +587,7 @@ export function EndMeetingModal({
     const userId = localStorage.getItem("userId") || "67daa55d9c4abb36045d5bfe";
 
     setIsCreatingLead(true);
-    
+
     try {
       // Prepare lead payload
       const leadPayload = {
@@ -544,7 +618,7 @@ export function EndMeetingModal({
       if (response.ok) {
         const result = await response.json();
         console.log("✅ Lead created successfully:", result);
-        
+
         toast({
           title: "Lead Created",
           description: `Lead created successfully for ${customer.customerEmployeeName} at ${customer.customerName}`,
@@ -552,7 +626,7 @@ export function EndMeetingModal({
       } else {
         const errorText = await response.text();
         console.error("❌ Failed to create lead:", response.status, errorText);
-        
+
         toast({
           title: "Failed to Create Lead",
           description: `Error: ${response.status} - ${errorText.substring(0, 100)}`,
@@ -576,11 +650,11 @@ export function EndMeetingModal({
     if (files && files.length > 0) {
       const newFiles = Array.from(files);
       const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
-      
+
       // Validate file sizes
       const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
       const validFiles = newFiles.filter(f => f.size <= MAX_FILE_SIZE);
-      
+
       if (oversizedFiles.length > 0) {
         const fileNames = oversizedFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)`).join(', ');
         toast({
@@ -590,14 +664,14 @@ export function EndMeetingModal({
         });
         console.warn("⚠️ Oversized files rejected:", oversizedFiles.map(f => ({ name: f.name, size: f.size })));
       }
-      
+
       if (validFiles.length > 0) {
         // Check total size of all files (current + new)
         const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
         const newTotalSize = validFiles.reduce((sum, f) => sum + f.size, 0);
         const totalSize = currentTotalSize + newTotalSize;
         const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10MB total
-        
+
         if (totalSize > MAX_TOTAL_SIZE) {
           toast({
             title: "Total Size Limit Exceeded",
@@ -608,7 +682,7 @@ export function EndMeetingModal({
         } else {
           setAttachedFiles(prev => [...prev, ...validFiles]);
           console.log("📎 Files attached:", validFiles.map(f => ({ name: f.name, size: `${(f.size / 1024).toFixed(2)} KB` })));
-          
+
           toast({
             title: "Files Attached",
             description: `${validFiles.length} file(s) attached successfully`,
@@ -616,7 +690,7 @@ export function EndMeetingModal({
         }
       }
     }
-    
+
     // Reset input value to allow selecting the same file again
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -672,7 +746,7 @@ export function EndMeetingModal({
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Clock className="h-5 w-5 text-destructive" />
-            <span>End Meeting</span>
+            <span>End Meetin</span>
           </DialogTitle>
           <DialogDescription>
             Complete the meeting for{" "}
@@ -712,12 +786,48 @@ export function EndMeetingModal({
               onAddNewEmployee={() => setIsAddEmployeeOpen(true)}
               filterByCompany={currentMeeting?.clientName}
             />
+
+            {missingContactError && (
+              <div className="relative mt-2">
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>
+                    Email & mobile number are required. Please add or update customer contact.
+                  </span>
+                </div>
+
+                {/* Arrow pointing to "+ Add new" - Using inline style for exact -3.5rem */}
+                <div
+                  className="absolute right-2 animate-bounce text-destructive"
+                  style={{ top: '-3.9rem' }}
+                >
+                  <div className="relative">
+                    {/* Arrow with tail */}
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 32 32"
+                      fill="none"
+                      className="text-destructive"
+                    >
+                      {/* Arrow line */}
+                      <line x1="16" y1="28" x2="16" y2="8" stroke="currentColor" strokeWidth="2" />
+                      {/* Arrow head */}
+                      <path d="M10 14L16 8L22 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
             {errors.customers && (
               <div className="flex items-center space-x-1 text-sm text-destructive">
                 <AlertCircle className="h-3 w-3" />
                 <span>{errors.customers}</span>
               </div>
             )}
+
 
             {/* Selected Customers List */}
             {selectedCustomers.length > 0 && (
@@ -844,7 +954,7 @@ export function EndMeetingModal({
                 Max 5MB per file
               </span>
             </Label>
-            
+
             <input
               ref={fileInputRef}
               type="file"
@@ -854,7 +964,7 @@ export function EndMeetingModal({
               className="hidden"
               accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
             />
-            
+
             <Button
               type="button"
               variant="outline"
@@ -865,7 +975,7 @@ export function EndMeetingModal({
               <Paperclip className="h-4 w-4 mr-2" />
               Choose Files
             </Button>
-            
+
             <div className="text-xs text-muted-foreground">
               Supported: Images, PDF, DOC, DOCX, XLS, XLSX • Max 5MB per file • Max 10MB total
             </div>
@@ -932,7 +1042,7 @@ export function EndMeetingModal({
                 </div>
               )}
             </Button>
-            
+
             <div className="flex space-x-3">
               <Button
                 type="button"

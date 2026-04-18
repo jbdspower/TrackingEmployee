@@ -25,9 +25,9 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
   });
 
   const {
-    enableHighAccuracy = true,
-    maximumAge = 0, // Never use cached location - always get fresh GPS coordinates
-    timeout = 10000, // 10 seconds
+    enableHighAccuracy = false, // 🔥 FIX: Reduce GPS accuracy for better performance
+    maximumAge = 60000, // 🔥 FIX: Cache location for 1 minute to reduce CPU load
+    timeout = 15000, // 🔥 FIX: Increase timeout to reduce failures
     watchPosition = false,
   } = options;
 

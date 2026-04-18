@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -81,6 +81,7 @@ interface EmployeeDayRecord {
   attendanceStatus?: string;
   attendanceReason?: string;
   attendanceAddedBy?: string | null; // Person who added the attendance
+  automaticAttendanceStatus?: string;
 }
 
 interface EmployeeMeetingRecord {
@@ -96,7 +97,7 @@ interface EmployeeMeetingRecord {
   discussion: string;
   meetingPerson: string;
   meetingId?: string;
-  approvalStatus?: 'ok' | 'not_ok';
+  approvalStatus?: 'ok' | 'not_ok' | 'pending';
   approvalReason?: string;
   approvedBy?: string;
   approvedByName?: string;
@@ -110,6 +111,16 @@ interface DashboardFilters {
   endDate?: string;
   searchTerm: string;
 }
+
+const calculateAutomaticAttendanceStatus = (totalDutyHours: number): string => {
+  if (totalDutyHours >= 7.50) {
+    return "full_day";
+  } else if (totalDutyHours >= 3.50 && totalDutyHours <= 7.50) {
+    return "half_day";
+  } else {
+    return "absent";
+  }
+};
 
 export default function Dashboard() {
   const [analytics, setAnalytics] = useState<EmployeeAnalytics[]>([]);
@@ -167,12 +178,45 @@ export default function Dashboard() {
     >
   >({});
 
+  const handleResetToAutomatic = async (date: string) => {
+    const dayRecord = employeeDayRecords.find((r) => r.date === date);
+    if (!dayRecord || !selectedEmployee) return;
+
+    const autoStatus = calculateAutomaticAttendanceStatus(dayRecord.totalDutyHours);
+    const autoReason = "Reset to auto-calculated based on duty hours";
+
+    try {
+      // Get logged-in user ID from localStorage
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const loggedInUserId = user?._id || null;
+
+      const response = await HttpClient.post("/api/analytics/save-attendance", {
+        employeeId: selectedEmployee,
+        date,
+        attendanceStatus: autoStatus,
+        attendanceReason: autoReason,
+        attendenceCreated: loggedInUserId,
+        isManual: false,
+      });
+
+      if (response.ok) {
+        // Refetch employee details
+        const employeeName = analytics.find((emp) => emp.employeeId === selectedEmployee)?.employeeName || "Employee";
+        await handleEmployeeClick(selectedEmployee, employeeName);
+      }
+    } catch (error) {
+      console.error("Error resetting to automatic:", error);
+      alert("Failed to reset to automatic status.");
+    }
+  };
+
+
   // Meeting approval editing state
   const [meetingApprovalEdits, setMeetingApprovalEdits] = useState<
     Record<
       string,
       {
-        approvalStatus: 'ok' | 'not_ok' | '';
+        approvalStatus: 'ok' | 'not_ok' | 'pending' | '';
         approvalReason: string;
         isEditing: boolean;
         isSaving: boolean;
@@ -190,9 +234,31 @@ export default function Dashboard() {
     avgMeetingDuration: 0,
   });
 
-  useEffect(() => {
+const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+useEffect(() => {
+  if (debounceRef.current) {
+    clearTimeout(debounceRef.current);
+  }
+
+  debounceRef.current = setTimeout(() => {
     fetchAnalytics();
-  }, [filters]);
+  }, 300); // 👈 debounce window
+
+  return () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+  };
+}, [
+  filters.employeeId,
+  filters.dateRange,
+  filters.startDate,
+  filters.endDate,
+  filters.searchTerm,
+]);
+
+
 
   // Re-fetch employee details when filters change while in detail view
   useEffect(() => {
@@ -211,20 +277,17 @@ export default function Dashboard() {
 
       // Get user from localStorage
       const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const isSuperAdmin = user?.role === "super_admin";
+      const requesterId = String(user?._id || "").trim();
+      const requesterEmail = String(user?.email || "").trim();
 
       // Build query parameters
       const queryParams = new URLSearchParams();
 
-      if (isSuperAdmin) {
-        if (filters.employeeId && filters.employeeId !== "all") {
-          queryParams.append("employeeId", filters.employeeId);
-        }
-      } else if (user?._id) {
-        // If not super admin and user has valid ID, filter by logged-in user's ID
-        queryParams.append("employeeId", user._id);
+      if (filters.employeeId && filters.employeeId !== "all") {
+        queryParams.append("employeeId", filters.employeeId);
       }
-      // If no valid user ID, fetch all analytics (super admin view)
+      if (requesterId) queryParams.append("requesterId", requesterId);
+      if (requesterEmail) queryParams.append("requesterEmail", requesterEmail);
 
       queryParams.append("dateRange", filters.dateRange);
       if (filters.startDate) queryParams.append("startDate", filters.startDate);
@@ -398,13 +461,21 @@ export default function Dashboard() {
     setSelectedEmployee(employeeId);
     setLoadingDetails(true);
     try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const requesterId = String(user?._id || "").trim();
+      const requesterEmail = String(user?.email || "").trim();
+
       // Fetch detailed employee data
-      const detailsUrl = `/api/analytics/employee-details/${employeeId}?${new URLSearchParams({
+      const detailsParams = new URLSearchParams({
         dateRange: filters.dateRange,
+        includeAttachments: "true",
         ...(filters.startDate && { startDate: filters.startDate }),
         ...(filters.endDate && { endDate: filters.endDate }),
-      })}`;
-      
+      });
+      if (requesterId) detailsParams.append("requesterId", requesterId);
+      if (requesterEmail) detailsParams.append("requesterEmail", requesterEmail);
+      const detailsUrl = `/api/analytics/employee-details/${employeeId}?${detailsParams.toString()}`;
+
       console.log(`🔍 Fetching employee details from: ${detailsUrl}`);
       const response = await HttpClient.get(detailsUrl);
 
@@ -414,10 +485,10 @@ export default function Dashboard() {
           dayRecords: data.dayRecords?.length || 0,
           meetingRecords: data.meetingRecords?.length || 0
         });
-        
+
         const dayRecords = data.dayRecords || [];
         const meetingRecords = data.meetingRecords || [];
-        
+
         // Debug: Log meeting records to check structure
         if (meetingRecords.length > 0) {
           console.log(`🔍 First meeting record structure:`, meetingRecords[0]);
@@ -428,8 +499,8 @@ export default function Dashboard() {
             approvedBy: meetingRecords[0].approvedBy,
             approvedByName: meetingRecords[0].approvedByName
           });
-          console.log(`🔍 All meeting IDs:`, meetingRecords.map((m: any) => ({ 
-            meetingId: m.meetingId, 
+          console.log(`🔍 All meeting IDs:`, meetingRecords.map((m: any) => ({
+            meetingId: m.meetingId,
             hasId: !!m.meetingId,
             company: m.companyName,
             approvedBy: m.approvedBy,
@@ -438,43 +509,55 @@ export default function Dashboard() {
         } else {
           console.warn(`⚠️ No meeting records received from API`);
         }
-        
+
         // Fetch attendance data and merge with day records
         try {
           const attendanceParams = new URLSearchParams({ employeeId });
           if (filters.startDate) attendanceParams.append("startDate", filters.startDate);
           if (filters.endDate) attendanceParams.append("endDate", filters.endDate);
-          
+          if (requesterId) attendanceParams.append("requesterId", requesterId);
+          if (requesterEmail) attendanceParams.append("requesterEmail", requesterEmail);
+
           const attendanceUrl = `/api/analytics/attendance?${attendanceParams}`;
           console.log(`📋 Fetching attendance from: ${attendanceUrl}`);
-          
+
           const attendanceResponse = await HttpClient.get(attendanceUrl);
           console.log(`📋 Attendance response status: ${attendanceResponse.status}`);
-          
+
           if (attendanceResponse.ok) {
             const attendanceData = await attendanceResponse.json();
             console.log(`✅ Attendance data received:`, attendanceData);
-            
+
             if (attendanceData.success && attendanceData.data) {
               console.log(`📋 Processing ${attendanceData.data.length} attendance records`);
               const attendanceMap = new Map(
                 attendanceData.data.map((att: any) => [att.date, att])
               );
-              
+
+              // Inside handleEmployeeClick function, after merging attendance data:
               let mergedCount = 0;
               dayRecords.forEach((record: EmployeeDayRecord) => {
                 const attendance = attendanceMap.get(record.date) as {
                   attendanceStatus: string;
                   attendanceReason: string;
                 } | undefined;
+
+                // Calculate automatic status based on total duty hours
+                record.automaticAttendanceStatus = calculateAutomaticAttendanceStatus(record.totalDutyHours);
+
                 if (attendance) {
                   record.attendanceStatus = attendance.attendanceStatus;
                   record.attendanceReason = attendance.attendanceReason;
                   mergedCount++;
                   console.log(`✅ Merged attendance for ${record.date}:`, {
                     status: attendance.attendanceStatus,
-                    reason: attendance.attendanceReason
+                    reason: attendance.attendanceReason,
+                    automaticStatus: record.automaticAttendanceStatus
                   });
+                } else {
+                  // If no manual attendance is set, use automatic status
+                  record.attendanceStatus = record.automaticAttendanceStatus;
+                  record.attendanceReason = "Auto-calculated based on duty hours";
                 }
               });
               console.log(`✅ Merged ${mergedCount} attendance records with day records`);
@@ -488,9 +571,9 @@ export default function Dashboard() {
           console.error("❌ Failed to fetch attendance data:", attendanceError);
           // Continue without attendance data
         }
-        
+
         console.log(`📊 Setting state with ${dayRecords.length} day records and ${meetingRecords.length} meeting records`);
-        
+
         // Debug: Check if meetingId is present in records
         if (meetingRecords.length > 0) {
           console.log(`📋 Sample meeting record:`, meetingRecords[0]);
@@ -498,13 +581,13 @@ export default function Dashboard() {
           if (meetingsWithoutId.length > 0) {
             console.error(`❌ ${meetingsWithoutId.length} meetings are missing IDs!`, meetingsWithoutId);
           }
-          console.log(`📋 Meeting IDs:`, meetingRecords.map((m: any) => ({ 
-            id: m.meetingId, 
+          console.log(`📋 Meeting IDs:`, meetingRecords.map((m: any) => ({
+            id: m.meetingId,
             company: m.companyName,
-            hasId: !!m.meetingId 
+            hasId: !!m.meetingId
           })));
         }
-        
+
         setEmployeeDayRecords(dayRecords);
         setEmployeeMeetingRecords(meetingRecords);
       } else {
@@ -700,6 +783,7 @@ export default function Dashboard() {
     { value: "half_day", label: "Half Day" },
     { value: "off", label: "Off" },
     { value: "short_leave", label: "Short Leave" },
+    { value: "absent", label: "Absent" },
     { value: "ot", label: "OT" },
   ];
 
@@ -774,12 +858,13 @@ export default function Dashboard() {
         attendanceStatus: editData.attendanceStatus,
         attendanceReason: editData.attendanceReason,
         attendenceCreated: loggedInUserId, // Pass logged-in user ID
+        isManual: true, // Add this flag to indicate manual override
       });
 
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Attendance saved successfully:`, result);
-        
+
         // Refetch employee details to get updated attendanceAddedBy field
         console.log(`🔄 Refetching employee details to update attendanceAddedBy...`);
         const employeeName = analytics.find((emp) => emp.employeeId === selectedEmployee)?.employeeName || "Employee";
@@ -819,6 +904,7 @@ export default function Dashboard() {
   const approvalOptions = [
     { value: "ok", label: "OK" },
     { value: "not_ok", label: "Not OK" },
+    { value: "pending", label: "Pending" }
   ];
 
   // Generate a unique key for a meeting record (fallback when meetingId is not available)
@@ -834,13 +920,13 @@ export default function Dashboard() {
     record: EmployeeMeetingRecord,
   ) => {
     const meetingKey = getMeetingKey(record);
-    
+
     console.log(`✏️ Editing meeting approval for: ${meetingKey}`, {
       meetingId: record.meetingId,
       company: record.companyName,
       date: record.date
     });
-    
+
     setMeetingApprovalEdits((prev) => ({
       ...prev,
       [meetingKey]: {
@@ -862,7 +948,7 @@ export default function Dashboard() {
     });
   };
 
-  const handleMeetingApprovalStatusChange = (meetingKey: string, status: 'ok' | 'not_ok') => {
+  const handleMeetingApprovalStatusChange = (meetingKey: string, status: 'ok' | 'not_ok' | 'pending') => {
     setMeetingApprovalEdits((prev) => ({
       ...prev,
       [meetingKey]: {
@@ -930,12 +1016,12 @@ export default function Dashboard() {
       console.log(`👤 Logged-in user ID: ${loggedInUserId}`);
 
       let response;
-      
+
       // If we have a meetingId, use the direct endpoint
       if (editData.meetingId) {
         const url = `/api/meetings/${editData.meetingId}/approval`;
         console.log(`📡 Sending PUT request to: ${url}`);
-        
+
         response = await HttpClient.put(url, {
           approvalStatus: editData.approvalStatus,
           approvalReason: editData.approvalReason,
@@ -945,7 +1031,7 @@ export default function Dashboard() {
         // Otherwise, use composite key to find and update the meeting
         const url = `/api/meetings/approval-by-details`;
         console.log(`📡 Sending PUT request to: ${url} (using composite key)`);
-        
+
         response = await HttpClient.put(url, {
           employeeId: selectedEmployee,
           date: meetingRecord.date,
@@ -958,21 +1044,21 @@ export default function Dashboard() {
       }
 
       console.log(`📡 Response status: ${response.status}`);
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Meeting approval saved successfully:`, result);
-        
+
         // Update the meeting record in state using the meetingKey
         setEmployeeMeetingRecords((prev) =>
           prev.map((record) => {
             const recordKey = getMeetingKey(record);
             return recordKey === meetingKey
               ? {
-                  ...record,
-                  approvalStatus: editData.approvalStatus as 'ok' | 'not_ok',
-                  approvalReason: editData.approvalReason,
-                }
+                ...record,
+                approvalStatus: editData.approvalStatus as 'ok' | 'not_ok' | 'pending',
+                approvalReason: editData.approvalReason,
+              }
               : record;
           })
         );
@@ -1537,11 +1623,11 @@ export default function Dashboard() {
                                       <TableCell>
                                         {dayRecord.startLocationTime
                                           ? format(
-                                              new Date(
-                                                dayRecord.startLocationTime,
-                                              ),
-                                              "HH:mm",
-                                            )
+                                            new Date(
+                                              dayRecord.startLocationTime,
+                                            ),
+                                            "HH:mm",
+                                          )
                                           : "-"}
                                       </TableCell>
                                       <TableCell>
@@ -1550,11 +1636,11 @@ export default function Dashboard() {
                                       <TableCell>
                                         {dayRecord.outLocationTime
                                           ? format(
-                                              new Date(
-                                                dayRecord.outLocationTime,
-                                              ),
-                                              "HH:mm",
-                                            )
+                                            new Date(
+                                              dayRecord.outLocationTime,
+                                            ),
+                                            "HH:mm",
+                                          )
                                           : "-"}
                                       </TableCell>
                                       <TableCell>
@@ -1572,6 +1658,7 @@ export default function Dashboard() {
                                         )}
                                       </TableCell>
 
+                                      {/* Attendance Status */}
                                       {/* Attendance Status */}
                                       <TableCell>
                                         {attendanceEdits[date]?.isEditing ? (
@@ -1604,17 +1691,34 @@ export default function Dashboard() {
                                             </SelectContent>
                                           </Select>
                                         ) : (
-                                          <div className="flex items-center space-x-2">
-                                            <span className="text-sm">
-                                              {dayRecord.attendanceStatus
-                                                ? attendanceOptions.find(
+                                          <div className="flex flex-col space-y-1">
+                                            <div className="flex items-center space-x-2">
+                                              <span className="text-sm">
+                                                {dayRecord.attendanceStatus
+                                                  ? attendanceOptions.find(
                                                     (opt) =>
                                                       opt.value ===
                                                       dayRecord.attendanceStatus,
                                                   )?.label ||
                                                   dayRecord.attendanceStatus
-                                                : "Full Day"}
-                                            </span>
+                                                  : "Full Day"}
+                                              </span>
+                                              {dayRecord.automaticAttendanceStatus &&
+                                                dayRecord.attendanceStatus !== dayRecord.automaticAttendanceStatus && (
+                                                  <Badge variant="outline" className="text-xs">
+                                                    Manual
+                                                  </Badge>
+                                                )}
+                                            </div>
+                                            {dayRecord.automaticAttendanceStatus &&
+                                              dayRecord.attendanceStatus !== dayRecord.automaticAttendanceStatus && (
+                                                <div className="text-xs text-muted-foreground">
+                                                  Auto: {attendanceOptions.find(
+                                                    (opt) => opt.value === dayRecord.automaticAttendanceStatus
+                                                  )?.label || dayRecord.automaticAttendanceStatus}
+                                                  ({dayRecord.totalDutyHours.toFixed(2)}h)
+                                                </div>
+                                              )}
                                           </div>
                                         )}
                                       </TableCell>
@@ -1820,7 +1924,7 @@ export default function Dashboard() {
                                                   onValueChange={(value) =>
                                                     handleMeetingApprovalStatusChange(
                                                       meetingKey,
-                                                      value as 'ok' | 'not_ok',
+                                                      value as 'ok' | 'not_ok' | 'pending',
                                                     )
                                                   }
                                                 >
@@ -1910,7 +2014,7 @@ export default function Dashboard() {
                                                   const isDataUrl = attachment.startsWith('data:');
                                                   let fileName = `File ${idx + 1}`;
                                                   let fileType = '';
-                                                  
+
                                                   if (isDataUrl) {
                                                     // Extract MIME type from data URL
                                                     const mimeMatch = attachment.match(/data:([^;]+);/);
@@ -1924,7 +2028,7 @@ export default function Dashboard() {
                                                     // Regular URL
                                                     fileName = attachment.split('/').pop() || fileName;
                                                   }
-                                                  
+
                                                   return (
                                                     <a
                                                       key={idx}
@@ -2149,34 +2253,34 @@ export default function Dashboard() {
                               {(meeting.meetingDetails?.customers?.[0]
                                 ?.customerEmail ||
                                 meeting.meetingDetails?.customerEmail) && (
-                                <div>
-                                  📧{" "}
-                                  {meeting.meetingDetails?.customers?.[0]
-                                    ?.customerEmail ||
-                                    meeting.meetingDetails?.customerEmail}
-                                </div>
-                              )}
+                                  <div>
+                                    📧{" "}
+                                    {meeting.meetingDetails?.customers?.[0]
+                                      ?.customerEmail ||
+                                      meeting.meetingDetails?.customerEmail}
+                                  </div>
+                                )}
                               {(meeting.meetingDetails?.customers?.[0]
                                 ?.customerMobile ||
                                 meeting.meetingDetails?.customerMobile) && (
-                                <div>
-                                  📱{" "}
-                                  {meeting.meetingDetails?.customers?.[0]
-                                    ?.customerMobile ||
-                                    meeting.meetingDetails?.customerMobile}
-                                </div>
-                              )}
+                                  <div>
+                                    📱{" "}
+                                    {meeting.meetingDetails?.customers?.[0]
+                                      ?.customerMobile ||
+                                      meeting.meetingDetails?.customerMobile}
+                                  </div>
+                                )}
                               {(meeting.meetingDetails?.customers?.[0]
                                 ?.customerDesignation ||
                                 meeting.meetingDetails
                                   ?.customerDesignation) && (
-                                <div>
-                                  💼{" "}
-                                  {meeting.meetingDetails?.customers?.[0]
-                                    ?.customerDesignation ||
-                                    meeting.meetingDetails?.customerDesignation}
-                                </div>
-                              )}
+                                  <div>
+                                    💼{" "}
+                                    {meeting.meetingDetails?.customers?.[0]
+                                      ?.customerDesignation ||
+                                      meeting.meetingDetails?.customerDesignation}
+                                  </div>
+                                )}
                             </div>
                           </TableCell>
                           <TableCell className="max-w-xs">

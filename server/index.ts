@@ -20,9 +20,11 @@ import {
   updateMeeting,
   getMeeting,
   deleteMeeting,
+  uploadMeetingAttachments,
   getActiveMeeting,
   updateMeetingApproval,
   updateMeetingApprovalByDetails,
+  getTodaysMeetings,
 } from "./routes/meetings";
 import {
   getTrackingSessions,
@@ -61,6 +63,7 @@ import {
   getEmployeeSnapshots,
 } from "./routes/route-snapshots";
 import { updateFollowUpStatus, getFollowUpHistory } from "./routes/follow-ups";
+import { getCrmCustomers, getCrmLeads } from "./routes/crm";
 import { fileURLToPath } from "url";
 
 // ES module equivalent of __dirname
@@ -90,6 +93,10 @@ export function createServer() {
   // 20MB limit allows for ~15MB of base64 data (which is ~11MB of original files)
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+  // Serve uploaded files
+  const uploadsPath = path.join(process.cwd(), "uploads");
+  app.use("/uploads", express.static(uploadsPath));
 
   // Request logging
   app.use((req, res, next) => {
@@ -134,8 +141,10 @@ export function createServer() {
   app.get("/api/meetings", getMeetings);
   app.post("/api/meetings", createMeeting);
   app.get("/api/meetings/active", getActiveMeeting); // 🔹 NEW: Get active meeting
+  app.get("/api/meetings/today", getTodaysMeetings); // 🔹 NEW: Get today's meetings for duty summary
   app.get("/api/meetings/:id", getMeeting);
   app.put("/api/meetings/:id", updateMeeting);
+  app.post("/api/meetings/:id/attachments", uploadMeetingAttachments);
   app.put("/api/meetings/:id/approval", updateMeetingApproval); // Meeting approval by ID
   app.put("/api/meetings/approval-by-details", updateMeetingApprovalByDetails); // Meeting approval by composite key
   app.delete("/api/meetings/:id", deleteMeeting);
@@ -191,6 +200,10 @@ export function createServer() {
   // Follow-up meeting routes
   app.get("/api/follow-ups", getFollowUpHistory);
   app.put("/api/follow-ups/:id", updateFollowUpStatus);
+
+  // CRM proxy (cached customer/lead list for fast load on start meeting)
+  app.get("/api/crm/customers", getCrmCustomers);
+  app.get("/api/crm/leads", getCrmLeads);
 
   // Serve static files in production
   if (process.env.NODE_ENV === 'production') {
