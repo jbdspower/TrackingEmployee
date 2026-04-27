@@ -243,6 +243,31 @@ async function mapExternalUserToEmployee(
   user: ExternalUser,
   index: number,
 ): Promise<Employee> {
+  // Defensive: check for required fields
+  if (!user || typeof user !== 'object' || !user._id) {
+    console.warn('Skipping invalid external user:', user);
+    return {
+      id: `invalid_${index}`,
+      name: user?.name || 'Unknown',
+      email: user?.email || '',
+      phone: user?.mobileNumber || '',
+      status: 'inactive',
+      location: {
+        lat: 0,
+        lng: 0,
+        address: 'Location not available',
+        timestamp: new Date().toISOString(),
+      },
+      lastUpdate: 'Unknown',
+      currentTask: undefined,
+      deviceId: `device_invalid_${index}`,
+      designation: user?.designation || '',
+      department: user?.department || '',
+      companyName: '',
+      reportTo: '',
+    };
+  }
+
   const userId = user._id;
 
   // Try to get location but don't block on it
@@ -289,20 +314,30 @@ async function mapExternalUserToEmployee(
 
   const status = employeeStatuses[userId];
 
+  // Defensive: check for companyName and report
+  let companyName = '';
+  if (Array.isArray(user.companyName) && user.companyName[0] && user.companyName[0].companyName) {
+    companyName = user.companyName[0].companyName;
+  }
+  let reportTo = '';
+  if (user.report && typeof user.report === 'object' && user.report.name) {
+    reportTo = user.report.name;
+  }
+
   return {
     id: userId,
-    name: user.name,
-    email: user.email,
-    phone: user.mobileNumber,
+    name: user.name || 'Unknown',
+    email: user.email || '',
+    phone: user.mobileNumber || '',
     status: status.status,
     location: status.location,
     lastUpdate: status.lastUpdate,
     currentTask: status.currentTask,
     deviceId: `device_${userId.slice(-6)}`,
-    designation: user.designation,
-    department: user.department,
-    companyName: user.companyName[0]?.companyName,
-    reportTo: user.report?.name,
+    designation: user.designation || '',
+    department: user.department || '',
+    companyName,
+    reportTo,
   };
 }
 
@@ -315,12 +350,22 @@ export const getEmployees: RequestHandler = async (req, res) => {
     }
 
     const externalUsers = await fetchExternalUsers();
+    if (!Array.isArray(externalUsers)) {
+      console.error("External API did not return an array:", externalUsers);
+      throw new Error("External API returned invalid data");
+    }
     if (externalUsers.length > 0) {
-      const employees = await Promise.all(
-        externalUsers.map((user, index) =>
-          mapExternalUserToEmployee(user, index),
-        ),
-      );
+      let employees = [];
+      try {
+        employees = await Promise.all(
+          externalUsers.map((user, index) =>
+            mapExternalUserToEmployee(user, index),
+          ),
+        );
+      } catch (mapError) {
+        console.error("Error mapping external users to employees:", mapError);
+        throw mapError;
+      }
 
       // Sync to MongoDB
       try {
@@ -351,8 +396,13 @@ export const getEmployees: RequestHandler = async (req, res) => {
       return res.json({ employees: [], total: 0 });
     }
   } catch (error) {
-    console.error("Employee fetch failed:", error);
-    res.status(500).json({ error: "Failed to fetch employees" });
+    // Improved error logging for debugging
+    if (error instanceof Error) {
+      console.error("Employee fetch failed:", error.message, error.stack);
+    } else {
+      console.error("Employee fetch failed:", error);
+    }
+    res.status(500).json({ error: "Failed to fetch employees", details: error instanceof Error ? error.message : String(error) });
   }
 };
 

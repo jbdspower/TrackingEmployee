@@ -697,6 +697,29 @@ async function fetchExternalUsers$1() {
   }
 }
 async function mapExternalUserToEmployee$1(user, index) {
+  if (!user || typeof user !== "object" || !user._id) {
+    console.warn("Skipping invalid external user:", user);
+    return {
+      id: `invalid_${index}`,
+      name: user?.name || "Unknown",
+      email: user?.email || "",
+      phone: user?.mobileNumber || "",
+      status: "inactive",
+      location: {
+        lat: 0,
+        lng: 0,
+        address: "Location not available",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      lastUpdate: "Unknown",
+      currentTask: void 0,
+      deviceId: `device_invalid_${index}`,
+      designation: user?.designation || "",
+      department: user?.department || "",
+      companyName: "",
+      reportTo: ""
+    };
+  }
   const userId = user._id;
   let realLocation = null;
   try {
@@ -732,20 +755,28 @@ async function mapExternalUserToEmployee$1(user, index) {
     employeeStatuses$1[userId].lastUpdate = realLocation.lastUpdate;
   }
   const status = employeeStatuses$1[userId];
+  let companyName = "";
+  if (Array.isArray(user.companyName) && user.companyName[0] && user.companyName[0].companyName) {
+    companyName = user.companyName[0].companyName;
+  }
+  let reportTo = "";
+  if (user.report && typeof user.report === "object" && user.report.name) {
+    reportTo = user.report.name;
+  }
   return {
     id: userId,
-    name: user.name,
-    email: user.email,
-    phone: user.mobileNumber,
+    name: user.name || "Unknown",
+    email: user.email || "",
+    phone: user.mobileNumber || "",
     status: status.status,
     location: status.location,
     lastUpdate: status.lastUpdate,
     currentTask: status.currentTask,
     deviceId: `device_${userId.slice(-6)}`,
-    designation: user.designation,
-    department: user.department,
-    companyName: user.companyName[0]?.companyName,
-    reportTo: user.report?.name
+    designation: user.designation || "",
+    department: user.department || "",
+    companyName,
+    reportTo
   };
 }
 const getEmployees = async (req, res) => {
@@ -755,12 +786,22 @@ const getEmployees = async (req, res) => {
       geocodeCache$2.clear();
     }
     const externalUsers = await fetchExternalUsers$1();
+    if (!Array.isArray(externalUsers)) {
+      console.error("External API did not return an array:", externalUsers);
+      throw new Error("External API returned invalid data");
+    }
     if (externalUsers.length > 0) {
-      const employees = await Promise.all(
-        externalUsers.map(
-          (user, index) => mapExternalUserToEmployee$1(user, index)
-        )
-      );
+      let employees = [];
+      try {
+        employees = await Promise.all(
+          externalUsers.map(
+            (user, index) => mapExternalUserToEmployee$1(user, index)
+          )
+        );
+      } catch (mapError) {
+        console.error("Error mapping external users to employees:", mapError);
+        throw mapError;
+      }
       try {
         await Promise.all(
           employees.map(
@@ -786,8 +827,12 @@ const getEmployees = async (req, res) => {
       return res.json({ employees: [], total: 0 });
     }
   } catch (error) {
-    console.error("Employee fetch failed:", error);
-    res.status(500).json({ error: "Failed to fetch employees" });
+    if (error instanceof Error) {
+      console.error("Employee fetch failed:", error.message, error.stack);
+    } else {
+      console.error("Employee fetch failed:", error);
+    }
+    res.status(500).json({ error: "Failed to fetch employees", details: error instanceof Error ? error.message : String(error) });
   }
 };
 const getEmployee = async (req, res) => {
@@ -3521,6 +3566,7 @@ const getEmployeeDetails = async (req, res) => {
         meetingOutLocation,
         // Use the fixed value
         totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
+        notes: meeting.notes || "",
         discussion,
         meetingPerson,
         meetingStatus: meeting.status || "completed",
@@ -4131,7 +4177,7 @@ const getAllEmployeesDetails = async (req, res) => {
         employeeId: { $in: paginatedEmployeeIds },
         ...isAllRange ? {} : mixedStartTimeRangeFilter
       }).select(
-        shouldIncludeAttachments ? "employeeId startTime endTime clientName leadId status location attachments meetingDetails approvalStatus approvalReason approvedBy" : "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy"
+        shouldIncludeAttachments ? "employeeId startTime endTime clientName leadId status notes location attachments meetingDetails approvalStatus approvalReason approvedBy" : "employeeId startTime endTime clientName leadId status notes location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy"
       ).sort({ startTime: -1 }).maxTimeMS(6e4).lean().exec(),
       Attendance.find({
         employeeId: { $in: paginatedEmployeeIds },
@@ -4319,6 +4365,7 @@ const getAllEmployeesDetails = async (req, res) => {
           meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress",
           meetingOutLocation: meeting.location?.address || "",
           totalStayTime: parseFloat(totalStayTime.toFixed(2)),
+          notes: meeting.notes || "",
           discussion: meeting.meetingDetails?.discussion || "",
           meetingPerson: meeting.meetingDetails?.customerEmployeeName || "",
           meetingStatus: meeting.status || "completed",

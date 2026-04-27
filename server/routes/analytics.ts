@@ -1320,6 +1320,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
         meetingOutTime,
         meetingOutLocation, // Use the fixed value
         totalStayTime: calculateMeetingDuration(meeting.startTime, meeting.endTime),
+        notes: meeting.notes || "",
         discussion,
         meetingPerson,
         meetingStatus: meeting.status || "completed",
@@ -2089,8 +2090,8 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
       })
         .select(
           shouldIncludeAttachments
-            ? "employeeId startTime endTime clientName leadId status location attachments meetingDetails approvalStatus approvalReason approvedBy"
-            : "employeeId startTime endTime clientName leadId status location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy",
+            ? "employeeId startTime endTime clientName leadId status notes location attachments meetingDetails approvalStatus approvalReason approvedBy"
+            : "employeeId startTime endTime clientName leadId status notes location meetingDetails.discussion meetingDetails.customerEmployeeName approvalStatus approvalReason approvedBy",
         )
         .sort({ startTime: -1 })
         .maxTimeMS(60000)
@@ -2345,6 +2346,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
           meetingOutTime: meeting.endTime ? format(new Date(meeting.endTime), "HH:mm:ss") : "In Progress",
           meetingOutLocation: meeting.location?.address || "",
           totalStayTime: parseFloat(totalStayTime.toFixed(2)),
+          notes: meeting.notes || "",
           discussion: meeting.meetingDetails?.discussion || "",
           meetingPerson: meeting.meetingDetails?.customerEmployeeName || "",
           meetingStatus: meeting.status || "completed",
