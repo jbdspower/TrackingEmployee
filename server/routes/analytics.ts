@@ -204,6 +204,8 @@ function mapExternalUserToEmployee(
     companyName: user.companyName?.companyName || user.companyName || "",
     // Use officialDetails.reportingManager.employeeName if available
     reportTo: user.officialDetails?.reportingManager?.employeeName || "",
+    // Employee code e.g. "JBDS0001"
+    employeeId: user.employeeId || user.EmpAttendenceCode || "",
   };
 }
 
@@ -912,6 +914,16 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
 
     // Resolve display name for the requested employee
     const normalizedEmployeeIdFilters = employeeIdFilters.map((id) => id.toString());
+
+    // Resolve employee code (e.g. "JBDS0001") for the requested employee
+    const requestedExternalUser = externalUsersResult.find((user) =>
+      normalizedEmployeeIdFilters.includes(String(user._id))
+    );
+    const resolvedEmployeeCode =
+      requestedExternalUser?.employeeId ||
+      requestedExternalUser?.EmpAttendenceCode ||
+      "";
+
     let employeeDisplayName =
       normalizedEmployeeIdFilters
         .map((id) => userMap.get(id))
@@ -1370,6 +1382,7 @@ export const getEmployeeDetails: RequestHandler = async (req, res) => {
     const hasPreviousPage = pageNum > 1;
 
     const result = {
+      employeeCode: resolvedEmployeeCode,
       pagination: {
         currentPage: pageNum,
         pageSize: limitNum,
@@ -1860,6 +1873,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         },
         employees: paginatedEmployees.map((employee) => ({
           employeeId: employee.id,
+          employeeCode: employee.employeeId || "",
           employeeName: employee.name,
           email: employee.email,
           phone: employee.phone,
@@ -2384,6 +2398,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
 
       return {
         employeeId: employee.id,
+        employeeCode: employee.employeeId || "",
         employeeName: employee.name,
         email: employee.email,
         phone: employee.phone,
@@ -2527,6 +2542,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
         },
         employees: paginatedEmployees.map((employee) => ({
           employeeId: employee.id,
+          employeeCode: employee.employeeId || "",
           employeeName: employee.name,
           email: employee.email,
           phone: employee.phone,

@@ -2792,7 +2792,9 @@ function mapExternalUserToEmployee(user, index) {
     // Use companyName.companyName if available, else fallback to string or empty
     companyName: user.companyName?.companyName || user.companyName || "",
     // Use officialDetails.reportingManager.employeeName if available
-    reportTo: user.officialDetails?.reportingManager?.employeeName || ""
+    reportTo: user.officialDetails?.reportingManager?.employeeName || "",
+    // Employee code e.g. "JBDS0001"
+    employeeId: user.employeeId || user.EmpAttendenceCode || ""
   };
 }
 function getDateRange(dateRange, startDate, endDate) {
@@ -3268,6 +3270,10 @@ const getEmployeeDetails = async (req, res) => {
     console.log(`📈 Fetched data: ${meetings2.length} paginated meetings (total count: ${meetingsCountResult}), ${trackingSessions2.length} sessions, ${attendanceRecordsResult.length} attendance records, ${dayMeetingsAggregateResult.length} meeting-day aggregates`);
     const userMap = new Map(externalUsersResult.map((user) => [user._id, user.name]));
     const normalizedEmployeeIdFilters = employeeIdFilters.map((id) => id.toString());
+    const requestedExternalUser = externalUsersResult.find(
+      (user) => normalizedEmployeeIdFilters.includes(String(user._id))
+    );
+    const resolvedEmployeeCode = requestedExternalUser?.employeeId || requestedExternalUser?.EmpAttendenceCode || "";
     let employeeDisplayName = normalizedEmployeeIdFilters.map((id) => userMap.get(id)).find((name) => typeof name === "string" && name.trim().length > 0) || "";
     if (!employeeDisplayName) {
       const meetingEmployeeId = meetings2?.find((m) => m?.employeeId)?.employeeId;
@@ -3607,6 +3613,7 @@ const getEmployeeDetails = async (req, res) => {
     const hasNextPage = pageNum < totalPages;
     const hasPreviousPage = pageNum > 1;
     const result = {
+      employeeCode: resolvedEmployeeCode,
       pagination: {
         currentPage: pageNum,
         pageSize: limitNum,
@@ -3998,6 +4005,7 @@ const getAllEmployeesDetails = async (req, res) => {
         },
         employees: paginatedEmployees2.map((employee) => ({
           employeeId: employee.id,
+          employeeCode: employee.employeeId || "",
           employeeName: employee.name,
           email: employee.email,
           phone: employee.phone,
@@ -4395,6 +4403,7 @@ const getAllEmployeesDetails = async (req, res) => {
       const daysWithMeetings = uniqueDates.size;
       return {
         employeeId: employee.id,
+        employeeCode: employee.employeeId || "",
         employeeName: employee.name,
         email: employee.email,
         phone: employee.phone,
@@ -4522,6 +4531,7 @@ const getAllEmployeesDetails = async (req, res) => {
         },
         employees: paginatedEmployees.map((employee) => ({
           employeeId: employee.id,
+          employeeCode: employee.employeeId || "",
           employeeName: employee.name,
           email: employee.email,
           phone: employee.phone,

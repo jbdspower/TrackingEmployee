@@ -18,6 +18,8 @@ export interface ExternalUser {
   target: number;
   name: string;
   email: string;
+  employeeId?: string; // Employee code e.g. "JBDS0001"
+  EmpAttendenceCode?: string; // Attendance code e.g. "JBDS0001"
   companyName: Array<{
     companyName: string;
     _id: string;
@@ -29,6 +31,11 @@ export interface ExternalUser {
   designation: string;
   department: string;
   mobileNumber: string;
+  officialDetails?: {
+    reportingManager?: {
+      employeeName?: string;
+    };
+  };
 }
 
 // Internal Employee structure (mapped from external API)
@@ -46,6 +53,7 @@ export interface Employee {
   department?: string;
   companyName?: string;
   reportTo?: string;
+  employeeId?: string; // Employee code e.g. "JBDS0001"
 }
 
 export interface LocationUpdate {

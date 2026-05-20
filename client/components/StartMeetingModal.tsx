@@ -52,21 +52,14 @@ interface StartMeetingModalProps {
 
 // Meeting reasons/types
 const MEETING_REASONS = [
-  "Initial Client Meeting",
-  "Project Discussion",
-  "Equipment Installation",
-  "System Maintenance",
-  "Technical Support",
-  "Training Session",
-  "Progress Review",
-  "Problem Resolution",
-  "Contract Negotiation",
-  "Follow-up Meeting",
-  "Emergency Response",
-  "Consultation",
-  "Demo/Presentation",
-  "Site Survey",
-  "Other",
+  "Demo",
+  "Sample demonstration",
+  "Order follow up",
+  "New RFQ",
+  "Issue resolved",
+  "Installation and commissioning",
+  "Service support",
+  "Work from home",
 ];
 
 export function StartMeetingModal({
