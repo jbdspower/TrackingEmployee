@@ -20,14 +20,15 @@ export interface ExternalUser {
   email: string;
   employeeId?: string; // Employee code e.g. "JBDS0001"
   EmpAttendenceCode?: string; // Attendance code e.g. "JBDS0001"
-  companyName: Array<{
-    companyName: string;
-    _id: string;
-  }>;
+  // companyName can be an array or a single object depending on API version
+  companyName:
+    | Array<{ companyName: string; _id: string }>
+    | { companyName: string; _id: string }
+    | null;
   report: {
     _id: string;
     name: string;
-  };
+  } | null;
   designation: string;
   department: string;
   mobileNumber: string;
@@ -52,6 +53,7 @@ export interface Employee {
   designation?: string;
   department?: string;
   companyName?: string;
+  division?: string; // Company name used as division for lead creation
   reportTo?: string;
   employeeId?: string; // Employee code e.g. "JBDS0001"
 }

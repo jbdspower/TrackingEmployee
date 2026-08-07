@@ -40,12 +40,14 @@ interface StartMeetingModalProps {
     };
   }) => void;
   employeeName: string;
+  employeeId?: string;
   location: string;
   isLoading?: boolean;
   initialClientName?: string;
   initialCompanyName?: string;
   initialReason?: string;
   initialNotes?: string;
+  divisionId?: string;
 }
 
 
@@ -67,12 +69,14 @@ export function StartMeetingModal({
   onClose,
   onStartMeeting,
   employeeName,
+  employeeId,
   location,
   isLoading = false,
   initialClientName = "",
   initialCompanyName = "",
   initialReason = "",
   initialNotes = "",
+  divisionId = "",
 }: StartMeetingModalProps) {
   const [clientName, setClientName] = useState("");
   const [customClient, setCustomClient] = useState("");
@@ -288,18 +292,23 @@ export function StartMeetingModal({
     setIsCreatingLead(true);
     
     try {
+      // Use the divisionId passed in from the tracking URL (already scoped to this session)
+      const division = divisionId || "";
+      console.log("📋 Division from prop:", division);
+
       const leadPayload = {
         CompanyName: newLeadCompanyName.trim(),
         Name: "New Lead",
         CreatedBy: userId,
         Id: `JBDSL-${Date.now().toString().slice(-4)}`,
+        Division: division,
       };
 
       console.log("📤 Creating lead:", leadPayload);
       console.log("🔑 Token:", token.substring(0, 20) + "...");
 
       const response = await fetch(
-        `https://jbdspower.in/LeafNetServer/api/createLead?auth=${token}`,
+        `http://localhost:3000/LeafNetServer/api/createLead?auth=${token}`,
         {
           method: "POST",
           headers: {
@@ -401,7 +410,7 @@ export function StartMeetingModal({
       notes: notes.trim(),
       leadId: selectedLead || undefined,
       leadInfo: selectedLeadInfo ? {
-        id: selectedLeadInfo?.Id || {},
+        id: selectedLeadInfo?.Id || "",
         companyName: selectedLeadInfo.CompanyName,
         contactName: selectedLeadInfo.Name,
       } : undefined,

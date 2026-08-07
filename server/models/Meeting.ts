@@ -225,7 +225,10 @@ MeetingSchema.index({ employeeId: 1, clientName: 1, startTime: -1 });
 MeetingSchema.index({ employeeId: 1, meetingStatus: 1, startTime: -1 });
 
 
-export const Meeting = mongoose.model<IMeeting>('Meeting', MeetingSchema);
+// Avoid recompiling the model when running with hot-reload (Vite/Nodemon)
+export const Meeting = (mongoose.models && (mongoose.models as any).Meeting)
+  ? (mongoose.models as any).Meeting as mongoose.Model<IMeeting>
+  : mongoose.model<IMeeting>('Meeting', MeetingSchema);
 
 
 

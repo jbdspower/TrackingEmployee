@@ -268,7 +268,7 @@ MeetingSchema.index({ employeeId: 1, status: 1, startTime: -1 });
 MeetingSchema.index({ followUpId: 1, status: 1, startTime: -1 });
 MeetingSchema.index({ employeeId: 1, clientName: 1, startTime: -1 });
 MeetingSchema.index({ employeeId: 1, meetingStatus: 1, startTime: -1 });
-const Meeting = mongoose.model("Meeting", MeetingSchema);
+const Meeting = mongoose.models && mongoose.models.Meeting ? mongoose.models.Meeting : mongoose.model("Meeting", MeetingSchema);
 const CustomerContactSchema = new Schema({
   customerName: { type: String, required: true },
   customerEmployeeName: { type: String, required: true },
@@ -690,7 +690,11 @@ async function fetchExternalUsers$1() {
       throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.employees)) return data.employees;
+    if (data && Array.isArray(data.users)) return data.users;
+    if (data && Array.isArray(data.data)) return data.data;
+    return [];
   } catch (error) {
     console.error("External API fetch failed:", error);
     return [];
@@ -756,8 +760,13 @@ async function mapExternalUserToEmployee$1(user, index) {
   }
   const status = employeeStatuses$1[userId];
   let companyName = "";
-  if (Array.isArray(user.companyName) && user.companyName[0] && user.companyName[0].companyName) {
-    companyName = user.companyName[0].companyName;
+  if (user.companyName) {
+    if (Array.isArray(user.companyName)) {
+      const first = user.companyName[0];
+      if (first?.companyName) companyName = first.companyName;
+    } else if (typeof user.companyName === "object" && user.companyName.companyName) {
+      companyName = user.companyName.companyName;
+    }
   }
   let reportTo = "";
   if (user.report && typeof user.report === "object" && user.report.name) {
@@ -776,6 +785,8 @@ async function mapExternalUserToEmployee$1(user, index) {
     designation: user.designation || "",
     department: user.department || "",
     companyName,
+    division: companyName,
+    // company name is used as Division in lead creation
     reportTo
   };
 }
@@ -846,6 +857,8 @@ const getEmployee = async (req, res) => {
           user,
           externalUsers.indexOf(user)
         );
+        console.log(`[getEmployee] raw companyName for ${id}:`, JSON.stringify(user.companyName));
+        console.log(`[getEmployee] mapped division:`, employee.division);
         try {
           await Employee.findOneAndUpdate({ id }, employee, {
             upsert: true,
@@ -999,6 +1012,39 @@ const refreshEmployeeLocations = async (req, res) => {
 const createEmployee = (req, res) => res.status(501).json({ error: "Use external API for creation" });
 const updateEmployee = (req, res) => res.status(501).json({ error: "Use external API for updates" });
 const deleteEmployee = (req, res) => res.status(501).json({ error: "Use external API for deletion" });
+const getEmployeeDivision = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const url = `${EXTERNAL_API_URL$1}/${id}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1e4);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" }
+    });
+    clearTimeout(timer);
+    if (!response.ok) {
+      return res.status(response.status).json({ error: "User not found in external API" });
+    }
+    const user = await response.json();
+    let division = "";
+    const cn = user?.companyName;
+    if (cn) {
+      if (Array.isArray(cn) && cn[0]?.companyName) {
+        division = cn[0].companyName;
+      } else if (typeof cn === "object" && cn.companyName) {
+        division = cn.companyName;
+      } else if (typeof cn === "string") {
+        division = cn;
+      }
+    }
+    console.log(`[getEmployeeDivision] id=${id} raw companyName=${JSON.stringify(cn)} → division="${division}"`);
+    return res.json({ division });
+  } catch (error) {
+    console.error("getEmployeeDivision failed:", error);
+    return res.status(500).json({ error: "Failed to fetch employee division" });
+  }
+};
 const geocodeCache$1 = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const uploadsRoot = path.join(process.cwd(), "uploads", "meetings");
 const storage = multer.diskStorage({
@@ -1370,11 +1416,29 @@ const updateMeeting = async (req, res) => {
     const updates = req.body;
     let meeting = null;
     if (id && id !== "undefined" && id !== "null") {
-      try {
-        meeting = await Meeting.findById(id);
-        console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
-      } catch (error) {
-        console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+      if (id.startsWith("meeting_")) {
+        const inMemoryMeeting = inMemoryMeetings.find((m) => m.id === id);
+        if (inMemoryMeeting) {
+          console.log(`🔍 Found in-memory meeting: ${id}`);
+          const idx = inMemoryMeetings.findIndex((m) => m.id === id);
+          inMemoryMeetings[idx] = {
+            ...inMemoryMeeting,
+            status: "completed",
+            meetingStatus: "complete",
+            endTime: updates.endTime || (/* @__PURE__ */ new Date()).toISOString(),
+            ...updates.meetingDetails && { meetingDetails: updates.meetingDetails },
+            ...updates.location && { location: updates.location }
+          };
+          return res.status(200).json(inMemoryMeetings[idx]);
+        }
+        console.warn(`⚠️ In-memory meeting not found for id: ${id}, trying employee fallback`);
+      } else {
+        try {
+          meeting = await Meeting.findById(id);
+          console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
+        } catch (error) {
+          console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+        }
       }
     }
     if (!meeting) {
@@ -1386,12 +1450,22 @@ const updateMeeting = async (req, res) => {
       const startOfToday = /* @__PURE__ */ new Date();
       startOfToday.setHours(0, 0, 0, 0);
       const query = {
-        employeeId,
         status: { $in: ["in-progress", "started"] },
         startTime: { $gte: startOfToday.toISOString() }
       };
       if (followUpId) {
         query.followUpId = followUpId;
+      }
+      if (employeeId) {
+        const empIdStr = String(employeeId);
+        if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+          query.$or = [
+            { employeeId: empIdStr },
+            { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+          ];
+        } else {
+          query.employeeId = empIdStr;
+        }
       }
       query.$or = [
         { meetingStatus: { $exists: false } },
@@ -1551,7 +1625,15 @@ const getActiveMeeting = async (req, res) => {
       if (followUpId) {
         query.followUpId = followUpId;
       } else if (employeeId) {
-        query.employeeId = employeeId;
+        const empIdStr = String(employeeId);
+        if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+          query.$or = [
+            { employeeId: empIdStr },
+            { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+          ];
+        } else {
+          query.employeeId = empIdStr;
+        }
       }
       console.log("📥 Query:", JSON.stringify(query, null, 2));
       const activeMeeting = await Meeting.findOne(query).sort({ startTime: -1 }).lean();
@@ -1559,10 +1641,20 @@ const getActiveMeeting = async (req, res) => {
         console.log("⚠️ No active meeting found with query:", JSON.stringify(query, null, 2));
         let allMeetings = [];
         if (employeeId) {
-          allMeetings = await Meeting.find({ employeeId }).lean();
+          const empIdStr = String(employeeId);
+          const allQuery = { employeeId: empIdStr };
+          if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+            allQuery.$or = [
+              { employeeId: empIdStr },
+              { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+            ];
+            delete allQuery.employeeId;
+          }
+          allMeetings = await Meeting.find(allQuery).lean();
           console.log("📋 All meetings for employee:", allMeetings.map((m) => ({
             id: m._id,
             status: m.status,
+            meetingStatus: m.meetingStatus,
             followUpId: m.followUpId,
             startTime: m.startTime
           })));
@@ -5301,6 +5393,7 @@ function createServer() {
   });
   app2.get("/api/employees", getEmployees);
   app2.post("/api/employees", createEmployee);
+  app2.get("/api/employees/:id/division", getEmployeeDivision);
   app2.get("/api/employees/:id", getEmployee);
   app2.put("/api/employees/:id", updateEmployee);
   app2.delete("/api/employees/:id", deleteEmployee);

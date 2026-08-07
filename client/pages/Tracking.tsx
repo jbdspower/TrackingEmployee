@@ -36,7 +36,7 @@ import {
   Camera,
   History,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { formatTimeIST, formatTimeOnlyIST } from "@/lib/timeUtils";
 import axios from "axios";
 
@@ -58,6 +58,8 @@ export default function Tracking() {
   }, []);
   const navigate = useNavigate();
   const { employeeId } = useParams<{ employeeId: string }>();
+  const [searchParams] = useSearchParams();
+  const divisionId = searchParams.get("divisionId") || "";
   const { toast } = useToast();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [meetings, setMeetings] = useState<MeetingLog[]>([]);
@@ -316,6 +318,13 @@ export default function Tracking() {
     const initializeData = async () => {
       try {
         await Promise.all([fetchEmployee(), fetchMeetings()]);
+        // Also check backend active meeting state to decide whether to show End Meeting button
+        try {
+          await fetchBackendActiveMeeting();
+        } catch (err) {
+          console.warn('Failed to fetch backend active meeting during init', err);
+          setBackendActiveMeeting(null);
+        }
       } catch (error) {
         console.error("Failed to initialize tracking data:", error);
       }
@@ -464,6 +473,29 @@ export default function Tracking() {
     }
   };
 
+  // Check backend for an active meeting for this employee
+  const fetchBackendActiveMeeting = async () => {
+    if (!employeeId) {
+      setBackendActiveMeeting(null);
+      return null;
+    }
+    try {
+      const resp = await HttpClient.get(`/api/meetings/active?employeeId=${employeeId}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setBackendActiveMeeting(data as MeetingLog);
+        setShowSyncMeetingButton(false);
+        return data;
+      }
+      setBackendActiveMeeting(null);
+      return null;
+    } catch (err) {
+      console.warn('Error fetching backend active meeting:', err);
+      setBackendActiveMeeting(null);
+      return null;
+    }
+  };
+
   // Handle when today's meetings are fetched
   const handleTodaysMeetingsFetched = (meetings: FollowUpMeeting[]) => {
     console.log("Today's follow-up meetings fetched:", meetings.length);
@@ -552,6 +584,8 @@ export default function Tracking() {
   };
 
   const [isEndingMeeting, setIsEndingMeeting] = useState<string | null>(null);
+  const [showSyncMeetingButton, setShowSyncMeetingButton] = useState(false);
+  const [backendActiveMeeting, setBackendActiveMeeting] = useState<MeetingLog | null>(null);
 
   const handleEndMeetingClick = (meetingId: string) => {
     console.log("handleEndMeetingClick called with meetingId:", meetingId);
@@ -728,16 +762,18 @@ export default function Tracking() {
       }
 
       // 🔹 STEP 3: If we still don't have a meeting ID, show error
-      if (!finalMeetingId || finalMeetingId === "") {
-        console.error("❌ No active meeting found in LOCAL DATABASE or EXTERNAL API!");
-        console.error("Searched with:", { followUpId, employeeId });
-        toast({
-          title: "No Active Meeting",
-          description: "No active meeting found. The meeting may not have been saved properly when started.",
-          variant: "destructive",
-        });
-        return;
-      }
+        if (!finalMeetingId || finalMeetingId === "") {
+          console.error("❌ No active meeting found in LOCAL DATABASE or EXTERNAL API!");
+          console.error("Searched with:", { followUpId, employeeId });
+          // Instead of just showing an error toast, enable a sync button so user can retry syncing
+          setShowSyncMeetingButton(true);
+          toast({
+            title: "No Active Meeting",
+            description: "No active meeting found. Tap 'Sync Meeting State' to refresh and attempt recovery.",
+            variant: "destructive",
+          });
+          return;
+        }
 
       console.log("🎯 Final meeting ID:", finalMeetingId);
 
@@ -862,12 +898,39 @@ export default function Tracking() {
     }
 
     console.error("No active meeting found to end. Available meetings:", meetings);
+    // Enable sync button and prompt user to sync meeting state
+    setShowSyncMeetingButton(true);
     toast({
       title: "No Active Meeting",
       description:
-        "No active meeting found in local cache or backend. Please refresh once and try again.",
+        "No active meeting found in local cache or backend. Tap 'Sync Meeting State' to refresh and attempt recovery.",
       variant: "destructive",
     });
+  };
+
+  const handleSyncMeetingState = async () => {
+    console.log("Syncing meeting state...");
+    setShowSyncMeetingButton(false);
+    try {
+      await fetchMeetings();
+      await fetchBackendActiveMeeting();
+      toast({
+        title: "Sync Complete",
+        description: "Meeting state refreshed. If an active meeting exists, try ending again.",
+      });
+      // Try again automatically to provide smoother UX
+      setTimeout(() => {
+        handleEndMeetingAttempt();
+      }, 500);
+    } catch (err) {
+      console.error("Error syncing meeting state:", err);
+      toast({
+        title: "Sync Failed",
+        description: "Failed to refresh meeting state. Please check your network and try again.",
+        variant: "destructive",
+      });
+      setShowSyncMeetingButton(true);
+    }
   };
 
   const handleEndMeetingWithDetails = async (
@@ -1520,6 +1583,7 @@ export default function Tracking() {
         leadId: meetingData.leadId,
         leadInfo: meetingData.leadInfo,
         startTime: exactStartTime, // 🔹 CRITICAL: Send the exact time when user clicked start
+        ...(divisionId ? { divisionId } : {}),
       });
 
       if (response.ok) {
@@ -2266,8 +2330,8 @@ const startMeetingFromFollowUp = async (
                         (m) => m.status === "in-progress" || m.status === "started"
                       );
 
-                      // Show End Meeting button if there's an active meeting OR employee status is "meeting"
-                      if (activeMeeting || employee.status === "meeting") {
+                      // Show End Meeting button if there's an active meeting locally or the backend reports one
+                      if (activeMeeting || backendActiveMeeting) {
                         return (
                           <Button
                             variant="destructive"
@@ -2451,6 +2515,15 @@ const startMeetingFromFollowUp = async (
                                         : "End Meeting"}
                                     </Button>
                                   )}
+                                  {!meeting && showSyncMeetingButton && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={handleSyncMeetingState}
+                                    >
+                                      Sync Meeting State
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                               <p className="text-sm text-muted-foreground flex items-center">
@@ -2602,8 +2675,8 @@ const startMeetingFromFollowUp = async (
                       (m) => m.status === "in-progress" || m.status === "started"
                     );
 
-                    // Show End Meeting button if there's an active meeting OR employee status is "meeting"
-                    if (activeMeeting || employee.status === "meeting") {
+                    // Show End Meeting button if there's an active meeting locally or the backend reports one
+                    if (activeMeeting || backendActiveMeeting) {
                       return (
                         <div className="pt-4 pb-2">
                           <Button
@@ -2621,6 +2694,24 @@ const startMeetingFromFollowUp = async (
                         </div>
                       );
                     }
+                    // If we have no active meeting but the backend previously indicated an issue,
+                    // show a sync button so the user can refresh and attempt recovery.
+                    if (showSyncMeetingButton) {
+                      return (
+                        <div className="pt-4 pb-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={handleSyncMeetingState}
+                          >
+                            <Clock className="h-4 w-4 mr-2" />
+                            Sync Meeting State
+                          </Button>
+                        </div>
+                      );
+                    }
+
                     return null;
                   })()}
 
@@ -2669,8 +2760,10 @@ const startMeetingFromFollowUp = async (
           onClose={() => setIsStartMeetingModalOpen(false)}
           onStartMeeting={startMeeting}
           employeeName={employee.name}
+          employeeId={employee.id}
           location={employee.location.address}
           isLoading={isStartingMeeting}
+          divisionId={divisionId}
         />
       )}
 

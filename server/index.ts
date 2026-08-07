@@ -13,6 +13,7 @@ import {
   deleteEmployee,
   refreshEmployeeLocations,
   clearLocationCache,
+  getEmployeeDivision,
 } from "./routes/employees";
 import {
   getMeetings,
@@ -129,6 +130,7 @@ export function createServer() {
   // Employee routes
   app.get("/api/employees", getEmployees);
   app.post("/api/employees", createEmployee);
+  app.get("/api/employees/:id/division", getEmployeeDivision);
   app.get("/api/employees/:id", getEmployee);
   app.put("/api/employees/:id", updateEmployee);
   app.delete("/api/employees/:id", deleteEmployee);

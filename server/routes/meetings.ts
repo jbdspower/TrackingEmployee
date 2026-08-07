@@ -10,6 +10,7 @@ import {
   CreateMeetingRequest,
 } from "@shared/api";
 import { Meeting, IMeeting } from "../models";
+import mongoose from 'mongoose';
 import Database from "../config/database";
 import CacheService from "../services/cache";
 
@@ -604,11 +605,31 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
     // 1️⃣ Try by ID (normal flow)
     if (id && id !== "undefined" && id !== "null") {
-      try {
-        meeting = await Meeting.findById(id);
-        console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
-      } catch (error) {
-        console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+      // 1a. In-memory meeting (DB was unavailable when meeting was created)
+      if (id.startsWith("meeting_")) {
+        const inMemoryMeeting = inMemoryMeetings.find((m) => m.id === id);
+        if (inMemoryMeeting) {
+          console.log(`🔍 Found in-memory meeting: ${id}`);
+          // Apply updates directly to the in-memory meeting
+          const idx = inMemoryMeetings.findIndex((m) => m.id === id);
+          inMemoryMeetings[idx] = {
+            ...inMemoryMeeting,
+            status: "completed",
+            meetingStatus: "complete",
+            endTime: updates.endTime || new Date().toISOString(),
+            ...(updates.meetingDetails && { meetingDetails: updates.meetingDetails }),
+            ...(updates.location && { location: updates.location }),
+          } as any;
+          return res.status(200).json(inMemoryMeetings[idx]);
+        }
+        console.warn(`⚠️ In-memory meeting not found for id: ${id}, trying employee fallback`);
+      } else {
+        try {
+          meeting = await Meeting.findById(id);
+          console.log(`🔍 Found meeting by ID: ${id}`, meeting ? "✅" : "❌");
+        } catch (error) {
+          console.warn(`⚠️ Invalid meeting ID format: ${id}`);
+        }
       }
     }
 
@@ -627,7 +648,6 @@ export const updateMeeting: RequestHandler = async (req, res) => {
 
       // Build query to find active meeting
       const query: any = {
-        employeeId,
         status: { $in: ["in-progress", "started"] },
         startTime: { $gte: startOfToday.toISOString() },
       };
@@ -635,6 +655,19 @@ export const updateMeeting: RequestHandler = async (req, res) => {
       // Add followUpId to query if provided for more specific matching
       if (followUpId) {
         query.followUpId = followUpId;
+      }
+
+      // Robust employeeId matching: support both string-stored IDs and ObjectId-stored IDs
+      if (employeeId) {
+        const empIdStr = String(employeeId);
+        if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+          query.$or = [
+            { employeeId: empIdStr },
+            { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+          ];
+        } else {
+          query.employeeId = empIdStr;
+        }
       }
 
       // Exclude already completed meetings
@@ -1057,8 +1090,16 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
         // If followUpId is provided, search by it (most specific)
         query.followUpId = followUpId;
       } else if (employeeId) {
-        // Otherwise search by employeeId
-        query.employeeId = employeeId;
+        // Otherwise search by employeeId (support both string and ObjectId forms)
+        const empIdStr = String(employeeId);
+        if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+          query.$or = [
+            { employeeId: empIdStr },
+            { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+          ];
+        } else {
+          query.employeeId = empIdStr;
+        }
       }
 
       console.log("📥 Query:", JSON.stringify(query, null, 2));
@@ -1073,10 +1114,23 @@ export const getActiveMeeting: RequestHandler = async (req, res) => {
         // 🔹 DEBUG: Check what meetings exist for this employee
         let allMeetings: any[] = [];
         if (employeeId) {
-          allMeetings = await Meeting.find({ employeeId }).lean();
+          const empIdStr = String(employeeId);
+          // Use a robust query for debugging as well
+          const allQuery: any = { employeeId: empIdStr };
+          if (mongoose.Types.ObjectId.isValid(empIdStr)) {
+            allQuery.$or = [
+              { employeeId: empIdStr },
+              { employeeId: new mongoose.Types.ObjectId(empIdStr) }
+            ];
+            // remove direct employeeId to avoid conflict
+            delete allQuery.employeeId;
+          }
+
+          allMeetings = await Meeting.find(allQuery).lean();
           console.log("📋 All meetings for employee:", allMeetings.map(m => ({
             id: m._id,
             status: m.status,
+            meetingStatus: m.meetingStatus,
             followUpId: m.followUpId,
             startTime: m.startTime
           })));

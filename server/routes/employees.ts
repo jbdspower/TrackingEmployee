@@ -232,7 +232,12 @@ async function fetchExternalUsers(): Promise<ExternalUser[]> {
     }
 
     const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    // Handle both plain array and paginated { employees: [...], total: N } shapes
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.employees)) return data.employees;
+    if (data && Array.isArray(data.users)) return data.users;
+    if (data && Array.isArray(data.data)) return data.data;
+    return [];
   } catch (error) {
     console.error("External API fetch failed:", error);
     return [];
@@ -314,10 +319,17 @@ async function mapExternalUserToEmployee(
 
   const status = employeeStatuses[userId];
 
-  // Defensive: check for companyName and report
+  // Defensive: check for companyName (can be object or array) and report
   let companyName = '';
-  if (Array.isArray(user.companyName) && user.companyName[0] && user.companyName[0].companyName) {
-    companyName = user.companyName[0].companyName;
+  if (user.companyName) {
+    if (Array.isArray(user.companyName)) {
+      // Legacy array shape
+      const first = user.companyName[0];
+      if (first?.companyName) companyName = first.companyName;
+    } else if (typeof user.companyName === 'object' && user.companyName.companyName) {
+      // New object shape: { _id: "...", companyName: "JBDS POWER." }
+      companyName = user.companyName.companyName;
+    }
   }
   let reportTo = '';
   if (user.report && typeof user.report === 'object' && user.report.name) {
@@ -337,6 +349,7 @@ async function mapExternalUserToEmployee(
     designation: user.designation || '',
     department: user.department || '',
     companyName,
+    division: companyName, // company name is used as Division in lead creation
     reportTo,
   };
 }
@@ -418,6 +431,10 @@ export const getEmployee: RequestHandler = async (req, res) => {
           user,
           externalUsers.indexOf(user),
         );
+
+        // Log to help debug companyName extraction
+        console.log(`[getEmployee] raw companyName for ${id}:`, JSON.stringify((user as any).companyName));
+        console.log(`[getEmployee] mapped division:`, employee.division);
 
         try {
           await EmployeeModel.findOneAndUpdate({ id }, employee, {
@@ -608,3 +625,49 @@ export const updateEmployee: RequestHandler = (req, res) =>
 
 export const deleteEmployee: RequestHandler = (req, res) =>
   res.status(501).json({ error: "Use external API for deletion" });
+
+/**
+ * GET /api/employees/:id/division
+ * Fetches the employee's companyName (division) directly from the external user API.
+ * Used when creating a CRM lead so the Division field is populated correctly.
+ */
+export const getEmployeeDivision: RequestHandler = async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Fetch directly by ID from external API
+    const url = `${EXTERNAL_API_URL}/${id}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: "User not found in external API" });
+    }
+
+    const user = await response.json();
+
+    // Extract companyName — can be object or array
+    let division = "";
+    const cn = user?.companyName;
+    if (cn) {
+      if (Array.isArray(cn) && cn[0]?.companyName) {
+        division = cn[0].companyName;
+      } else if (typeof cn === "object" && cn.companyName) {
+        division = cn.companyName;
+      } else if (typeof cn === "string") {
+        division = cn;
+      }
+    }
+
+    console.log(`[getEmployeeDivision] id=${id} raw companyName=${JSON.stringify(cn)} → division="${division}"`);
+    return res.json({ division });
+  } catch (error) {
+    console.error("getEmployeeDivision failed:", error);
+    return res.status(500).json({ error: "Failed to fetch employee division" });
+  }
+};

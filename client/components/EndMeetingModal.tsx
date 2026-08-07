@@ -605,7 +605,7 @@ const normalizedMeetingDetails = {
 
       // Make API call to create lead
       const response = await fetch(
-        `https://jbdspower.in/LeafNetServer/api/createLead?auth=${token}`,
+        `http://localhost:3000/LeafNetServer/api/createLead?auth=${token}`,
         {
           method: "POST",
           headers: {
