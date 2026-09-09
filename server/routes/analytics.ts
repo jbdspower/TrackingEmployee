@@ -4,6 +4,8 @@ import {
   startOfDay,
   endOfDay,
   subDays,
+  subWeeks,
+  subMonths,
   startOfWeek,
   endOfWeek,
   startOfMonth,
@@ -212,36 +214,66 @@ function mapExternalUserToEmployee(
 // Function to get date range based on filter
 function getDateRange(dateRange: string, startDate?: string, endDate?: string) {
   const now = new Date();
+  
+  console.log(`🔍 getDateRange called with: dateRange="${dateRange}" (type: ${typeof dateRange}), startDate="${startDate}", endDate="${endDate}"`);
+  console.log(`🔍 Checking case match: dateRange === "this_month"? ${dateRange === "this_month"}`);
+  console.log(`🔍 Checking case match: dateRange === "month"? ${dateRange === "month"}`);
 
   switch (dateRange) {
     case "all":
+      console.log(`✅ Matched case: all`);
       // Return a very wide date range to include all meetings
       return {
         start: new Date("2020-01-01"), // Far past date
         end: new Date("2030-12-31"), // Far future date
       };
     case "today":
+      console.log(`✅ Matched case: today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now),
       };
     case "yesterday":
+    case "last_day":
+      console.log(`✅ Matched case: yesterday/last_day`);
       const yesterday = subDays(now, 1);
       return {
         start: startOfDay(yesterday),
         end: endOfDay(yesterday),
       };
     case "week":
+    case "this_week":
+      console.log(`✅ Matched case: week/this_week`);
       return {
         start: startOfWeek(now, { weekStartsOn: 1 }), // Monday
         end: endOfWeek(now, { weekStartsOn: 1 }),
       };
-    case "month":
+    case "last_week":
+      console.log(`✅ Matched case: last_week`);
+      const lastWeek = subWeeks(now, 1);
       return {
-        start: startOfMonth(now),
-        end: endOfMonth(now),
+        start: startOfWeek(lastWeek, { weekStartsOn: 1 }), // Monday of last week
+        end: endOfWeek(lastWeek, { weekStartsOn: 1 }), // Sunday of last week
+      };
+    case "month":
+    case "this_month":
+      console.log(`✅ Matched case: month/this_month`);
+      const monthStart = startOfMonth(now);
+      const monthEnd = endOfMonth(now);
+      console.log(`📅 Month range calculated: START=${monthStart.toISOString()}, END=${monthEnd.toISOString()}`);
+      return {
+        start: monthStart,
+        end: monthEnd,
+      };
+    case "last_month":
+      console.log(`✅ Matched case: last_month`);
+      const lastMonth = subMonths(now, 1);
+      return {
+        start: startOfMonth(lastMonth),
+        end: endOfMonth(lastMonth),
       };
     case "custom":
+      console.log(`✅ Matched case: custom`);
       if (startDate && endDate) {
         return {
           start: startOfDay(parseISO(startDate)),
@@ -249,11 +281,13 @@ function getDateRange(dateRange: string, startDate?: string, endDate?: string) {
         };
       }
       // Fallback to today
+      console.log(`⚠️ Custom range but missing dates, falling back to today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now),
       };
     default:
+      console.log(`❌ NO MATCH - Unknown dateRange "${dateRange}", defaulting to today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now),
@@ -1751,6 +1785,7 @@ export const getAllEmployeesDetails: RequestHandler = async (req, res) => {
     const { start, end } = getDateRange(dateRange, startDate as string, endDate as string);
 
     console.log(`📊 All employees details - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}, Search: "${search}"`);
+    console.log(`📅 Calculated date range: START=${start.toISOString()}, END=${end.toISOString()}`);
 
     // STEP 1: Get ALL employees from external API
     const externalUsers = await cacheService.getExternalUsers();

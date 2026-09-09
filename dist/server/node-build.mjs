@@ -8,7 +8,7 @@ import axios from "axios";
 import multer from "multer";
 import fs from "fs";
 import NodeCache from "node-cache";
-import { isToday, format, endOfDay, startOfDay, parseISO, endOfMonth, startOfMonth, endOfWeek, startOfWeek, subDays } from "date-fns";
+import { isToday, format, endOfDay, startOfDay, parseISO, subMonths, endOfMonth, startOfMonth, subWeeks, endOfWeek, startOfWeek, subDays } from "date-fns";
 import { fileURLToPath } from "url";
 async function createIndexes() {
   try {
@@ -2891,8 +2891,12 @@ function mapExternalUserToEmployee(user, index) {
 }
 function getDateRange(dateRange, startDate, endDate) {
   const now = /* @__PURE__ */ new Date();
+  console.log(`🔍 getDateRange called with: dateRange="${dateRange}" (type: ${typeof dateRange}), startDate="${startDate}", endDate="${endDate}"`);
+  console.log(`🔍 Checking case match: dateRange === "this_month"? ${dateRange === "this_month"}`);
+  console.log(`🔍 Checking case match: dateRange === "month"? ${dateRange === "month"}`);
   switch (dateRange) {
     case "all":
+      console.log(`✅ Matched case: all`);
       return {
         start: /* @__PURE__ */ new Date("2020-01-01"),
         // Far past date
@@ -2900,39 +2904,68 @@ function getDateRange(dateRange, startDate, endDate) {
         // Far future date
       };
     case "today":
+      console.log(`✅ Matched case: today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now)
       };
     case "yesterday":
+    case "last_day":
+      console.log(`✅ Matched case: yesterday/last_day`);
       const yesterday = subDays(now, 1);
       return {
         start: startOfDay(yesterday),
         end: endOfDay(yesterday)
       };
     case "week":
+    case "this_week":
+      console.log(`✅ Matched case: week/this_week`);
       return {
         start: startOfWeek(now, { weekStartsOn: 1 }),
         // Monday
         end: endOfWeek(now, { weekStartsOn: 1 })
       };
-    case "month":
+    case "last_week":
+      console.log(`✅ Matched case: last_week`);
+      const lastWeek = subWeeks(now, 1);
       return {
-        start: startOfMonth(now),
-        end: endOfMonth(now)
+        start: startOfWeek(lastWeek, { weekStartsOn: 1 }),
+        // Monday of last week
+        end: endOfWeek(lastWeek, { weekStartsOn: 1 })
+        // Sunday of last week
+      };
+    case "month":
+    case "this_month":
+      console.log(`✅ Matched case: month/this_month`);
+      const monthStart = startOfMonth(now);
+      const monthEnd = endOfMonth(now);
+      console.log(`📅 Month range calculated: START=${monthStart.toISOString()}, END=${monthEnd.toISOString()}`);
+      return {
+        start: monthStart,
+        end: monthEnd
+      };
+    case "last_month":
+      console.log(`✅ Matched case: last_month`);
+      const lastMonth = subMonths(now, 1);
+      return {
+        start: startOfMonth(lastMonth),
+        end: endOfMonth(lastMonth)
       };
     case "custom":
+      console.log(`✅ Matched case: custom`);
       if (startDate && endDate) {
         return {
           start: startOfDay(parseISO(startDate)),
           end: endOfDay(parseISO(endDate))
         };
       }
+      console.log(`⚠️ Custom range but missing dates, falling back to today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now)
       };
     default:
+      console.log(`❌ NO MATCH - Unknown dateRange "${dateRange}", defaulting to today`);
       return {
         start: startOfDay(now),
         end: endOfDay(now)
@@ -3994,6 +4027,7 @@ const getAllEmployeesDetails = async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
     const { start, end } = getDateRange(dateRange, startDate, endDate);
     console.log(`📊 All employees details - Date range: ${dateRange}, Page: ${pageNum}, Limit: ${limitNum}, Search: "${search}"`);
+    console.log(`📅 Calculated date range: START=${start.toISOString()}, END=${end.toISOString()}`);
     const externalUsers = await cacheService.getExternalUsers();
     console.log(`Found ${externalUsers.length} total employees from cache`);
     let allEmployees = externalUsers.map((user, index) => {
